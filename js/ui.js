@@ -103,6 +103,10 @@ const UI = (() => {
         <div class="entry-kcal">${Math.round(e.kcal)} kcal</div>
         <button class="entry-delete" data-id="${e.id}" aria-label="Usuń">×</button>
       `;
+      card.addEventListener('click', (ev) => {
+        if (ev.target.closest('.entry-delete')) return;
+        openEntryModal(e.id);
+      });
       list.appendChild(card);
     });
 
@@ -293,18 +297,31 @@ const UI = (() => {
     }
   }
 
-  function openEntryModal() {
-    editingEntryId = null;
-    pendingSource = 'manual';
-    document.getElementById('entryModalTitle').textContent = 'Dodaj posiłek';
-    ['entryName', 'entryGrams', 'entryKcal', 'entryProtein', 'entryCarbs', 'entryFat'].forEach((id) => {
-      document.getElementById(id).value = '';
-    });
+  function nowTimeStr() {
+    const now = new Date();
+    return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  }
+
+  function openEntryModal(entryId) {
     document.getElementById('entryFormError').textContent = '';
     document.getElementById('scanError').textContent = '';
     document.getElementById('scanStatus').textContent = '';
     document.getElementById('voiceError').textContent = '';
     document.getElementById('voiceStatus').textContent = '';
+
+    const entry = entryId ? Storage.getEntries(currentDate).find((e) => e.id === entryId) : null;
+    editingEntryId = entry ? entryId : null;
+
+    document.getElementById('entryModalTitle').textContent = entry ? 'Edytuj posiłek' : 'Dodaj posiłek';
+    document.getElementById('entryName').value = entry ? entry.name || '' : '';
+    document.getElementById('entryGrams').value = entry ? entry.grams || '' : '';
+    document.getElementById('entryKcal').value = entry ? entry.kcal || '' : '';
+    document.getElementById('entryProtein').value = entry ? entry.protein || '' : '';
+    document.getElementById('entryCarbs').value = entry ? entry.carbs || '' : '';
+    document.getElementById('entryFat').value = entry ? entry.fat || '' : '';
+    document.getElementById('entryTime').value = entry ? entry.time || nowTimeStr() : nowTimeStr();
+    pendingSource = entry ? entry.source || 'manual' : 'manual';
+
     document.getElementById('entryModalOverlay').classList.add('active');
   }
 
@@ -326,24 +343,27 @@ const UI = (() => {
       return;
     }
 
-    const now = new Date();
-    const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-
-    Storage.addEntry(currentDate, {
+    const entryData = {
       name,
       grams: Number(document.getElementById('entryGrams').value) || null,
       kcal,
       protein: Number(document.getElementById('entryProtein').value) || 0,
       carbs: Number(document.getElementById('entryCarbs').value) || 0,
       fat: Number(document.getElementById('entryFat').value) || 0,
-      time,
+      time: document.getElementById('entryTime').value || nowTimeStr(),
       source: pendingSource
-    });
+    };
+
+    if (editingEntryId) {
+      Storage.updateEntry(currentDate, editingEntryId, entryData);
+    } else {
+      Storage.addEntry(currentDate, entryData);
+    }
 
     pushDayToCloud(currentDate);
     closeEntryModal();
     renderDiary();
-    showToast('Dodano posiłek');
+    showToast(editingEntryId ? 'Zapisano zmiany' : 'Dodano posiłek');
   }
 
   async function handleLabelScan(file) {
