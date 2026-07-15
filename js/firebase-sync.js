@@ -1,0 +1,102 @@
+const FIREBASE_SDK_VERSION = '10.12.2';
+
+let app = null;
+let auth = null;
+let db = null;
+let authMod = null;
+let firestoreMod = null;
+let currentUser = null;
+const authListeners = [];
+
+function parseFirebaseConfig(rawText) {
+  const trimmed = rawText.trim();
+  if (!trimmed) throw new Error('EMPTY_CONFIG');
+  try {
+    return new Function('return (' + trimmed.replace(/^const\s+\w+\s*=\s*/, '').replace(/;\s*$/, '') + ')')();
+  } catch (e) {
+    throw new Error('INVALID_CONFIG');
+  }
+}
+
+async function init(config) {
+  const appMod = await import(`https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}/firebase-app.js`);
+  authMod = await import(`https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}/firebase-auth.js`);
+  firestoreMod = await import(`https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}/firebase-firestore.js`);
+
+  app = appMod.initializeApp(config);
+  auth = authMod.getAuth(app);
+  db = firestoreMod.getFirestore(app);
+
+  authMod.onAuthStateChanged(auth, (user) => {
+    currentUser = user;
+    authListeners.forEach((cb) => cb(user));
+  });
+}
+
+async function signIn() {
+  const provider = new authMod.GoogleAuthProvider();
+  await authMod.signInWithPopup(auth, provider);
+}
+
+async function signOutUser() {
+  await authMod.signOut(auth);
+}
+
+function onAuthChange(callback) {
+  authListeners.push(callback);
+  if (auth) callback(currentUser);
+}
+
+function isSignedIn() {
+  return !!currentUser;
+}
+
+function getCurrentUser() {
+  return currentUser;
+}
+
+async function pushDay(date, entries) {
+  if (!currentUser) return;
+  const { doc, setDoc } = firestoreMod;
+  await setDoc(doc(db, 'users', currentUser.uid, 'days', date), { entries });
+}
+
+async function pushSettings(settings) {
+  if (!currentUser) return;
+  const { doc, setDoc } = firestoreMod;
+  await setDoc(doc(db, 'users', currentUser.uid, 'meta', 'settings'), settings);
+}
+
+async function pullAllDays() {
+  if (!currentUser) return {};
+  const { collection, getDocs } = firestoreMod;
+  const snapshot = await getDocs(collection(db, 'users', currentUser.uid, 'days'));
+  const result = {};
+  snapshot.forEach((docSnap) => {
+    result[docSnap.id] = docSnap.data().entries || [];
+  });
+  return result;
+}
+
+async function pullSettings() {
+  if (!currentUser) return null;
+  const { doc, getDoc } = firestoreMod;
+  const snap = await getDoc(doc(db, 'users', currentUser.uid, 'meta', 'settings'));
+  return snap.exists() ? snap.data() : null;
+}
+
+const FirebaseSync = {
+  init,
+  signIn,
+  signOutUser,
+  onAuthChange,
+  isSignedIn,
+  getCurrentUser,
+  pushDay,
+  pushSettings,
+  pullAllDays,
+  pullSettings,
+  parseFirebaseConfig
+};
+
+window.FirebaseSync = FirebaseSync;

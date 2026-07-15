@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Licznik Kalorii</title>
+<meta name="theme-color" content="#12121f">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon.svg">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- WIDOK: DZIENNIK -->
+  <section id="view-dziennik" class="view active">
+    <div class="date-header">
+      <button id="prevDay" aria-label="Poprzedni dzień">‹</button>
+      <h2 id="currentDateLabel">Dziś</h2>
+      <button id="nextDay" aria-label="Następny dzień">›</button>
+    </div>
+
+    <div class="summary-card">
+      <div class="kcal-row">
+        <div><span class="kcal-value" id="kcalValue">0</span> kcal</div>
+        <div class="kcal-goal" id="kcalGoalLabel">/ 2000 kcal</div>
+      </div>
+      <div class="progress-bar" id="kcalBar"><div id="kcalBarFill" style="width:0%"></div></div>
+
+      <div class="macros-grid">
+        <div class="macro-item">
+          <div class="label">Białko</div>
+          <div class="value" id="proteinValue">0 / 0 g</div>
+          <div class="macro-bar protein"><div id="proteinBarFill" style="width:0%"></div></div>
+        </div>
+        <div class="macro-item">
+          <div class="label">Węgle</div>
+          <div class="value" id="carbsValue">0 / 0 g</div>
+          <div class="macro-bar carbs"><div id="carbsBarFill" style="width:0%"></div></div>
+        </div>
+        <div class="macro-item">
+          <div class="label">Tłuszcz</div>
+          <div class="value" id="fatValue">0 / 0 g</div>
+          <div class="macro-bar fat"><div id="fatBarFill" style="width:0%"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="entries-list" id="entriesList"></div>
+  </section>
+
+  <!-- WIDOK: HISTORIA -->
+  <section id="view-historia" class="view">
+    <h1 class="page-title">Historia</h1>
+    <div id="historyList"></div>
+  </section>
+
+  <!-- WIDOK: USTAWIENIA -->
+  <section id="view-ustawienia" class="view">
+    <h1 class="page-title">Ustawienia</h1>
+
+    <div class="form-group">
+      <label>Cel kaloryczny (kcal)</label>
+      <input type="number" id="settingKcalGoal" inputmode="numeric">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Białko (g)</label>
+        <input type="number" id="settingProteinGoal" inputmode="numeric">
+      </div>
+      <div class="form-group">
+        <label>Węgle (g)</label>
+        <input type="number" id="settingCarbsGoal" inputmode="numeric">
+      </div>
+      <div class="form-group">
+        <label>Tłuszcz (g)</label>
+        <input type="number" id="settingFatGoal" inputmode="numeric">
+      </div>
+    </div>
+
+    <div class="form-group password-field">
+      <label>Klucz Gemini API</label>
+      <input type="password" id="settingApiKey" placeholder="wklej klucz API">
+      <button type="button" id="toggleApiKeyVisibility">Pokaż</button>
+      <div class="hint">Wejdź na aistudio.google.com → Get API Key → Create → skopiuj klucz</div>
+    </div>
+
+    <button class="btn btn-primary" id="saveSettingsBtn">Zapisz ustawienia</button>
+
+    <div id="settingsToast" class="hint" style="margin-top:10px;"></div>
+
+    <hr class="section-divider">
+    <h3 class="section-title">Kopia zapasowa</h3>
+    <div class="btn-row">
+      <button class="btn btn-secondary" id="exportDataBtn">Eksportuj dane</button>
+      <button class="btn btn-secondary" id="importDataBtn">Importuj dane</button>
+    </div>
+    <input type="file" id="importFileInput" accept="application/json" style="display:none;">
+    <div id="backupStatus" class="hint" style="margin-top:8px;"></div>
+
+    <hr class="section-divider">
+    <h3 class="section-title">Synchronizacja z Firebase</h3>
+    <div id="firebaseConfigBlock">
+      <div class="hint" style="margin-bottom:10px;">
+        Załóż darmowy projekt na <strong>console.firebase.google.com</strong> → dodaj aplikację webową → włącz
+        <strong>Authentication → Google</strong> oraz <strong>Firestore Database</strong> → skopiuj obiekt <code>firebaseConfig</code> i wklej poniżej.
+      </div>
+      <div class="form-group">
+        <label>Konfiguracja firebaseConfig (wklej cały obiekt)</label>
+        <textarea id="firebaseConfigInput" rows="5" placeholder="{ apiKey: &quot;...&quot;, authDomain: &quot;...&quot;, projectId: &quot;...&quot;, ... }"></textarea>
+      </div>
+      <button class="btn btn-secondary" id="saveFirebaseConfigBtn">Zapisz konfigurację</button>
+    </div>
+    <div id="firebaseAuthBlock" style="margin-top:14px;"></div>
+    <div id="firebaseStatus" class="hint" style="margin-top:8px;"></div>
+
+    <div style="margin-top:30px;">
+      <button class="btn btn-danger" id="clearDataBtn">Wyczyść wszystkie dane</button>
+    </div>
+  </section>
+
+  <!-- FAB -->
+  <button class="fab" id="fabAdd" aria-label="Dodaj posiłek">+</button>
+
+  <!-- NAWIGACJA -->
+  <nav class="bottom-nav">
+    <button class="nav-btn active" data-view="dziennik">
+      <span class="icon">📅</span>Dziennik
+    </button>
+    <button class="nav-btn" data-view="historia">
+      <span class="icon">📊</span>Historia
+    </button>
+    <button class="nav-btn" data-view="ustawienia">
+      <span class="icon">⚙️</span>Ustawienia
+    </button>
+  </nav>
+
+  <!-- MODAL: FORMULARZ DODAWANIA -->
+  <div class="modal-overlay" id="entryModalOverlay">
+    <div class="modal-sheet">
+      <h3 id="entryModalTitle">Dodaj posiłek</h3>
+
+      <button type="button" class="btn scan-btn" id="scanLabelBtn">📷 Skanuj etykietę</button>
+      <input type="file" id="labelFileInput" accept="image/*" capture="environment" style="display:none;">
+      <div id="scanStatus" class="hint"></div>
+      <div id="scanError" class="error-msg"></div>
+
+      <div class="form-group">
+        <label>Nazwa produktu / posiłku</label>
+        <input type="text" id="entryName" placeholder="np. Jogurt grecki">
+      </div>
+
+      <div class="form-group">
+        <label>Gramatura (opcjonalnie)</label>
+        <input type="number" id="entryGrams" inputmode="numeric" placeholder="np. 150">
+      </div>
+
+      <div class="form-group">
+        <label>Kalorie (kcal) *</label>
+        <input type="number" id="entryKcal" inputmode="numeric" required>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Białko (g)</label>
+          <input type="number" id="entryProtein" inputmode="numeric">
+        </div>
+        <div class="form-group">
+          <label>Węgle (g)</label>
+          <input type="number" id="entryCarbs" inputmode="numeric">
+        </div>
+        <div class="form-group">
+          <label>Tłuszcz (g)</label>
+          <input type="number" id="entryFat" inputmode="numeric">
+        </div>
+      </div>
+
+      <div id="entryFormError" class="error-msg"></div>
+
+      <div class="btn-row">
+        <button class="btn btn-secondary" id="cancelEntryBtn">Anuluj</button>
+        <button class="btn btn-primary" id="saveEntryBtn">Zapisz</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+</div>
+
+<script src="js/storage.js"></script>
+<script src="js/ocr.js"></script>
+<script type="module" src="js/firebase-sync.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
