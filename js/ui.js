@@ -93,13 +93,15 @@ const UI = (() => {
       const card = document.createElement('div');
       card.className = 'entry-card';
       const gramsStr = e.grams ? `${e.grams} g · ` : '';
+      const initial = (e.name || '?').trim().charAt(0).toUpperCase();
       card.innerHTML = `
+        <div class="entry-avatar">${initial}</div>
         <div class="entry-info">
           <div class="name">${escapeHtml(e.name)}</div>
           <div class="meta">${gramsStr}${e.time || ''} · B:${Math.round(e.protein || 0)} W:${Math.round(e.carbs || 0)} T:${Math.round(e.fat || 0)}</div>
         </div>
         <div class="entry-kcal">${Math.round(e.kcal)} kcal</div>
-        <button class="entry-delete" data-id="${e.id}" aria-label="Usuń">✕</button>
+        <button class="entry-delete" data-id="${e.id}" aria-label="Usuń">×</button>
       `;
       list.appendChild(card);
     });
@@ -132,11 +134,19 @@ const UI = (() => {
 
     dates.forEach((date) => {
       const summary = Storage.getDailySummary(date);
+      const settings = Storage.getSettings();
+      const over = summary.kcal > settings.kcalGoal;
       const item = document.createElement('div');
       item.className = 'history-item';
       item.innerHTML = `
-        <div class="date">${formatDateLabel(date)}</div>
-        <div class="kcal">${Math.round(summary.kcal)} kcal</div>
+        <div>
+          <div class="date">${formatDateLabel(date)}</div>
+          <div class="hint" style="margin-top:2px;">cel ${settings.kcalGoal} kcal</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div class="history-dot" style="background:${over ? 'var(--danger)' : 'var(--accent)'};"></div>
+          <div class="kcal">${Math.round(summary.kcal)} kcal</div>
+        </div>
       `;
       item.addEventListener('click', () => goToDate(date));
       container.appendChild(item);
