@@ -1,5 +1,5 @@
 const Ocr = (() => {
-  const PROMPT = `Przeanalizuj zdjęcie etykiety wartości odżywczych produktu spożywczego.
+  const PROMPT_LABEL = `Przeanalizuj zdjęcie etykiety wartości odżywczych produktu spożywczego.
 Zwróć WYŁĄCZNIE JSON w formacie:
 {
   "name": "nazwa produktu jeśli widoczna, inaczej null",
@@ -11,6 +11,28 @@ Zwróć WYŁĄCZNIE JSON w formacie:
   }
 }
 Jeśli nie rozpoznajesz etykiety, zwróć: {"error": "nie rozpoznano etykiety"}`;
+
+  const PROMPT_VOICE = `Jesteś asystentem do liczenia kalorii. Użytkownik podał głosowo opis posiłku, który właśnie zjadł: "%TRANSCRIPT%"
+
+To może być:
+(a) dokładne dane — nazwa i kalorie/makroskładniki podane wprost w wypowiedzi, albo
+(b) sam opis jedzenia i porcji (np. "duży banan", "talerz makaronu z sosem pomidorowym"), bez podanych wartości liczbowych.
+
+Zwróć WYŁĄCZNIE JSON w formacie:
+{
+  "name": "nazwa posiłku/produktu",
+  "grams": number lub null jeśli gramatura nieznana,
+  "kcal": number,
+  "protein": number,
+  "carbs": number,
+  "fat": number
+}
+
+Zasady:
+- Jeśli w wypowiedzi podano wprost kalorie i/lub makroskładniki, użyj dokładnie tych wartości.
+- Jeśli podano tylko opis jedzenia (i ewentualnie porcję), oszacuj typowe wartości odżywcze dla CAŁEJ opisanej porcji.
+- Wartości kcal/protein/carbs/fat dotyczą całego posiłku, NIE 100g produktu.
+Jeśli nie da się rozpoznać żadnego jedzenia w wypowiedzi, zwróć: {"error": "nie rozpoznano jedzenia"}`;
 
   function resizeImageToBase64(file, maxSize = 1024) {
     return new Promise((resolve, reject) => {
@@ -44,24 +66,13 @@ Jeśli nie rozpoznajesz etykiety, zwróć: {"error": "nie rozpoznano etykiety"}`
     });
   }
 
-  async function analyzeLabel(file, apiKey) {
+  async function callGemini(parts, apiKey) {
     if (!apiKey) {
       throw new Error('NO_API_KEY');
     }
 
-    const base64 = await resizeImageToBase64(file);
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`;
-
-    const payload = {
-      contents: [
-        {
-          parts: [
-            { text: PROMPT },
-            { inline_data: { mime_type: 'image/jpeg', data: base64 } }
-          ]
-        }
-      ]
-    };
+    const payload = { contents: [{ parts }] };
 
     let response;
     try {
@@ -97,5 +108,21 @@ Jeśli nie rozpoznajesz etykiety, zwróć: {"error": "nie rozpoznano etykiety"}`
     return parsed;
   }
 
-  return { analyzeLabel };
+  async function analyzeLabel(file, apiKey) {
+    const base64 = await resizeImageToBase64(file);
+    return callGemini(
+      [
+        { text: PROMPT_LABEL },
+        { inline_data: { mime_type: 'image/jpeg', data: base64 } }
+      ],
+      apiKey
+    );
+  }
+
+  async function analyzeVoiceEntry(transcript, apiKey) {
+    const prompt = PROMPT_VOICE.replace('%TRANSCRIPT%', transcript);
+    return callGemini([{ text: prompt }], apiKey);
+  }
+
+  return { analyzeLabel, analyzeVoiceEntry };
 })();

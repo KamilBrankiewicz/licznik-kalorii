@@ -135,10 +135,15 @@
     <div class="modal-sheet">
       <h3 id="entryModalTitle">Dodaj posiłek</h3>
 
-      <button type="button" class="btn scan-btn" id="scanLabelBtn">📷 Skanuj etykietę</button>
+      <div class="btn-row">
+        <button type="button" class="btn scan-btn" id="scanLabelBtn">📷 Skanuj etykietę</button>
+        <button type="button" class="btn scan-btn" id="voiceEntryBtn">🎤 Dyktuj</button>
+      </div>
       <input type="file" id="labelFileInput" accept="image/*" capture="environment" style="display:none;">
       <div id="scanStatus" class="hint"></div>
       <div id="scanError" class="error-msg"></div>
+      <div id="voiceStatus" class="hint"></div>
+      <div id="voiceError" class="error-msg"></div>
 
       <div class="form-group">
         <label>Nazwa produktu / posiłku</label>
@@ -185,6 +190,7 @@
 
 <script src="js/storage.js"></script>
 <script src="js/ocr.js"></script>
+<script src="js/voice.js"></script>
 <script type="module" src="js/firebase-sync.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/app.js"></script>

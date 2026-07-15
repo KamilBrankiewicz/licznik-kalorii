@@ -24,6 +24,8 @@ document.addEventListener('DOMContentLoaded', () => {
     e.target.value = '';
   });
 
+  document.getElementById('voiceEntryBtn').addEventListener('click', () => UI.handleVoiceEntry());
+
   document.getElementById('saveSettingsBtn').addEventListener('click', () => UI.saveSettingsFromForm());
   document.getElementById('clearDataBtn').addEventListener('click', () => UI.clearAllData());
 

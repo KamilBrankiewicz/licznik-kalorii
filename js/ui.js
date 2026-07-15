@@ -1,7 +1,7 @@
 const UI = (() => {
   let currentDate = toDateStr(new Date());
   let editingEntryId = null;
-  let pendingScanFile = null;
+  let pendingSource = 'manual';
 
   function toDateStr(d) {
     const y = d.getFullYear();
@@ -295,7 +295,7 @@ const UI = (() => {
 
   function openEntryModal() {
     editingEntryId = null;
-    pendingScanFile = null;
+    pendingSource = 'manual';
     document.getElementById('entryModalTitle').textContent = 'Dodaj posiłek';
     ['entryName', 'entryGrams', 'entryKcal', 'entryProtein', 'entryCarbs', 'entryFat'].forEach((id) => {
       document.getElementById(id).value = '';
@@ -303,6 +303,8 @@ const UI = (() => {
     document.getElementById('entryFormError').textContent = '';
     document.getElementById('scanError').textContent = '';
     document.getElementById('scanStatus').textContent = '';
+    document.getElementById('voiceError').textContent = '';
+    document.getElementById('voiceStatus').textContent = '';
     document.getElementById('entryModalOverlay').classList.add('active');
   }
 
@@ -335,7 +337,7 @@ const UI = (() => {
       carbs: Number(document.getElementById('entryCarbs').value) || 0,
       fat: Number(document.getElementById('entryFat').value) || 0,
       time,
-      source: pendingScanFile ? 'ocr' : 'manual'
+      source: pendingSource
     });
 
     pushDayToCloud(currentDate);
@@ -345,7 +347,7 @@ const UI = (() => {
   }
 
   async function handleLabelScan(file) {
-    pendingScanFile = file;
+    pendingSource = 'ocr';
     const settings = Storage.getSettings();
     const statusEl = document.getElementById('scanStatus');
     const errorEl = document.getElementById('scanError');
@@ -385,6 +387,67 @@ const UI = (() => {
         errorEl.textContent = 'Nie rozpoznano etykiety. Wpisz wartości ręcznie.';
       } else {
         errorEl.textContent = 'Nie udało się przeanalizować zdjęcia. Wpisz wartości ręcznie.';
+      }
+    }
+  }
+
+  async function handleVoiceEntry() {
+    const statusEl = document.getElementById('voiceStatus');
+    const errorEl = document.getElementById('voiceError');
+    errorEl.textContent = '';
+
+    if (!Voice.isSupported()) {
+      errorEl.textContent = 'Rozpoznawanie mowy nie jest obsługiwane w tej przeglądarce.';
+      return;
+    }
+
+    statusEl.textContent = 'Słucham... powiedz co zjadłeś';
+
+    let transcript;
+    try {
+      transcript = await Voice.listenOnce();
+    } catch (err) {
+      statusEl.textContent = '';
+      if (err.message === 'PERMISSION_DENIED') {
+        errorEl.textContent = 'Brak dostępu do mikrofonu. Zezwól na dostęp w ustawieniach przeglądarki.';
+      } else if (err.message === 'NO_SPEECH') {
+        errorEl.textContent = 'Nie wykryto mowy. Spróbuj ponownie.';
+      } else {
+        errorEl.textContent = 'Rozpoznawanie mowy nie jest obsługiwane w tej przeglądarce.';
+      }
+      return;
+    }
+
+    pendingSource = 'voice';
+    statusEl.textContent = `Rozpoznano: „${transcript}” — analizuję...`;
+    const settings = Storage.getSettings();
+
+    try {
+      const result = await Ocr.analyzeVoiceEntry(transcript, settings.geminiApiKey);
+      statusEl.textContent = '';
+
+      if (result.name) document.getElementById('entryName').value = result.name;
+      if (result.grams) document.getElementById('entryGrams').value = result.grams;
+      if (typeof result.kcal === 'number') document.getElementById('entryKcal').value = Math.round(result.kcal);
+      if (typeof result.protein === 'number') document.getElementById('entryProtein').value = Math.round(result.protein * 10) / 10;
+      if (typeof result.carbs === 'number') document.getElementById('entryCarbs').value = Math.round(result.carbs * 10) / 10;
+      if (typeof result.fat === 'number') document.getElementById('entryFat').value = Math.round(result.fat * 10) / 10;
+
+      showToast('Rozpoznano posiłek — sprawdź wartości');
+    } catch (err) {
+      statusEl.textContent = '';
+      if (err.message === 'NO_API_KEY') {
+        errorEl.innerHTML = 'Brak klucza Gemini API. Dodaj go w <button type="button" class="link-btn" id="goToSettingsLinkVoice">Ustawieniach</button>.';
+        document.getElementById('goToSettingsLinkVoice')?.addEventListener('click', () => {
+          closeEntryModal();
+          switchView('ustawienia');
+        });
+      } else if (err.message === 'NETWORK_ERROR') {
+        errorEl.textContent = 'Błąd sieci — sprawdź połączenie z internetem.';
+      } else if (err.message === 'NOT_RECOGNIZED') {
+        errorEl.textContent = 'Nie rozpoznano jedzenia w wypowiedzi. Wpisz wartości ręcznie.';
+      } else {
+        errorEl.textContent = 'Nie udało się przeanalizować wypowiedzi. Wpisz wartości ręcznie.';
       }
     }
   }
@@ -454,6 +517,7 @@ const UI = (() => {
     closeEntryModal,
     saveEntryFromForm,
     handleLabelScan,
+    handleVoiceEntry,
     clearAllData,
     exportDataToFile,
     importDataFromFile,
