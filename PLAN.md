@@ -1,5 +1,23 @@
 # Plan implementacji — Licznik Kalorii (PWA)
 
+## Stan realizacji (2026-07-16)
+
+**Zrobione:**
+- ✅ Faza 1 (MVP) w całości: szkielet PWA, storage, widok dzienny, formularz ręczny, OCR etykiet (Gemini), ustawienia, nawigacja + historia
+- ✅ Faza 2 w całości: eksport/import JSON, synchronizacja Firebase (Auth Google + Firestore)
+- ✅ Poza pierwotnym planem:
+  - Wpis głosowy przez Gemini (dyktowanie makr lub opisu jedzenia) — `js/voice.js`
+  - Analiza zrzutu ekranu (makra z innej aplikacji/przepisu) przez Gemini
+  - Edycja istniejących wpisów + pole godziny
+  - Ostatnio używane produkty (chipy + podpowiedzi nazw z przeliczaniem /100g)
+  - Skaner kodów kreskowych: natywny `BarcodeDetector` + baza Open Food Facts, fallback ręcznego wpisania kodu — `js/barcode.js`
+  - Zdjęcie posiłku → szacowanie makr całej porcji przez Gemini (dawna Faza 3)
+  - Wykres kcal z ostatnich 7 dni + średnie makr i "dni w celu" w widoku Historia
+
+**Pozostało (świadomie odłożone):**
+- Wielojęzyczność — raczej bez sensu przy aplikacji dla jednego użytkownika
+- Realtime sync (nasłuchiwanie zmian na żywo między urządzeniami) — obecnie sync przy logowaniu/zapisie
+
 ## Opis projektu
 Osobista aplikacja PWA do śledzenia dziennego spożycia kalorii i makroskładników (białko, węglowodany, tłuszcze). Interfejs w języku polskim. Aplikacja dla jednego użytkownika, zero kosztów.
 
@@ -18,11 +36,14 @@ Osobista aplikacja PWA do śledzenia dziennego spożycia kalorii i makroskładni
 ├── css/
 │   └── style.css       # Style (mobile-first, dark/light mode)
 ├── js/
-│   ├── app.js          # Inicjalizacja, routing między widokami
-│   ├── storage.js      # Warstwa localStorage (CRUD wpisów)
+│   ├── app.js          # Inicjalizacja, podpięcie zdarzeń
+│   ├── storage.js      # Warstwa localStorage (CRUD wpisów, merge do synca)
 │   ├── ui.js           # Renderowanie widoków, obsługa formularzy
-│   ├── ocr.js          # Integracja z Gemini API (zdjęcie etykiety)
-│   └── sw.js           # Service worker (cache offline)
+│   ├── ocr.js          # Integracja z Gemini API (etykieta, zrzut ekranu, zdjęcie posiłku, głos)
+│   ├── voice.js        # Rozpoznawanie mowy (Web Speech API)
+│   ├── barcode.js      # Skaner kodów kreskowych (BarcodeDetector + Open Food Facts)
+│   └── firebase-sync.js # Synchronizacja Firestore + logowanie Google
+├── sw.js               # Service worker (cache offline)
 ├── manifest.json       # PWA manifest
 ├── icons/              # Ikony PWA (192x192, 512x512)
 └── PLAN.md
@@ -154,10 +175,12 @@ Payload:
     }
     ```
 
-## Co NIE wchodzi w fazę 1 i 2
-- Skan kodów kreskowych (Open Food Facts)
-- Zdjęcie posiłku → szacowanie AI
-- Wykresy / statystyki tygodniowe
+## Faza 3 — dodane po fazie 2 (2026-07-16)
+- **Skaner kodów kreskowych:** przycisk w formularzu dodawania otwiera skaner — na wspieranych przeglądarkach (Chrome/Android) kamera + natywne API `BarcodeDetector` (zero zależności), w pozostałych ręczne wpisanie kodu. Dane z Open Food Facts (`/api/v2/product/{kod}.json`) jako wartości na 100 g — działają z istniejącym przelicznikiem gramatury. Moduł: `js/barcode.js`.
+- **Zdjęcie posiłku → AI:** przycisk otwiera aparat, Gemini szacuje nazwę, gramaturę i makra CAŁEJ widocznej porcji (prompt `PROMPT_MEAL` w `js/ocr.js`, source: `photo`). Wartości trafiają do formularza do weryfikacji.
+- **Statystyki tygodniowe:** karta "Ostatnie 7 dni" na górze Historii — słupki kcal (czerwone przy przekroczeniu celu, przerywana linia celu), średnie kcal/B/W/T oraz "dni w celu" liczone tylko z dni z wpisami. Klik w słupek/dzień przechodzi do dziennika tego dnia. Renderowanie: `renderWeeklyStats()` w `js/ui.js`, czysty HTML/CSS (bez bibliotek).
+
+## Co NIE weszło (świadomie)
 - Wielojęzyczność
 - Realtime sync (nasłuchiwanie zmian na żywo między urządzeniami) — obecnie sync tylko przy logowaniu/zapisie
 
