@@ -53,6 +53,7 @@
   <!-- WIDOK: HISTORIA -->
   <section id="view-historia" class="view">
     <h1 class="page-title">Historia</h1>
+    <div id="weeklyStats"></div>
     <div id="historyList"></div>
   </section>
 
@@ -135,12 +136,15 @@
     <div class="modal-sheet">
       <h3 id="entryModalTitle">Dodaj posiłek</h3>
 
-      <div class="btn-row">
-        <button type="button" class="btn scan-btn" id="scanLabelBtn">📷 Skanuj etykietę</button>
-        <button type="button" class="btn scan-btn" id="voiceEntryBtn">🎤 Dyktuj</button>
+      <div class="scan-grid">
+        <button type="button" class="btn scan-btn" id="scanLabelBtn">📷 Etykieta</button>
+        <button type="button" class="btn scan-btn" id="scanBarcodeBtn">🔢 Kod kreskowy</button>
+        <button type="button" class="btn scan-btn" id="scanMealPhotoBtn">🍽️ Zdjęcie posiłku</button>
         <button type="button" class="btn scan-btn" id="scanScreenshotBtn">🖼️ Zrzut ekranu</button>
+        <button type="button" class="btn scan-btn" id="voiceEntryBtn">🎤 Dyktuj</button>
       </div>
       <input type="file" id="labelFileInput" accept="image/*" capture="environment" style="display:none;">
+      <input type="file" id="mealPhotoFileInput" accept="image/*" capture="environment" style="display:none;">
       <input type="file" id="screenshotFileInput" accept="image/*" style="display:none;">
       <div id="scanStatus" class="hint"></div>
       <div id="scanError" class="error-msg"></div>
@@ -195,12 +199,30 @@
     </div>
   </div>
 
+  <!-- MODAL: SKANER KODU KRESKOWEGO -->
+  <div class="modal-overlay" id="barcodeOverlay">
+    <div class="modal-sheet">
+      <h3>Skanuj kod kreskowy</h3>
+      <video id="barcodeVideo" autoplay playsinline muted></video>
+      <div id="barcodeStatus" class="hint"></div>
+      <div class="form-group" style="margin-top:12px;">
+        <label>Lub wpisz kod ręcznie</label>
+        <input type="text" id="barcodeManualInput" inputmode="numeric" placeholder="np. 5900512300108">
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-secondary" id="barcodeCancelBtn">Anuluj</button>
+        <button class="btn btn-primary" id="barcodeManualSearchBtn">Szukaj</button>
+      </div>
+    </div>
+  </div>
+
   <div class="toast" id="toast"></div>
 
 </div>
 
 <script src="js/storage.js"></script>
 <script src="js/ocr.js"></script>
+<script src="js/barcode.js"></script>
 <script src="js/voice.js"></script>
 <script type="module" src="js/firebase-sync.js"></script>
 <script src="js/ui.js"></script>

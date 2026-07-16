@@ -130,7 +130,70 @@ const UI = (() => {
     return div.innerHTML;
   }
 
+  function renderWeeklyStats() {
+    const container = document.getElementById('weeklyStats');
+    const settings = Storage.getSettings();
+    const dayNames = ['Nd', 'Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'So'];
+    const todayStr = toDateStr(new Date());
+
+    const days = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const date = toDateStr(d);
+      days.push({ date, label: dayNames[d.getDay()], summary: Storage.getDailySummary(date) });
+    }
+
+    const daysWithEntries = days.filter((d) => d.summary.kcal > 0);
+    if (daysWithEntries.length === 0) {
+      container.innerHTML = '';
+      return;
+    }
+
+    const maxKcal = Math.max(settings.kcalGoal, ...days.map((d) => d.summary.kcal), 1);
+    const goalPct = Math.round((settings.kcalGoal / maxKcal) * 100);
+    const avg = (key) =>
+      Math.round(daysWithEntries.reduce((s, d) => s + d.summary[key], 0) / daysWithEntries.length);
+    const inGoal = daysWithEntries.filter((d) => d.summary.kcal <= settings.kcalGoal).length;
+
+    container.innerHTML = `
+      <div class="summary-card">
+        <h3 class="section-title">Ostatnie 7 dni</h3>
+        <div class="week-bars">
+          <div class="goal-line" style="bottom:${goalPct}%"></div>
+          ${days
+            .map(
+              (d) => `<div class="week-bar ${d.summary.kcal > settings.kcalGoal ? 'over' : ''}" data-date="${d.date}" style="height:${Math.round((d.summary.kcal / maxKcal) * 100)}%"></div>`
+            )
+            .join('')}
+        </div>
+        <div class="week-labels">
+          ${days
+            .map(
+              (d) => `<div class="week-label" data-date="${d.date}">
+                <div class="week-kcal">${d.summary.kcal ? Math.round(d.summary.kcal) : ''}</div>
+                <div class="week-day ${d.date === todayStr ? 'today' : ''}">${d.label}</div>
+              </div>`
+            )
+            .join('')}
+        </div>
+        <div class="week-stats">
+          <div class="week-stat"><div class="value">${avg('kcal')}</div><div class="label">śr. kcal</div></div>
+          <div class="week-stat"><div class="value">${avg('protein')} g</div><div class="label">śr. białko</div></div>
+          <div class="week-stat"><div class="value">${avg('carbs')} g</div><div class="label">śr. węgle</div></div>
+          <div class="week-stat"><div class="value">${avg('fat')} g</div><div class="label">śr. tłuszcz</div></div>
+          <div class="week-stat"><div class="value">${inGoal}/${daysWithEntries.length}</div><div class="label">dni w celu</div></div>
+        </div>
+      </div>
+    `;
+
+    container.querySelectorAll('[data-date]').forEach((el) => {
+      el.addEventListener('click', () => goToDate(el.dataset.date));
+    });
+  }
+
   function renderHistory() {
+    renderWeeklyStats();
     const dates = Storage.getAllDatesWithEntries();
     const container = document.getElementById('historyList');
     container.innerHTML = '';
@@ -516,6 +579,97 @@ const UI = (() => {
     }
   }
 
+  async function handleMealPhoto(file) {
+    pendingSource = 'photo';
+    const settings = Storage.getSettings();
+    const statusEl = document.getElementById('scanStatus');
+    const errorEl = document.getElementById('scanError');
+    errorEl.textContent = '';
+    statusEl.textContent = 'Analizuję zdjęcie posiłku...';
+
+    try {
+      const result = await Ocr.analyzeMealPhoto(file, settings.geminiApiKey);
+      statusEl.textContent = '';
+      fillFormFromAnalysis(result);
+      showToast('Oszacowano wartości ze zdjęcia — sprawdź i popraw');
+    } catch (err) {
+      statusEl.textContent = '';
+      showScanError(err, errorEl, {
+        notRecognized: 'Nie rozpoznano jedzenia na zdjęciu. Wpisz wartości ręcznie.',
+        failed: 'Nie udało się przeanalizować zdjęcia. Wpisz wartości ręcznie.'
+      });
+    }
+  }
+
+  function openBarcodeScanner() {
+    const statusEl = document.getElementById('barcodeStatus');
+    const video = document.getElementById('barcodeVideo');
+    statusEl.textContent = '';
+    document.getElementById('barcodeManualInput').value = '';
+    document.getElementById('barcodeOverlay').classList.add('active');
+
+    if (Barcode.isSupported()) {
+      video.style.display = '';
+      Barcode.startCamera(video)
+        .then(() => Barcode.startDetection(video, onBarcodeDetected))
+        .catch(() => {
+          video.style.display = 'none';
+          statusEl.textContent = 'Brak dostępu do aparatu. Wpisz kod ręcznie poniżej.';
+        });
+    } else {
+      video.style.display = 'none';
+      statusEl.textContent = 'Skanowanie aparatem nie jest obsługiwane w tej przeglądarce. Wpisz kod ręcznie.';
+    }
+  }
+
+  function closeBarcodeScanner() {
+    Barcode.stop();
+    document.getElementById('barcodeOverlay').classList.remove('active');
+  }
+
+  function onBarcodeDetected(code) {
+    if (navigator.vibrate) navigator.vibrate(80);
+    lookupBarcode(code, true);
+  }
+
+  async function lookupBarcode(code, fromCamera) {
+    const statusEl = document.getElementById('barcodeStatus');
+    if (!code || !/^\d{6,14}$/.test(code.trim())) {
+      statusEl.textContent = 'Kod kreskowy powinien składać się z 6–14 cyfr.';
+      return;
+    }
+
+    Barcode.pauseDetection();
+    statusEl.textContent = `Szukam produktu (${code.trim()})...`;
+
+    try {
+      const product = await Barcode.fetchProduct(code.trim());
+      closeBarcodeScanner();
+      pendingSource = 'barcode';
+      if (product.name) document.getElementById('entryName').value = product.name;
+      if (!document.getElementById('entryGrams').value) {
+        document.getElementById('entryGrams').value = 100;
+      }
+      pendingPer100g = product.per100g;
+      recalcFromPer100g();
+      showToast('Znaleziono produkt — sprawdź wartości');
+    } catch (err) {
+      if (err.message === 'PRODUCT_NOT_FOUND') {
+        statusEl.textContent = 'Nie znaleziono produktu w bazie Open Food Facts.';
+      } else if (err.message === 'NO_NUTRIMENTS') {
+        statusEl.textContent = 'Produkt jest w bazie, ale nie ma danych odżywczych.';
+      } else if (err.message === 'NETWORK_ERROR') {
+        statusEl.textContent = 'Błąd sieci — sprawdź połączenie z internetem.';
+      } else {
+        statusEl.textContent = 'Nie udało się pobrać danych produktu.';
+      }
+      // wracamy do skanowania, żeby dało się spróbować z innym kodem
+      if (fromCamera && Barcode.isSupported()) {
+        Barcode.startDetection(document.getElementById('barcodeVideo'), onBarcodeDetected);
+      }
+    }
+  }
+
   async function handleVoiceEntry() {
     const statusEl = document.getElementById('voiceStatus');
     const errorEl = document.getElementById('voiceError');
@@ -627,7 +781,11 @@ const UI = (() => {
     saveEntryFromForm,
     handleLabelScan,
     handleScreenshotScan,
+    handleMealPhoto,
     handleVoiceEntry,
+    openBarcodeScanner,
+    closeBarcodeScanner,
+    lookupBarcode,
     clearAllData,
     exportDataToFile,
     importDataFromFile,

@@ -413,7 +413,26 @@ html, body {
   background: var(--bg-card);
   border: 1px dashed var(--accent);
   color: var(--accent);
+}
+
+.scan-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
   margin-bottom: 16px;
+}
+
+.scan-grid .scan-btn:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
+/* Skaner kodów kreskowych */
+#barcodeVideo {
+  width: 100%;
+  max-height: 45vh;
+  border-radius: 12px;
+  background: #000;
+  object-fit: cover;
 }
 
 .chips {
@@ -462,6 +481,84 @@ html, body {
   cursor: pointer;
   font-size: 13px;
   padding: 0;
+}
+
+/* Historia — wykres tygodniowy */
+.week-bars {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  height: 110px;
+  align-items: end;
+  margin-bottom: 6px;
+}
+
+.goal-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 2px dashed var(--warning);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.week-bar {
+  background: var(--accent);
+  border-radius: 6px 6px 2px 2px;
+  min-height: 2px;
+  cursor: pointer;
+}
+
+.week-bar.over {
+  background: var(--danger);
+}
+
+.week-labels {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  text-align: center;
+}
+
+.week-label {
+  cursor: pointer;
+}
+
+.week-kcal {
+  font-size: 9.5px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.week-day {
+  font-size: 11px;
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+.week-day.today {
+  color: var(--accent);
+}
+
+.week-stats {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+  margin-top: 14px;
+  text-align: center;
+}
+
+.week-stat .value {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.week-stat .label {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 2px;
 }
 
 /* Historia */

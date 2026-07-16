@@ -51,6 +51,25 @@ Zasady:
 - Jeśli na ekranie widoczna jest tylko liczba kalorii bez makroskładników, zwróć kcal oraz oszacuj brakujące makroskładniki na podstawie typowych proporcji dla tego typu posiłku.
 Jeśli zrzut ekranu nie zawiera żadnych danych o wartościach odżywczych, zwróć: {"error": "nie rozpoznano danych"}`;
 
+  const PROMPT_MEAL = `Przeanalizuj zdjęcie posiłku (jedzenie na talerzu, w misce, w opakowaniu itp.).
+Zidentyfikuj co to za posiłek, oszacuj wielkość porcji w gramach oraz wartości odżywcze CAŁEJ widocznej porcji.
+
+Zwróć WYŁĄCZNIE JSON w formacie:
+{
+  "name": "krótka nazwa posiłku po polsku",
+  "grams": number lub null jeśli trudno oszacować,
+  "kcal": number,
+  "protein": number,
+  "carbs": number,
+  "fat": number
+}
+
+Zasady:
+- Szacuj realistycznie na podstawie widocznych składników, wielkości porcji i typowych receptur.
+- Wartości kcal/protein/carbs/fat dotyczą CAŁEJ widocznej porcji, NIE 100g produktu.
+- Przy niepewności wybieraj wartości typowe/środkowe, nie skrajne.
+Jeśli na zdjęciu nie widać jedzenia, zwróć: {"error": "nie rozpoznano jedzenia"}`;
+
   function resizeImageToBase64(file, maxSize = 1024) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -152,5 +171,16 @@ Jeśli zrzut ekranu nie zawiera żadnych danych o wartościach odżywczych, zwr�
     );
   }
 
-  return { analyzeLabel, analyzeVoiceEntry, analyzeScreenshot };
+  async function analyzeMealPhoto(file, apiKey) {
+    const base64 = await resizeImageToBase64(file);
+    return callGemini(
+      [
+        { text: PROMPT_MEAL },
+        { inline_data: { mime_type: 'image/jpeg', data: base64 } }
+      ],
+      apiKey
+    );
+  }
+
+  return { analyzeLabel, analyzeVoiceEntry, analyzeScreenshot, analyzeMealPhoto };
 })();

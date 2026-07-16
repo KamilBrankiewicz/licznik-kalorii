@@ -35,6 +35,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('voiceEntryBtn').addEventListener('click', () => UI.handleVoiceEntry());
 
+  document.getElementById('scanMealPhotoBtn').addEventListener('click', () => {
+    document.getElementById('mealPhotoFileInput').click();
+  });
+  document.getElementById('mealPhotoFileInput').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) UI.handleMealPhoto(file);
+    e.target.value = '';
+  });
+
+  document.getElementById('scanBarcodeBtn').addEventListener('click', () => UI.openBarcodeScanner());
+  document.getElementById('barcodeCancelBtn').addEventListener('click', () => UI.closeBarcodeScanner());
+  document.getElementById('barcodeManualSearchBtn').addEventListener('click', () => {
+    UI.lookupBarcode(document.getElementById('barcodeManualInput').value, false);
+  });
+  document.getElementById('barcodeManualInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') UI.lookupBarcode(e.target.value, false);
+  });
+  document.getElementById('barcodeOverlay').addEventListener('click', (e) => {
+    if (e.target.id === 'barcodeOverlay') UI.closeBarcodeScanner();
+  });
+
   document.getElementById('entryGrams').addEventListener('input', () => UI.recalcFromPer100g());
   ['entryKcal', 'entryProtein', 'entryCarbs', 'entryFat'].forEach((id) => {
     document.getElementById(id).addEventListener('input', () => UI.clearPendingPer100g());
@@ -42,7 +63,10 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('entryName').addEventListener('change', () => UI.autofillFromName());
 
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && document.getElementById('entryModalOverlay').classList.contains('active')) {
+    if (e.key !== 'Escape') return;
+    if (document.getElementById('barcodeOverlay').classList.contains('active')) {
+      UI.closeBarcodeScanner();
+    } else if (document.getElementById('entryModalOverlay').classList.contains('active')) {
       UI.closeEntryModal();
     }
   });
