@@ -57,10 +57,16 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   document.getElementById('entryGrams').addEventListener('input', () => UI.recalcFromPer100g());
-  ['entryKcal', 'entryProtein', 'entryCarbs', 'entryFat'].forEach((id) => {
+  ['entryKcal', 'entryProtein', 'entryCarbs', 'entryFat', 'entryFiber'].forEach((id) => {
     document.getElementById(id).addEventListener('input', () => UI.clearPendingPer100g());
   });
   document.getElementById('entryName').addEventListener('change', () => UI.autofillFromName());
+
+  document.querySelectorAll('#mealSelect button').forEach((btn) => {
+    btn.addEventListener('click', () => UI.selectMeal(btn.dataset.meal));
+  });
+
+  document.getElementById('weightInput').addEventListener('change', () => UI.saveWeightFromInput());
 
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;

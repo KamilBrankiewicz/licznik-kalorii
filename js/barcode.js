@@ -82,7 +82,8 @@ const Barcode = (() => {
         kcal: Number(kcal) || 0,
         protein: Number(n.proteins_100g) || 0,
         carbs: Number(n.carbohydrates_100g) || 0,
-        fat: Number(n.fat_100g) || 0
+        fat: Number(n.fat_100g) || 0,
+        fiber: n.fiber_100g != null ? Number(n.fiber_100g) || 0 : null
       }
     };
   }

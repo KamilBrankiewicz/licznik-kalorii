@@ -7,7 +7,8 @@ Zwróć WYŁĄCZNIE JSON w formacie:
     "kcal": number,
     "protein": number,
     "carbs": number,
-    "fat": number
+    "fat": number,
+    "fiber": number lub null jeśli błonnik nie jest podany na etykiecie
   }
 }
 Jeśli nie rozpoznajesz etykiety, zwróć: {"error": "nie rozpoznano etykiety"}`;
@@ -25,13 +26,14 @@ Zwróć WYŁĄCZNIE JSON w formacie:
   "kcal": number,
   "protein": number,
   "carbs": number,
-  "fat": number
+  "fat": number,
+  "fiber": number lub null jeśli nieznany
 }
 
 Zasady:
 - Jeśli w wypowiedzi podano wprost kalorie i/lub makroskładniki, użyj dokładnie tych wartości.
-- Jeśli podano tylko opis jedzenia (i ewentualnie porcję), oszacuj typowe wartości odżywcze dla CAŁEJ opisanej porcji.
-- Wartości kcal/protein/carbs/fat dotyczą całego posiłku, NIE 100g produktu.
+- Jeśli podano tylko opis jedzenia (i ewentualnie porcję), oszacuj typowe wartości odżywcze dla CAŁEJ opisanej porcji (w tym błonnik).
+- Wartości kcal/protein/carbs/fat/fiber dotyczą całego posiłku, NIE 100g produktu.
 Jeśli nie da się rozpoznać żadnego jedzenia w wypowiedzi, zwróć: {"error": "nie rozpoznano jedzenia"}`;
 
   const PROMPT_SCREENSHOT = `Przeanalizuj zrzut ekranu (screenshot) zrobiony na telefonie. Może pochodzić z aplikacji do liczenia kalorii, aplikacji dostawy jedzenia, sklepu spożywczego, przepisu kulinarnego lub podobnego źródła i przedstawiać wartości odżywcze posiłku lub produktu.
@@ -43,11 +45,12 @@ Zwróć WYŁĄCZNIE JSON w formacie:
   "kcal": number,
   "protein": number,
   "carbs": number,
-  "fat": number
+  "fat": number,
+  "fiber": number lub null jeśli niewidoczny
 }
 
 Zasady:
-- Wartości kcal/protein/carbs/fat dotyczą CAŁEJ pokazanej porcji/posiłku, NIE 100g produktu (chyba że ekran jednoznacznie pokazuje wyłącznie wartości na 100g — wtedy zwróć te wartości i ustaw grams na 100).
+- Wartości kcal/protein/carbs/fat/fiber dotyczą CAŁEJ pokazanej porcji/posiłku, NIE 100g produktu (chyba że ekran jednoznacznie pokazuje wyłącznie wartości na 100g — wtedy zwróć te wartości i ustaw grams na 100).
 - Jeśli na ekranie widoczna jest tylko liczba kalorii bez makroskładników, zwróć kcal oraz oszacuj brakujące makroskładniki na podstawie typowych proporcji dla tego typu posiłku.
 Jeśli zrzut ekranu nie zawiera żadnych danych o wartościach odżywczych, zwróć: {"error": "nie rozpoznano danych"}`;
 
@@ -61,12 +64,13 @@ Zwróć WYŁĄCZNIE JSON w formacie:
   "kcal": number,
   "protein": number,
   "carbs": number,
-  "fat": number
+  "fat": number,
+  "fiber": number lub null jeśli trudno oszacować
 }
 
 Zasady:
 - Szacuj realistycznie na podstawie widocznych składników, wielkości porcji i typowych receptur.
-- Wartości kcal/protein/carbs/fat dotyczą CAŁEJ widocznej porcji, NIE 100g produktu.
+- Wartości kcal/protein/carbs/fat/fiber dotyczą CAŁEJ widocznej porcji, NIE 100g produktu.
 - Przy niepewności wybieraj wartości typowe/środkowe, nie skrajne.
 Jeśli na zdjęciu nie widać jedzenia, zwróć: {"error": "nie rozpoznano jedzenia"}`;
 

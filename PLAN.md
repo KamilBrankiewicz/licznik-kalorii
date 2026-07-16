@@ -13,6 +13,10 @@
   - Skaner kodów kreskowych: natywny `BarcodeDetector` + baza Open Food Facts, fallback ręcznego wpisania kodu — `js/barcode.js`
   - Zdjęcie posiłku → szacowanie makr całej porcji przez Gemini (dawna Faza 3)
   - Wykres kcal z ostatnich 7 dni + średnie makr i "dni w celu" w widoku Historia
+  - Śledzenie wagi ciała: pole w dzienniku + wykres trendu 90 dni w Historii (Faza 4)
+  - Kategorie posiłków (śniadanie/obiad/kolacja/przekąska) z grupowaniem w dzienniku (Faza 4)
+  - Relog — ponowne dodanie wpisu na dziś jednym tapnięciem (Faza 4)
+  - Błonnik jako piąty składnik (cel, pasek, formularz, OCR/AI, Open Food Facts) (Faza 4)
 
 **Pozostało (świadomie odłożone):**
 - Wielojęzyczność — raczej bez sensu przy aplikacji dla jednego użytkownika
@@ -63,6 +67,8 @@ Osobista aplikacja PWA do śledzenia dziennego spożycia kalorii i makroskładni
   protein: 15,              // białko [g]
   carbs: 12,                // węglowodany [g]
   fat: 14,                  // tłuszcze [g]
+  fiber: 3,                 // błonnik [g]
+  meal: "sniadanie",        // "sniadanie" | "obiad" | "kolacja" | "przekaska"
   source: "manual"          // "manual" | "ocr"
 }
 
@@ -72,7 +78,13 @@ Osobista aplikacja PWA do śledzenia dziennego spożycia kalorii i makroskładni
   proteinGoal: 150,
   carbsGoal: 200,
   fatGoal: 70,
+  fiberGoal: 30,
   geminiApiKey: "..."       // klucz Gemini, przechowywany lokalnie
+}
+
+// Waga (localStorage klucz "weights")
+{
+  "2026-07-16": { kg: 81.2, updatedAt: "ISO" }  // usunięcia jako { deleted: true, updatedAt }
 }
 ```
 
@@ -179,6 +191,12 @@ Payload:
 - **Skaner kodów kreskowych:** przycisk w formularzu dodawania otwiera skaner — na wspieranych przeglądarkach (Chrome/Android) kamera + natywne API `BarcodeDetector` (zero zależności), w pozostałych ręczne wpisanie kodu. Dane z Open Food Facts (`/api/v2/product/{kod}.json`) jako wartości na 100 g — działają z istniejącym przelicznikiem gramatury. Moduł: `js/barcode.js`.
 - **Zdjęcie posiłku → AI:** przycisk otwiera aparat, Gemini szacuje nazwę, gramaturę i makra CAŁEJ widocznej porcji (prompt `PROMPT_MEAL` w `js/ocr.js`, source: `photo`). Wartości trafiają do formularza do weryfikacji.
 - **Statystyki tygodniowe:** karta "Ostatnie 7 dni" na górze Historii — słupki kcal (czerwone przy przekroczeniu celu, przerywana linia celu), średnie kcal/B/W/T oraz "dni w celu" liczone tylko z dni z wpisami. Klik w słupek/dzień przechodzi do dziennika tego dnia. Renderowanie: `renderWeeklyStats()` w `js/ui.js`, czysty HTML/CSS (bez bibliotek).
+
+## Faza 4 — dodane po analizie rynku (2026-07-16)
+- **Śledzenie wagi:** pole "⚖️ Waga" pod podsumowaniem dnia (zapis per dzień, `Storage.setWeight`), dane w localStorage pod kluczem `weights` jako mapa `{data: {kg, updatedAt}}` z nagrobkami (deleted) — ten sam mechanizm merge co wpisy. Model carry-forward: pomiar obowiązuje do następnego pomiaru — bez wpisu danego dnia pole pokazuje ostatnią znaną wagę jako placeholder z dopiskiem "ostatni pomiar dd.mm" (`Storage.getLatestWeight`); ważenie raz w tygodniu w zupełności wystarcza. Sync przez Firestore (`users/{uid}/meta/weights`). W Historii karta "Waga — ostatnie 90 dni": wykres SVG (polyline, bez bibliotek) + aktualna/zmiana/min/max.
+- **Kategorie posiłków:** pole `meal` we wpisie (`sniadanie|obiad|kolacja|przekaska`), wybór segmentowany w formularzu z domyślną kategorią wg godziny (`mealFromTime`: 4–11 śniadanie, 11–16 obiad, 16–22 kolacja, reszta przekąska). Dziennik grupuje wpisy w sekcje z sumą kcal; stare wpisy bez `meal` są przypisywane wg godziny.
+- **Relog:** przycisk ⟳ na karcie wpisu kopiuje go na dziś z bieżącą godziną i kategorią wg godziny — działa też z dni historycznych.
+- **Błonnik:** pole `fiber` we wpisie + `fiberGoal` w ustawieniach (domyślnie 30 g). Czwarty pasek w podsumowaniu dnia, pole w formularzu, "śr. błonnik" w statystykach tygodnia. Źródła danych: prompty Gemini (etykieta per100g, głos, zrzut, zdjęcie) i Open Food Facts (`fiber_100g`); przelicznik /100g uwzględnia błonnik, gdy jest znany.
 
 ## Co NIE weszło (świadomie)
 - Wielojęzyczność

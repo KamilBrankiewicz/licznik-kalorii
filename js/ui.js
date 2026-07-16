@@ -3,8 +3,26 @@ const UI = (() => {
   let editingEntryId = null;
   let pendingSource = 'manual';
   let pendingPer100g = null;
+  let pendingMeal = 'przekaska';
   let toastTimeout = null;
   let authListenerRegistered = false;
+
+  const MEALS = [
+    { key: 'sniadanie', label: 'Śniadanie' },
+    { key: 'obiad', label: 'Obiad' },
+    { key: 'kolacja', label: 'Kolacja' },
+    { key: 'przekaska', label: 'Przekąska' }
+  ];
+
+  // Domyślna kategoria na podstawie godziny — także dla starych wpisów bez pola meal
+  function mealFromTime(time) {
+    const h = Number((time || '').split(':')[0]);
+    if (!Number.isFinite(h)) return 'przekaska';
+    if (h >= 4 && h < 11) return 'sniadanie';
+    if (h >= 11 && h < 16) return 'obiad';
+    if (h >= 16 && h < 22) return 'kolacja';
+    return 'przekaska';
+  }
 
   function toDateStr(d) {
     const y = d.getFullYear();
@@ -84,6 +102,30 @@ const UI = (() => {
     document.getElementById('fatValue').textContent = `${Math.round(summary.fat)} / ${settings.fatGoal} g`;
     document.getElementById('fatBarFill').style.width = pct(summary.fat, settings.fatGoal) + '%';
 
+    document.getElementById('fiberValue').textContent = `${Math.round(summary.fiber)} / ${settings.fiberGoal} g`;
+    document.getElementById('fiberBarFill').style.width = pct(summary.fiber, settings.fiberGoal) + '%';
+
+    // Waga obowiązuje od pomiaru do następnego: pomiar z tego dnia jest edytowalny
+    // w polu, a przy jego braku pokazujemy ostatnią znaną wagę jako podpowiedź
+    const weightInput = document.getElementById('weightInput');
+    const weightHint = document.getElementById('weightLastHint');
+    const ownWeight = Storage.getWeight(currentDate);
+    if (ownWeight != null) {
+      weightInput.value = ownWeight;
+      weightInput.placeholder = '—';
+      weightHint.textContent = '';
+    } else {
+      const latest = Storage.getLatestWeight(currentDate);
+      weightInput.value = '';
+      weightInput.placeholder = latest ? String(latest.kg) : '—';
+      if (latest) {
+        const [, m, d] = latest.date.split('-');
+        weightHint.textContent = `· ostatni pomiar ${d}.${m}`;
+      } else {
+        weightHint.textContent = '';
+      }
+    }
+
     const entries = Storage.getEntries(currentDate).sort((a, b) => (a.time || '').localeCompare(b.time || ''));
     const list = document.getElementById('entriesList');
     list.innerHTML = '';
@@ -93,25 +135,37 @@ const UI = (() => {
       return;
     }
 
-    entries.forEach((e) => {
-      const card = document.createElement('div');
-      card.className = 'entry-card';
-      const gramsStr = e.grams ? `${e.grams} g · ` : '';
-      const initial = (e.name || '?').trim().charAt(0).toUpperCase();
-      card.innerHTML = `
-        <div class="entry-avatar">${escapeHtml(initial)}</div>
-        <div class="entry-info">
-          <div class="name">${escapeHtml(e.name)}</div>
-          <div class="meta">${gramsStr}${e.time || ''} · B:${Math.round(e.protein || 0)} W:${Math.round(e.carbs || 0)} T:${Math.round(e.fat || 0)}</div>
-        </div>
-        <div class="entry-kcal">${Math.round(e.kcal)} kcal</div>
-        <button class="entry-delete" data-id="${e.id}" aria-label="Usuń">×</button>
-      `;
-      card.addEventListener('click', (ev) => {
-        if (ev.target.closest('.entry-delete')) return;
-        openEntryModal(e.id);
+    MEALS.forEach((meal) => {
+      const mealEntries = entries.filter((e) => (e.meal || mealFromTime(e.time)) === meal.key);
+      if (mealEntries.length === 0) return;
+
+      const mealKcal = mealEntries.reduce((s, e) => s + (Number(e.kcal) || 0), 0);
+      const header = document.createElement('div');
+      header.className = 'meal-header';
+      header.innerHTML = `<span>${meal.label}</span><span class="meal-kcal">${Math.round(mealKcal)} kcal</span>`;
+      list.appendChild(header);
+
+      mealEntries.forEach((e) => {
+        const card = document.createElement('div');
+        card.className = 'entry-card';
+        const gramsStr = e.grams ? `${e.grams} g · ` : '';
+        const initial = (e.name || '?').trim().charAt(0).toUpperCase();
+        card.innerHTML = `
+          <div class="entry-avatar">${escapeHtml(initial)}</div>
+          <div class="entry-info">
+            <div class="name">${escapeHtml(e.name)}</div>
+            <div class="meta">${gramsStr}${e.time || ''} · B:${Math.round(e.protein || 0)} W:${Math.round(e.carbs || 0)} T:${Math.round(e.fat || 0)}</div>
+          </div>
+          <div class="entry-kcal">${Math.round(e.kcal)} kcal</div>
+          <button class="entry-relog" data-id="${e.id}" aria-label="Dodaj ponownie dziś" title="Dodaj ponownie dziś">⟳</button>
+          <button class="entry-delete" data-id="${e.id}" aria-label="Usuń">×</button>
+        `;
+        card.addEventListener('click', (ev) => {
+          if (ev.target.closest('.entry-delete') || ev.target.closest('.entry-relog')) return;
+          openEntryModal(e.id);
+        });
+        list.appendChild(card);
       });
-      list.appendChild(card);
     });
 
     list.querySelectorAll('.entry-delete').forEach((btn) => {
@@ -122,6 +176,60 @@ const UI = (() => {
         showToast('Usunięto wpis');
       });
     });
+
+    list.querySelectorAll('.entry-relog').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const entry = entries.find((e) => e.id === btn.dataset.id);
+        if (entry) relogEntry(entry);
+      });
+    });
+  }
+
+  // Relog: kopiuje wpis na dziś z bieżącą godziną (kategoria wg godziny)
+  function relogEntry(entry) {
+    const today = toDateStr(new Date());
+    const time = nowTimeStr();
+    Storage.addEntry(today, {
+      name: entry.name,
+      grams: entry.grams || null,
+      kcal: entry.kcal,
+      protein: entry.protein || 0,
+      carbs: entry.carbs || 0,
+      fat: entry.fat || 0,
+      fiber: entry.fiber || 0,
+      time,
+      meal: mealFromTime(time),
+      source: entry.source || 'manual',
+      per100g: entry.per100g || null
+    });
+    pushDayToCloud(today);
+    if (currentDate === today) renderDiary();
+    showToast(currentDate === today ? 'Dodano ponownie' : 'Dodano ponownie — dziś');
+  }
+
+  function saveWeightFromInput() {
+    const raw = document.getElementById('weightInput').value.trim();
+    if (raw === '') {
+      Storage.setWeight(currentDate, null);
+      pushWeightsToCloud();
+      renderDiary();
+      return;
+    }
+    const kg = Number(raw.replace(',', '.'));
+    if (!Number.isFinite(kg) || kg <= 0 || kg > 500) {
+      showToast('Podaj poprawną wagę w kg');
+      return;
+    }
+    Storage.setWeight(currentDate, Math.round(kg * 10) / 10);
+    pushWeightsToCloud();
+    renderDiary();
+    showToast('Zapisano wagę');
+  }
+
+  function pushWeightsToCloud() {
+    if (window.FirebaseSync && FirebaseSync.isSignedIn()) {
+      FirebaseSync.pushWeights(Storage.getWeights()).catch(() => showToast('Błąd synchronizacji wagi'));
+    }
   }
 
   function escapeHtml(str) {
@@ -182,6 +290,7 @@ const UI = (() => {
           <div class="week-stat"><div class="value">${avg('protein')} g</div><div class="label">śr. białko</div></div>
           <div class="week-stat"><div class="value">${avg('carbs')} g</div><div class="label">śr. węgle</div></div>
           <div class="week-stat"><div class="value">${avg('fat')} g</div><div class="label">śr. tłuszcz</div></div>
+          <div class="week-stat"><div class="value">${avg('fiber')} g</div><div class="label">śr. błonnik</div></div>
           <div class="week-stat"><div class="value">${inGoal}/${daysWithEntries.length}</div><div class="label">dni w celu</div></div>
         </div>
       </div>
@@ -192,8 +301,60 @@ const UI = (() => {
     });
   }
 
+  function renderWeightStats() {
+    const container = document.getElementById('weightStats');
+    const cutoff = toDateStr(new Date(Date.now() - 89 * 86400000));
+    const points = Storage.getWeightHistory().filter((p) => p.date >= cutoff);
+
+    if (points.length === 0) {
+      container.innerHTML = '';
+      return;
+    }
+
+    const first = points[0];
+    const last = points[points.length - 1];
+    const kgs = points.map((p) => p.kg);
+    const min = Math.min(...kgs);
+    const max = Math.max(...kgs);
+    const delta = Math.round((last.kg - first.kg) * 10) / 10;
+    const deltaLabel = delta > 0 ? `+${delta}` : `${delta}`;
+
+    // Wykres: oś X wg realnego odstępu dni, oś Y rozciągnięta między min i max (±0,5 kg zapasu)
+    const W = 300, H = 80, PAD = 6;
+    const yMin = min - 0.5, yMax = max + 0.5;
+    const dayMs = 86400000;
+    const t0 = new Date(first.date + 'T00:00:00').getTime();
+    const t1 = new Date(last.date + 'T00:00:00').getTime();
+    const span = Math.max(t1 - t0, dayMs);
+    const xy = (p) => {
+      const x = PAD + ((new Date(p.date + 'T00:00:00').getTime() - t0) / span) * (W - 2 * PAD);
+      const y = PAD + (1 - (p.kg - yMin) / (yMax - yMin)) * (H - 2 * PAD);
+      return [Math.round(x * 10) / 10, Math.round(y * 10) / 10];
+    };
+    const coords = points.map(xy);
+    const polyline = coords.map((c) => c.join(',')).join(' ');
+    const lastDot = coords[coords.length - 1];
+
+    container.innerHTML = `
+      <div class="summary-card">
+        <h3 class="section-title">Waga — ostatnie 90 dni</h3>
+        <svg class="weight-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
+          ${points.length > 1 ? `<polyline points="${polyline}" fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
+          <circle cx="${lastDot[0]}" cy="${lastDot[1]}" r="3" fill="var(--accent)"/>
+        </svg>
+        <div class="week-stats weight-stats-row">
+          <div class="week-stat"><div class="value">${last.kg} kg</div><div class="label">aktualna</div></div>
+          <div class="week-stat"><div class="value">${deltaLabel} kg</div><div class="label">zmiana</div></div>
+          <div class="week-stat"><div class="value">${min} kg</div><div class="label">min</div></div>
+          <div class="week-stat"><div class="value">${max} kg</div><div class="label">max</div></div>
+        </div>
+      </div>
+    `;
+  }
+
   function renderHistory() {
     renderWeeklyStats();
+    renderWeightStats();
     const dates = Storage.getAllDatesWithEntries();
     const container = document.getElementById('historyList');
     container.innerHTML = '';
@@ -230,6 +391,7 @@ const UI = (() => {
     document.getElementById('settingProteinGoal').value = s.proteinGoal;
     document.getElementById('settingCarbsGoal').value = s.carbsGoal;
     document.getElementById('settingFatGoal').value = s.fatGoal;
+    document.getElementById('settingFiberGoal').value = s.fiberGoal;
     document.getElementById('settingApiKey').value = s.geminiApiKey;
     document.getElementById('firebaseConfigInput').value = s.firebaseConfig || '';
     document.getElementById('settingsToast').textContent = '';
@@ -325,6 +487,11 @@ const UI = (() => {
         await FirebaseSync.pushDay(date, merged);
       }
 
+      const remoteWeights = await FirebaseSync.pullWeights();
+      const mergedWeights = Storage.mergeWeights(remoteWeights, Storage.getWeights());
+      Storage.saveWeights(mergedWeights);
+      await FirebaseSync.pushWeights(mergedWeights);
+
       const remoteSettings = await FirebaseSync.pullSettings();
       const localSettings = Storage.getSettings();
       if (remoteSettings) {
@@ -347,6 +514,7 @@ const UI = (() => {
       proteinGoal: Number(document.getElementById('settingProteinGoal').value) || 0,
       carbsGoal: Number(document.getElementById('settingCarbsGoal').value) || 0,
       fatGoal: Number(document.getElementById('settingFatGoal').value) || 0,
+      fiberGoal: Number(document.getElementById('settingFiberGoal').value) || 0,
       geminiApiKey: document.getElementById('settingApiKey').value.trim()
     };
     Storage.saveSettings(settings);
@@ -379,6 +547,7 @@ const UI = (() => {
     document.getElementById('entryProtein').value = p.protein || '';
     document.getElementById('entryCarbs').value = p.carbs || '';
     document.getElementById('entryFat').value = p.fat || '';
+    document.getElementById('entryFiber').value = p.fiber || '';
     pendingPer100g = p.per100g || null;
   }
 
@@ -425,6 +594,9 @@ const UI = (() => {
     document.getElementById('entryProtein').value = Math.round((pendingPer100g.protein || 0) * factor * 10) / 10;
     document.getElementById('entryCarbs').value = Math.round((pendingPer100g.carbs || 0) * factor * 10) / 10;
     document.getElementById('entryFat').value = Math.round((pendingPer100g.fat || 0) * factor * 10) / 10;
+    if (pendingPer100g.fiber != null) {
+      document.getElementById('entryFiber').value = Math.round(pendingPer100g.fiber * factor * 10) / 10;
+    }
   }
 
   // Ręczna zmiana kcal/makr oznacza, że wartości z etykiety już nie obowiązują
@@ -449,12 +621,21 @@ const UI = (() => {
     document.getElementById('entryProtein').value = entry ? entry.protein || '' : '';
     document.getElementById('entryCarbs').value = entry ? entry.carbs || '' : '';
     document.getElementById('entryFat').value = entry ? entry.fat || '' : '';
+    document.getElementById('entryFiber').value = entry ? entry.fiber || '' : '';
     document.getElementById('entryTime').value = entry ? entry.time || nowTimeStr() : nowTimeStr();
     pendingSource = entry ? entry.source || 'manual' : 'manual';
     pendingPer100g = entry ? entry.per100g || null : null;
+    selectMeal(entry ? entry.meal || mealFromTime(entry.time) : mealFromTime(nowTimeStr()));
     renderRecentProducts(!entry);
 
     document.getElementById('entryModalOverlay').classList.add('active');
+  }
+
+  function selectMeal(mealKey) {
+    pendingMeal = MEALS.some((m) => m.key === mealKey) ? mealKey : 'przekaska';
+    document.querySelectorAll('#mealSelect button').forEach((b) => {
+      b.classList.toggle('active', b.dataset.meal === pendingMeal);
+    });
   }
 
   function closeEntryModal() {
@@ -483,7 +664,9 @@ const UI = (() => {
       protein: Number(document.getElementById('entryProtein').value) || 0,
       carbs: Number(document.getElementById('entryCarbs').value) || 0,
       fat: Number(document.getElementById('entryFat').value) || 0,
+      fiber: Number(document.getElementById('entryFiber').value) || 0,
       time: document.getElementById('entryTime').value || nowTimeStr(),
+      meal: pendingMeal,
       source: pendingSource,
       per100g: pendingPer100g
     };
@@ -523,6 +706,7 @@ const UI = (() => {
     if (typeof result.protein === 'number') document.getElementById('entryProtein').value = Math.round(result.protein * 10) / 10;
     if (typeof result.carbs === 'number') document.getElementById('entryCarbs').value = Math.round(result.carbs * 10) / 10;
     if (typeof result.fat === 'number') document.getElementById('entryFat').value = Math.round(result.fat * 10) / 10;
+    if (typeof result.fiber === 'number') document.getElementById('entryFiber').value = Math.round(result.fiber * 10) / 10;
   }
 
   async function handleLabelScan(file) {
@@ -779,6 +963,8 @@ const UI = (() => {
     openEntryModal,
     closeEntryModal,
     saveEntryFromForm,
+    selectMeal,
+    saveWeightFromInput,
     handleLabelScan,
     handleScreenshotScan,
     handleMealPhoto,

@@ -1,12 +1,14 @@
 const Storage = (() => {
   const SETTINGS_KEY = 'settings';
   const ENTRY_PREFIX = 'entries_';
+  const WEIGHTS_KEY = 'weights';
 
   const DEFAULT_SETTINGS = {
     kcalGoal: 2000,
     proteinGoal: 150,
     carbsGoal: 200,
     fatGoal: 70,
+    fiberGoal: 30,
     geminiApiKey: '',
     firebaseConfig: ''
   };
@@ -77,10 +79,64 @@ const Storage = (() => {
         kcal: sum.kcal + (Number(e.kcal) || 0),
         protein: sum.protein + (Number(e.protein) || 0),
         carbs: sum.carbs + (Number(e.carbs) || 0),
-        fat: sum.fat + (Number(e.fat) || 0)
+        fat: sum.fat + (Number(e.fat) || 0),
+        fiber: sum.fiber + (Number(e.fiber) || 0)
       }),
-      { kcal: 0, protein: 0, carbs: 0, fat: 0 }
+      { kcal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 }
     );
+  }
+
+  // Waga: mapa { "YYYY-MM-DD": { kg, updatedAt } }, usunięcia jako nagrobki
+  // (deleted: true) — ten sam mechanizm merge co przy wpisach
+  function getWeights() {
+    const raw = localStorage.getItem(WEIGHTS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  }
+
+  function saveWeights(map) {
+    localStorage.setItem(WEIGHTS_KEY, JSON.stringify(map));
+  }
+
+  function getWeight(date) {
+    const w = getWeights()[date];
+    return w && !w.deleted ? w.kg : null;
+  }
+
+  function setWeight(date, kg) {
+    const map = getWeights();
+    if (kg == null) {
+      if (!map[date]) return;
+      map[date] = { deleted: true, updatedAt: new Date().toISOString() };
+    } else {
+      map[date] = { kg, updatedAt: new Date().toISOString() };
+    }
+    saveWeights(map);
+  }
+
+  // Ostatni pomiar z dnia <= date — waga "obowiązuje" do następnego pomiaru
+  function getLatestWeight(date) {
+    let latest = null;
+    Object.entries(getWeights()).forEach(([d, w]) => {
+      if (w.deleted || d > date) return;
+      if (!latest || d > latest.date) latest = { date: d, kg: w.kg };
+    });
+    return latest;
+  }
+
+  function getWeightHistory() {
+    return Object.entries(getWeights())
+      .filter(([, w]) => !w.deleted)
+      .map(([date, w]) => ({ date, kg: w.kg }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }
+
+  function mergeWeights(mapA, mapB) {
+    const merged = { ...mapA };
+    Object.entries(mapB).forEach(([date, w]) => {
+      const prev = merged[date];
+      if (!prev || (w.updatedAt || '') > (prev.updatedAt || '')) merged[date] = w;
+    });
+    return merged;
   }
 
   function getAllDatesWithEntries() {
@@ -137,7 +193,8 @@ const Storage = (() => {
     return {
       exportedAt: new Date().toISOString(),
       settings: getSettings(),
-      entries
+      entries,
+      weights: getWeights()
     };
   }
 
@@ -153,13 +210,16 @@ const Storage = (() => {
         saveEntries(date, mergeEntryLists(getRawEntries(date), importedEntries));
       });
     }
+    if (data.weights) {
+      saveWeights(mode === 'replace' ? data.weights : mergeWeights(getWeights(), data.weights));
+    }
   }
 
   function clearAllData() {
     const keysToRemove = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key === SETTINGS_KEY || key.startsWith(ENTRY_PREFIX)) {
+      if (key === SETTINGS_KEY || key === WEIGHTS_KEY || key.startsWith(ENTRY_PREFIX)) {
         keysToRemove.push(key);
       }
     }
@@ -173,6 +233,13 @@ const Storage = (() => {
     getRawEntries,
     saveEntries,
     mergeEntryLists,
+    getWeights,
+    saveWeights,
+    getWeight,
+    setWeight,
+    getLatestWeight,
+    getWeightHistory,
+    mergeWeights,
     getFrequentProducts,
     addEntry,
     updateEntry,

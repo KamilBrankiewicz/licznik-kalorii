@@ -85,6 +85,19 @@ async function pullSettings() {
   return snap.exists() ? snap.data() : null;
 }
 
+async function pushWeights(weights) {
+  if (!currentUser) return;
+  const { doc, setDoc } = firestoreMod;
+  await setDoc(doc(db, 'users', currentUser.uid, 'meta', 'weights'), { map: weights });
+}
+
+async function pullWeights() {
+  if (!currentUser) return {};
+  const { doc, getDoc } = firestoreMod;
+  const snap = await getDoc(doc(db, 'users', currentUser.uid, 'meta', 'weights'));
+  return snap.exists() ? snap.data().map || {} : {};
+}
+
 const FirebaseSync = {
   init,
   signIn,
@@ -96,6 +109,8 @@ const FirebaseSync = {
   pushSettings,
   pullAllDays,
   pullSettings,
+  pushWeights,
+  pullWeights,
   parseFirebaseConfig
 };
 
