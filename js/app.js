@@ -35,6 +35,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('voiceEntryBtn').addEventListener('click', () => UI.handleVoiceEntry());
 
+  document.getElementById('entryGrams').addEventListener('input', () => UI.recalcFromPer100g());
+  ['entryKcal', 'entryProtein', 'entryCarbs', 'entryFat'].forEach((id) => {
+    document.getElementById(id).addEventListener('input', () => UI.clearPendingPer100g());
+  });
+  document.getElementById('entryName').addEventListener('change', () => UI.autofillFromName());
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && document.getElementById('entryModalOverlay').classList.contains('active')) {
+      UI.closeEntryModal();
+    }
+  });
+
   document.getElementById('saveSettingsBtn').addEventListener('click', () => UI.saveSettingsFromForm());
   document.getElementById('clearDataBtn').addEventListener('click', () => UI.clearAllData());
 
@@ -68,12 +80,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (existingFirebaseConfig && window.FirebaseSync) {
     try {
       const parsed = FirebaseSync.parseFirebaseConfig(existingFirebaseConfig);
-      FirebaseSync.init(parsed).then(() => {
-        FirebaseSync.onAuthChange(() => {
-          UI.renderFirebaseAuthBlock();
-          if (FirebaseSync.isSignedIn()) UI.syncWithCloud();
-        });
-      });
+      FirebaseSync.init(parsed).then(() => UI.ensureAuthListener());
     } catch (e) {
       console.warn('Nie udało się wczytać zapisanej konfiguracji Firebase:', e);
     }

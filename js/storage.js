@@ -21,9 +21,14 @@ const Storage = (() => {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   }
 
-  function getEntries(date) {
+  // Surowa lista zawiera także nagrobki (deleted: true) potrzebne do synchronizacji
+  function getRawEntries(date) {
     const raw = localStorage.getItem(ENTRY_PREFIX + date);
     return raw ? JSON.parse(raw) : [];
+  }
+
+  function getEntries(date) {
+    return getRawEntries(date).filter((e) => !e.deleted);
   }
 
   function saveEntries(date, entries) {
@@ -31,25 +36,38 @@ const Storage = (() => {
   }
 
   function addEntry(date, entry) {
-    const entries = getEntries(date);
-    const newEntry = { ...entry, id: crypto.randomUUID(), date };
+    const entries = getRawEntries(date);
+    const newEntry = { ...entry, id: crypto.randomUUID(), date, updatedAt: new Date().toISOString() };
     entries.push(newEntry);
     saveEntries(date, entries);
     return newEntry;
   }
 
   function updateEntry(date, id, data) {
-    const entries = getEntries(date);
+    const entries = getRawEntries(date);
     const idx = entries.findIndex((e) => e.id === id);
     if (idx === -1) return null;
-    entries[idx] = { ...entries[idx], ...data };
+    entries[idx] = { ...entries[idx], ...data, updatedAt: new Date().toISOString() };
     saveEntries(date, entries);
     return entries[idx];
   }
 
   function deleteEntry(date, id) {
-    const entries = getEntries(date).filter((e) => e.id !== id);
+    const entries = getRawEntries(date).map((e) =>
+      e.id === id ? { id: e.id, deleted: true, updatedAt: new Date().toISOString() } : e
+    );
     saveEntries(date, entries);
+  }
+
+  // Scala dwie listy wpisów po id; przy konflikcie wygrywa nowszy updatedAt.
+  // Dzięki nagrobkom usunięcie na jednym urządzeniu nie "zmartwychwstaje" po syncu.
+  function mergeEntryLists(listA, listB) {
+    const byId = new Map();
+    [...listA, ...listB].forEach((e) => {
+      const prev = byId.get(e.id);
+      if (!prev || (e.updatedAt || '') > (prev.updatedAt || '')) byId.set(e.id, e);
+    });
+    return [...byId.values()];
   }
 
   function getDailySummary(date) {
@@ -87,10 +105,34 @@ const Storage = (() => {
     return dates;
   }
 
+  function getFrequentProducts(limit = 8) {
+    const byName = new Map();
+    getAllDates().forEach((date) => {
+      getEntries(date).forEach((e) => {
+        if (!e.name) return;
+        const key = e.name.trim().toLowerCase();
+        const item = byName.get(key);
+        if (!item) {
+          byName.set(key, { count: 1, lastDate: date, entry: e });
+        } else {
+          item.count++;
+          if (date > item.lastDate) {
+            item.lastDate = date;
+            item.entry = e;
+          }
+        }
+      });
+    });
+    return [...byName.values()]
+      .sort((a, b) => b.count - a.count || b.lastDate.localeCompare(a.lastDate))
+      .slice(0, limit)
+      .map((i) => i.entry);
+  }
+
   function exportData() {
     const entries = {};
     getAllDates().forEach((date) => {
-      entries[date] = getEntries(date);
+      entries[date] = getRawEntries(date);
     });
     return {
       exportedAt: new Date().toISOString(),
@@ -108,10 +150,7 @@ const Storage = (() => {
           saveEntries(date, importedEntries);
           return;
         }
-        const existing = getEntries(date);
-        const existingIds = new Set(existing.map((e) => e.id));
-        const merged = [...existing, ...importedEntries.filter((e) => !existingIds.has(e.id))];
-        saveEntries(date, merged);
+        saveEntries(date, mergeEntryLists(getRawEntries(date), importedEntries));
       });
     }
   }
@@ -131,7 +170,10 @@ const Storage = (() => {
     getSettings,
     saveSettings,
     getEntries,
+    getRawEntries,
     saveEntries,
+    mergeEntryLists,
+    getFrequentProducts,
     addEntry,
     updateEntry,
     deleteEntry,

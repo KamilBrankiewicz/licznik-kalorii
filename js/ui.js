@@ -2,6 +2,9 @@ const UI = (() => {
   let currentDate = toDateStr(new Date());
   let editingEntryId = null;
   let pendingSource = 'manual';
+  let pendingPer100g = null;
+  let toastTimeout = null;
+  let authListenerRegistered = false;
 
   function toDateStr(d) {
     const y = d.getFullYear();
@@ -25,7 +28,8 @@ const UI = (() => {
     const toast = document.getElementById('toast');
     toast.textContent = msg;
     toast.classList.add('show');
-    setTimeout(() => toast.classList.remove('show'), 2200);
+    clearTimeout(toastTimeout);
+    toastTimeout = setTimeout(() => toast.classList.remove('show'), 2200);
   }
 
   function switchView(viewName) {
@@ -95,7 +99,7 @@ const UI = (() => {
       const gramsStr = e.grams ? `${e.grams} g · ` : '';
       const initial = (e.name || '?').trim().charAt(0).toUpperCase();
       card.innerHTML = `
-        <div class="entry-avatar">${initial}</div>
+        <div class="entry-avatar">${escapeHtml(initial)}</div>
         <div class="entry-info">
           <div class="name">${escapeHtml(e.name)}</div>
           <div class="meta">${gramsStr}${e.time || ''} · B:${Math.round(e.protein || 0)} W:${Math.round(e.carbs || 0)} T:${Math.round(e.fat || 0)}</div>
@@ -136,9 +140,9 @@ const UI = (() => {
       return;
     }
 
+    const settings = Storage.getSettings();
     dates.forEach((date) => {
       const summary = Storage.getDailySummary(date);
-      const settings = Storage.getSettings();
       const over = summary.kcal > settings.kcalGoal;
       const item = document.createElement('div');
       item.className = 'history-item';
@@ -210,6 +214,15 @@ const UI = (() => {
     }
   }
 
+  function ensureAuthListener() {
+    if (authListenerRegistered || !window.FirebaseSync) return;
+    authListenerRegistered = true;
+    FirebaseSync.onAuthChange(() => {
+      renderFirebaseAuthBlock();
+      if (FirebaseSync.isSignedIn()) syncWithCloud();
+    });
+  }
+
   async function saveFirebaseConfigFromForm() {
     const raw = document.getElementById('firebaseConfigInput').value;
     const statusEl = document.getElementById('firebaseStatus');
@@ -228,10 +241,7 @@ const UI = (() => {
       await FirebaseSync.init(parsed);
       const settings = { ...Storage.getSettings(), firebaseConfig: raw };
       Storage.saveSettings(settings);
-      FirebaseSync.onAuthChange(() => {
-        renderFirebaseAuthBlock();
-        if (FirebaseSync.isSignedIn()) syncWithCloud();
-      });
+      ensureAuthListener();
       statusEl.textContent = 'Połączono ✓';
       renderFirebaseAuthBlock();
     } catch (e) {
@@ -247,10 +257,7 @@ const UI = (() => {
       const localDates = new Set([...Storage.getAllDates(), ...Object.keys(remoteDays)]);
 
       for (const date of localDates) {
-        const local = Storage.getEntries(date);
-        const remote = remoteDays[date] || [];
-        const remoteIds = new Set(remote.map((e) => e.id));
-        const merged = [...remote, ...local.filter((e) => !remoteIds.has(e.id))];
+        const merged = Storage.mergeEntryLists(remoteDays[date] || [], Storage.getRawEntries(date));
         Storage.saveEntries(date, merged);
         await FirebaseSync.pushDay(date, merged);
       }
@@ -293,13 +300,73 @@ const UI = (() => {
 
   function pushDayToCloud(date) {
     if (window.FirebaseSync && FirebaseSync.isSignedIn()) {
-      FirebaseSync.pushDay(date, Storage.getEntries(date)).catch(() => showToast('Błąd synchronizacji z chmurą'));
+      FirebaseSync.pushDay(date, Storage.getRawEntries(date)).catch(() => showToast('Błąd synchronizacji z chmurą'));
     }
   }
 
   function nowTimeStr() {
     const now = new Date();
     return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  }
+
+  function fillFormFromProduct(p) {
+    document.getElementById('entryName').value = p.name || '';
+    document.getElementById('entryGrams').value = p.grams || '';
+    document.getElementById('entryKcal').value = p.kcal || '';
+    document.getElementById('entryProtein').value = p.protein || '';
+    document.getElementById('entryCarbs').value = p.carbs || '';
+    document.getElementById('entryFat').value = p.fat || '';
+    pendingPer100g = p.per100g || null;
+  }
+
+  function renderRecentProducts(show) {
+    const container = document.getElementById('recentProducts');
+    const datalist = document.getElementById('productSuggestions');
+    container.innerHTML = '';
+    datalist.innerHTML = '';
+    if (!show) return;
+
+    const products = Storage.getFrequentProducts(8);
+    products.forEach((p) => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'chip';
+      chip.textContent = p.name;
+      chip.addEventListener('click', () => {
+        fillFormFromProduct(p);
+        pendingSource = p.source || 'manual';
+      });
+      container.appendChild(chip);
+
+      const opt = document.createElement('option');
+      opt.value = p.name;
+      datalist.appendChild(opt);
+    });
+  }
+
+  // Po wybraniu podpowiedzi z listy nazw uzupełnia makra, jeśli pola są puste
+  function autofillFromName() {
+    if (document.getElementById('entryKcal').value) return;
+    const name = document.getElementById('entryName').value.trim().toLowerCase();
+    if (!name) return;
+    const match = Storage.getFrequentProducts(50).find((p) => (p.name || '').trim().toLowerCase() === name);
+    if (match) fillFormFromProduct(match);
+  }
+
+  function recalcFromPer100g() {
+    if (!pendingPer100g) return;
+    const grams = Number(document.getElementById('entryGrams').value);
+    if (!grams || grams <= 0) return;
+    const factor = grams / 100;
+    document.getElementById('entryKcal').value = Math.round((pendingPer100g.kcal || 0) * factor);
+    document.getElementById('entryProtein').value = Math.round((pendingPer100g.protein || 0) * factor * 10) / 10;
+    document.getElementById('entryCarbs').value = Math.round((pendingPer100g.carbs || 0) * factor * 10) / 10;
+    document.getElementById('entryFat').value = Math.round((pendingPer100g.fat || 0) * factor * 10) / 10;
+  }
+
+  // Ręczna zmiana kcal/makr oznacza, że wartości z etykiety już nie obowiązują
+  function clearPendingPer100g() {
+    pendingPer100g = null;
   }
 
   function openEntryModal(entryId) {
@@ -321,6 +388,8 @@ const UI = (() => {
     document.getElementById('entryFat').value = entry ? entry.fat || '' : '';
     document.getElementById('entryTime').value = entry ? entry.time || nowTimeStr() : nowTimeStr();
     pendingSource = entry ? entry.source || 'manual' : 'manual';
+    pendingPer100g = entry ? entry.per100g || null : null;
+    renderRecentProducts(!entry);
 
     document.getElementById('entryModalOverlay').classList.add('active');
   }
@@ -331,14 +400,15 @@ const UI = (() => {
 
   function saveEntryFromForm() {
     const name = document.getElementById('entryName').value.trim();
-    const kcal = Number(document.getElementById('entryKcal').value);
+    const kcalRaw = document.getElementById('entryKcal').value.trim();
+    const kcal = Number(kcalRaw);
     const errorEl = document.getElementById('entryFormError');
 
     if (!name) {
       errorEl.textContent = 'Podaj nazwę produktu/posiłku';
       return;
     }
-    if (!kcal || kcal <= 0) {
+    if (kcalRaw === '' || !Number.isFinite(kcal) || kcal < 0) {
       errorEl.textContent = 'Podaj poprawną wartość kalorii';
       return;
     }
@@ -351,7 +421,8 @@ const UI = (() => {
       carbs: Number(document.getElementById('entryCarbs').value) || 0,
       fat: Number(document.getElementById('entryFat').value) || 0,
       time: document.getElementById('entryTime').value || nowTimeStr(),
-      source: pendingSource
+      source: pendingSource,
+      per100g: pendingPer100g
     };
 
     if (editingEntryId) {
@@ -364,6 +435,31 @@ const UI = (() => {
     closeEntryModal();
     renderDiary();
     showToast(editingEntryId ? 'Zapisano zmiany' : 'Dodano posiłek');
+  }
+
+  function showScanError(err, errorEl, messages) {
+    if (err.message === 'NO_API_KEY') {
+      errorEl.innerHTML = 'Brak klucza Gemini API. Dodaj go w <button type="button" class="link-btn go-settings">Ustawieniach</button>.';
+      errorEl.querySelector('.go-settings').addEventListener('click', () => {
+        closeEntryModal();
+        switchView('ustawienia');
+      });
+    } else if (err.message === 'NETWORK_ERROR') {
+      errorEl.textContent = 'Błąd sieci — sprawdź połączenie z internetem.';
+    } else if (err.message === 'NOT_RECOGNIZED') {
+      errorEl.textContent = messages.notRecognized;
+    } else {
+      errorEl.textContent = messages.failed;
+    }
+  }
+
+  function fillFormFromAnalysis(result) {
+    if (result.name) document.getElementById('entryName').value = result.name;
+    if (result.grams) document.getElementById('entryGrams').value = result.grams;
+    if (typeof result.kcal === 'number') document.getElementById('entryKcal').value = Math.round(result.kcal);
+    if (typeof result.protein === 'number') document.getElementById('entryProtein').value = Math.round(result.protein * 10) / 10;
+    if (typeof result.carbs === 'number') document.getElementById('entryCarbs').value = Math.round(result.carbs * 10) / 10;
+    if (typeof result.fat === 'number') document.getElementById('entryFat').value = Math.round(result.fat * 10) / 10;
   }
 
   async function handleLabelScan(file) {
@@ -380,34 +476,21 @@ const UI = (() => {
 
       if (result.name) document.getElementById('entryName').value = result.name;
 
-      const grams = Number(document.getElementById('entryGrams').value) || 100;
       if (!document.getElementById('entryGrams').value) {
         document.getElementById('entryGrams').value = 100;
       }
-      const factor = grams / 100;
 
       if (result.per100g) {
-        document.getElementById('entryKcal').value = Math.round(result.per100g.kcal * factor);
-        document.getElementById('entryProtein').value = Math.round(result.per100g.protein * factor * 10) / 10;
-        document.getElementById('entryCarbs').value = Math.round(result.per100g.carbs * factor * 10) / 10;
-        document.getElementById('entryFat').value = Math.round(result.per100g.fat * factor * 10) / 10;
+        pendingPer100g = result.per100g;
+        recalcFromPer100g();
       }
       showToast('Rozpoznano etykietę — sprawdź wartości');
     } catch (err) {
       statusEl.textContent = '';
-      if (err.message === 'NO_API_KEY') {
-        errorEl.innerHTML = 'Brak klucza Gemini API. Dodaj go w <button type="button" class="link-btn" id="goToSettingsLink">Ustawieniach</button>.';
-        document.getElementById('goToSettingsLink')?.addEventListener('click', () => {
-          closeEntryModal();
-          switchView('ustawienia');
-        });
-      } else if (err.message === 'NETWORK_ERROR') {
-        errorEl.textContent = 'Błąd sieci — sprawdź połączenie z internetem.';
-      } else if (err.message === 'NOT_RECOGNIZED') {
-        errorEl.textContent = 'Nie rozpoznano etykiety. Wpisz wartości ręcznie.';
-      } else {
-        errorEl.textContent = 'Nie udało się przeanalizować zdjęcia. Wpisz wartości ręcznie.';
-      }
+      showScanError(err, errorEl, {
+        notRecognized: 'Nie rozpoznano etykiety. Wpisz wartości ręcznie.',
+        failed: 'Nie udało się przeanalizować zdjęcia. Wpisz wartości ręcznie.'
+      });
     }
   }
 
@@ -422,30 +505,14 @@ const UI = (() => {
     try {
       const result = await Ocr.analyzeScreenshot(file, settings.geminiApiKey);
       statusEl.textContent = '';
-
-      if (result.name) document.getElementById('entryName').value = result.name;
-      if (result.grams) document.getElementById('entryGrams').value = result.grams;
-      if (typeof result.kcal === 'number') document.getElementById('entryKcal').value = Math.round(result.kcal);
-      if (typeof result.protein === 'number') document.getElementById('entryProtein').value = Math.round(result.protein * 10) / 10;
-      if (typeof result.carbs === 'number') document.getElementById('entryCarbs').value = Math.round(result.carbs * 10) / 10;
-      if (typeof result.fat === 'number') document.getElementById('entryFat').value = Math.round(result.fat * 10) / 10;
-
+      fillFormFromAnalysis(result);
       showToast('Rozpoznano dane ze zrzutu ekranu — sprawdź wartości');
     } catch (err) {
       statusEl.textContent = '';
-      if (err.message === 'NO_API_KEY') {
-        errorEl.innerHTML = 'Brak klucza Gemini API. Dodaj go w <button type="button" class="link-btn" id="goToSettingsLinkScreenshot">Ustawieniach</button>.';
-        document.getElementById('goToSettingsLinkScreenshot')?.addEventListener('click', () => {
-          closeEntryModal();
-          switchView('ustawienia');
-        });
-      } else if (err.message === 'NETWORK_ERROR') {
-        errorEl.textContent = 'Błąd sieci — sprawdź połączenie z internetem.';
-      } else if (err.message === 'NOT_RECOGNIZED') {
-        errorEl.textContent = 'Nie rozpoznano danych na zrzucie ekranu. Wpisz wartości ręcznie.';
-      } else {
-        errorEl.textContent = 'Nie udało się przeanalizować zrzutu ekranu. Wpisz wartości ręcznie.';
-      }
+      showScanError(err, errorEl, {
+        notRecognized: 'Nie rozpoznano danych na zrzucie ekranu. Wpisz wartości ręcznie.',
+        failed: 'Nie udało się przeanalizować zrzutu ekranu. Wpisz wartości ręcznie.'
+      });
     }
   }
 
@@ -483,30 +550,14 @@ const UI = (() => {
     try {
       const result = await Ocr.analyzeVoiceEntry(transcript, settings.geminiApiKey);
       statusEl.textContent = '';
-
-      if (result.name) document.getElementById('entryName').value = result.name;
-      if (result.grams) document.getElementById('entryGrams').value = result.grams;
-      if (typeof result.kcal === 'number') document.getElementById('entryKcal').value = Math.round(result.kcal);
-      if (typeof result.protein === 'number') document.getElementById('entryProtein').value = Math.round(result.protein * 10) / 10;
-      if (typeof result.carbs === 'number') document.getElementById('entryCarbs').value = Math.round(result.carbs * 10) / 10;
-      if (typeof result.fat === 'number') document.getElementById('entryFat').value = Math.round(result.fat * 10) / 10;
-
+      fillFormFromAnalysis(result);
       showToast('Rozpoznano posiłek — sprawdź wartości');
     } catch (err) {
       statusEl.textContent = '';
-      if (err.message === 'NO_API_KEY') {
-        errorEl.innerHTML = 'Brak klucza Gemini API. Dodaj go w <button type="button" class="link-btn" id="goToSettingsLinkVoice">Ustawieniach</button>.';
-        document.getElementById('goToSettingsLinkVoice')?.addEventListener('click', () => {
-          closeEntryModal();
-          switchView('ustawienia');
-        });
-      } else if (err.message === 'NETWORK_ERROR') {
-        errorEl.textContent = 'Błąd sieci — sprawdź połączenie z internetem.';
-      } else if (err.message === 'NOT_RECOGNIZED') {
-        errorEl.textContent = 'Nie rozpoznano jedzenia w wypowiedzi. Wpisz wartości ręcznie.';
-      } else {
-        errorEl.textContent = 'Nie udało się przeanalizować wypowiedzi. Wpisz wartości ręcznie.';
-      }
+      showScanError(err, errorEl, {
+        notRecognized: 'Nie rozpoznano jedzenia w wypowiedzi. Wpisz wartości ręcznie.',
+        failed: 'Nie udało się przeanalizować wypowiedzi. Wpisz wartości ręcznie.'
+      });
     }
   }
 
@@ -583,6 +634,10 @@ const UI = (() => {
     saveFirebaseConfigFromForm,
     syncWithCloud,
     renderFirebaseAuthBlock,
+    ensureAuthListener,
+    recalcFromPer100g,
+    clearPendingPer100g,
+    autofillFromName,
     getCurrentDate: () => currentDate
   };
 })();

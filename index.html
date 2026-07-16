@@ -147,9 +147,12 @@
       <div id="voiceStatus" class="hint"></div>
       <div id="voiceError" class="error-msg"></div>
 
+      <div class="chips" id="recentProducts"></div>
+
       <div class="form-group">
         <label>Nazwa produktu / posiłku</label>
-        <input type="text" id="entryName" placeholder="np. Jogurt grecki">
+        <input type="text" id="entryName" placeholder="np. Jogurt grecki" list="productSuggestions">
+        <datalist id="productSuggestions"></datalist>
       </div>
 
       <div class="form-row-2">
@@ -171,15 +174,15 @@
       <div class="form-row">
         <div class="form-group">
           <label>Białko (g)</label>
-          <input type="number" id="entryProtein" inputmode="numeric">
+          <input type="number" id="entryProtein" inputmode="decimal" step="0.1">
         </div>
         <div class="form-group">
           <label>Węgle (g)</label>
-          <input type="number" id="entryCarbs" inputmode="numeric">
+          <input type="number" id="entryCarbs" inputmode="decimal" step="0.1">
         </div>
         <div class="form-group">
           <label>Tłuszcz (g)</label>
-          <input type="number" id="entryFat" inputmode="numeric">
+          <input type="number" id="entryFat" inputmode="decimal" step="0.1">
         </div>
       </div>
 
