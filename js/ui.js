@@ -411,6 +411,44 @@ const UI = (() => {
     }
   }
 
+  async function handleScreenshotScan(file) {
+    pendingSource = 'screenshot';
+    const settings = Storage.getSettings();
+    const statusEl = document.getElementById('scanStatus');
+    const errorEl = document.getElementById('scanError');
+    errorEl.textContent = '';
+    statusEl.textContent = 'Analizuję zrzut ekranu...';
+
+    try {
+      const result = await Ocr.analyzeScreenshot(file, settings.geminiApiKey);
+      statusEl.textContent = '';
+
+      if (result.name) document.getElementById('entryName').value = result.name;
+      if (result.grams) document.getElementById('entryGrams').value = result.grams;
+      if (typeof result.kcal === 'number') document.getElementById('entryKcal').value = Math.round(result.kcal);
+      if (typeof result.protein === 'number') document.getElementById('entryProtein').value = Math.round(result.protein * 10) / 10;
+      if (typeof result.carbs === 'number') document.getElementById('entryCarbs').value = Math.round(result.carbs * 10) / 10;
+      if (typeof result.fat === 'number') document.getElementById('entryFat').value = Math.round(result.fat * 10) / 10;
+
+      showToast('Rozpoznano dane ze zrzutu ekranu — sprawdź wartości');
+    } catch (err) {
+      statusEl.textContent = '';
+      if (err.message === 'NO_API_KEY') {
+        errorEl.innerHTML = 'Brak klucza Gemini API. Dodaj go w <button type="button" class="link-btn" id="goToSettingsLinkScreenshot">Ustawieniach</button>.';
+        document.getElementById('goToSettingsLinkScreenshot')?.addEventListener('click', () => {
+          closeEntryModal();
+          switchView('ustawienia');
+        });
+      } else if (err.message === 'NETWORK_ERROR') {
+        errorEl.textContent = 'Błąd sieci — sprawdź połączenie z internetem.';
+      } else if (err.message === 'NOT_RECOGNIZED') {
+        errorEl.textContent = 'Nie rozpoznano danych na zrzucie ekranu. Wpisz wartości ręcznie.';
+      } else {
+        errorEl.textContent = 'Nie udało się przeanalizować zrzutu ekranu. Wpisz wartości ręcznie.';
+      }
+    }
+  }
+
   async function handleVoiceEntry() {
     const statusEl = document.getElementById('voiceStatus');
     const errorEl = document.getElementById('voiceError');
@@ -537,6 +575,7 @@ const UI = (() => {
     closeEntryModal,
     saveEntryFromForm,
     handleLabelScan,
+    handleScreenshotScan,
     handleVoiceEntry,
     clearAllData,
     exportDataToFile,

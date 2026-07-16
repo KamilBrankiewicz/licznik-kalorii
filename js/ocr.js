@@ -34,6 +34,23 @@ Zasady:
 - Wartości kcal/protein/carbs/fat dotyczą całego posiłku, NIE 100g produktu.
 Jeśli nie da się rozpoznać żadnego jedzenia w wypowiedzi, zwróć: {"error": "nie rozpoznano jedzenia"}`;
 
+  const PROMPT_SCREENSHOT = `Przeanalizuj zrzut ekranu (screenshot) zrobiony na telefonie. Może pochodzić z aplikacji do liczenia kalorii, aplikacji dostawy jedzenia, sklepu spożywczego, przepisu kulinarnego lub podobnego źródła i przedstawiać wartości odżywcze posiłku lub produktu.
+
+Zwróć WYŁĄCZNIE JSON w formacie:
+{
+  "name": "nazwa posiłku/produktu jeśli widoczna, inaczej null",
+  "grams": number lub null jeśli gramatura/wielkość porcji nieznana,
+  "kcal": number,
+  "protein": number,
+  "carbs": number,
+  "fat": number
+}
+
+Zasady:
+- Wartości kcal/protein/carbs/fat dotyczą CAŁEJ pokazanej porcji/posiłku, NIE 100g produktu (chyba że ekran jednoznacznie pokazuje wyłącznie wartości na 100g — wtedy zwróć te wartości i ustaw grams na 100).
+- Jeśli na ekranie widoczna jest tylko liczba kalorii bez makroskładników, zwróć kcal oraz oszacuj brakujące makroskładniki na podstawie typowych proporcji dla tego typu posiłku.
+Jeśli zrzut ekranu nie zawiera żadnych danych o wartościach odżywczych, zwróć: {"error": "nie rozpoznano danych"}`;
+
   function resizeImageToBase64(file, maxSize = 1024) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -124,5 +141,16 @@ Jeśli nie da się rozpoznać żadnego jedzenia w wypowiedzi, zwróć: {"error":
     return callGemini([{ text: prompt }], apiKey);
   }
 
-  return { analyzeLabel, analyzeVoiceEntry };
+  async function analyzeScreenshot(file, apiKey) {
+    const base64 = await resizeImageToBase64(file);
+    return callGemini(
+      [
+        { text: PROMPT_SCREENSHOT },
+        { inline_data: { mime_type: 'image/jpeg', data: base64 } }
+      ],
+      apiKey
+    );
+  }
+
+  return { analyzeLabel, analyzeVoiceEntry, analyzeScreenshot };
 })();

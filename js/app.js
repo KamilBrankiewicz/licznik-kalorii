@@ -24,6 +24,15 @@ document.addEventListener('DOMContentLoaded', () => {
     e.target.value = '';
   });
 
+  document.getElementById('scanScreenshotBtn').addEventListener('click', () => {
+    document.getElementById('screenshotFileInput').click();
+  });
+  document.getElementById('screenshotFileInput').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) UI.handleScreenshotScan(file);
+    e.target.value = '';
+  });
+
   document.getElementById('voiceEntryBtn').addEventListener('click', () => UI.handleVoiceEntry());
 
   document.getElementById('saveSettingsBtn').addEventListener('click', () => UI.saveSettingsFromForm());
