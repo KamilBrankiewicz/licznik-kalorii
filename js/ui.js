@@ -232,6 +232,12 @@ const UI = (() => {
     }
   }
 
+  function pushFavoritesToCloud() {
+    if (window.FirebaseSync && FirebaseSync.isSignedIn()) {
+      FirebaseSync.pushFavorites(Storage.getRawFavoriteProducts()).catch(() => showToast('Błąd synchronizacji ulubionych'));
+    }
+  }
+
   function escapeHtml(str) {
     const div = document.createElement('div');
     div.textContent = str || '';
@@ -492,6 +498,11 @@ const UI = (() => {
       Storage.saveWeights(mergedWeights);
       await FirebaseSync.pushWeights(mergedWeights);
 
+      const remoteFavorites = await FirebaseSync.pullFavorites();
+      const mergedFavorites = Storage.mergeFavoriteProducts(remoteFavorites, Storage.getRawFavoriteProducts());
+      Storage.saveFavoriteProducts(mergedFavorites);
+      await FirebaseSync.pushFavorites(mergedFavorites);
+
       const remoteSettings = await FirebaseSync.pullSettings();
       const localSettings = Storage.getSettings();
       if (remoteSettings) {
@@ -551,29 +562,95 @@ const UI = (() => {
     pendingPer100g = p.per100g || null;
   }
 
+  // Buduje jeden "chip" z nazwą (klik = wypełnia formularz) i gwiazdką (klik = przełącza ulubione)
+  function createProductChip(p, onToggleFavorite) {
+    const item = document.createElement('div');
+    item.className = 'chip-item';
+
+    const nameBtn = document.createElement('button');
+    nameBtn.type = 'button';
+    nameBtn.className = 'chip';
+    nameBtn.textContent = p.name;
+    nameBtn.addEventListener('click', () => {
+      fillFormFromProduct(p);
+      pendingSource = p.source || 'manual';
+    });
+
+    const isFav = Storage.isFavoriteProduct(p.name);
+    const starBtn = document.createElement('button');
+    starBtn.type = 'button';
+    starBtn.className = 'chip-star' + (isFav ? ' active' : '');
+    starBtn.setAttribute('aria-pressed', String(isFav));
+    starBtn.setAttribute('aria-label', isFav ? 'Usuń z ulubionych' : 'Dodaj do ulubionych');
+    starBtn.textContent = isFav ? '★' : '☆';
+    starBtn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      onToggleFavorite(p);
+    });
+
+    item.appendChild(nameBtn);
+    item.appendChild(starBtn);
+    return item;
+  }
+
   function renderRecentProducts(show) {
     const container = document.getElementById('recentProducts');
     const datalist = document.getElementById('productSuggestions');
+    const section = document.getElementById('recentSection');
+    const toggleBtn = document.getElementById('recentToggleBtn');
     container.innerHTML = '';
     datalist.innerHTML = '';
-    if (!show) return;
+    container.classList.add('collapsed');
+    toggleBtn.setAttribute('aria-expanded', 'false');
 
-    const products = Storage.getFrequentProducts(8);
+    const products = show ? Storage.getFrequentProducts(8) : [];
+    section.hidden = products.length === 0;
     products.forEach((p) => {
-      const chip = document.createElement('button');
-      chip.type = 'button';
-      chip.className = 'chip';
-      chip.textContent = p.name;
-      chip.addEventListener('click', () => {
-        fillFormFromProduct(p);
-        pendingSource = p.source || 'manual';
-      });
-      container.appendChild(chip);
+      container.appendChild(createProductChip(p, (product) => {
+        Storage.toggleFavoriteProduct(product);
+        pushFavoritesToCloud();
+        renderRecentProducts(true);
+        renderFavoriteProducts(true);
+      }));
 
       const opt = document.createElement('option');
       opt.value = p.name;
       datalist.appendChild(opt);
     });
+  }
+
+  function renderFavoriteProducts(show) {
+    const container = document.getElementById('favoriteProducts');
+    const section = document.getElementById('favoriteSection');
+    const toggleBtn = document.getElementById('favoriteToggleBtn');
+    container.innerHTML = '';
+    container.classList.add('collapsed');
+    toggleBtn.setAttribute('aria-expanded', 'false');
+
+    const products = show ? Storage.getFavoriteProducts() : [];
+    section.hidden = products.length === 0;
+    products.forEach((p) => {
+      container.appendChild(createProductChip(p, (product) => {
+        Storage.toggleFavoriteProduct(product);
+        pushFavoritesToCloud();
+        renderRecentProducts(true);
+        renderFavoriteProducts(true);
+      }));
+    });
+  }
+
+  function toggleRecentSection() {
+    const container = document.getElementById('recentProducts');
+    const toggleBtn = document.getElementById('recentToggleBtn');
+    const collapsed = container.classList.toggle('collapsed');
+    toggleBtn.setAttribute('aria-expanded', String(!collapsed));
+  }
+
+  function toggleFavoriteSection() {
+    const container = document.getElementById('favoriteProducts');
+    const toggleBtn = document.getElementById('favoriteToggleBtn');
+    const collapsed = container.classList.toggle('collapsed');
+    toggleBtn.setAttribute('aria-expanded', String(!collapsed));
   }
 
   // Po wybraniu podpowiedzi z listy nazw uzupełnia makra, jeśli pola są puste
@@ -627,6 +704,7 @@ const UI = (() => {
     pendingPer100g = entry ? entry.per100g || null : null;
     selectMeal(entry ? entry.meal || mealFromTime(entry.time) : mealFromTime(nowTimeStr()));
     renderRecentProducts(!entry);
+    renderFavoriteProducts(!entry);
 
     document.getElementById('entryModalOverlay').classList.add('active');
   }
@@ -964,6 +1042,8 @@ const UI = (() => {
     closeEntryModal,
     saveEntryFromForm,
     selectMeal,
+    toggleRecentSection,
+    toggleFavoriteSection,
     saveWeightFromInput,
     handleLabelScan,
     handleScreenshotScan,

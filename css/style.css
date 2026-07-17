@@ -552,6 +552,46 @@ html, body {
   display: none;
 }
 
+.chips.collapsed {
+  display: none;
+}
+
+.recent-fav-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 4px;
+}
+
+.recent-section {
+  margin-bottom: 10px;
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.recent-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 0;
+  margin-bottom: 6px;
+}
+
+.recent-toggle-arrow {
+  transition: transform 0.15s ease;
+  font-size: 11px;
+}
+
+.recent-toggle[aria-expanded="true"] .recent-toggle-arrow {
+  transform: rotate(180deg);
+}
+
 .chip {
   background: var(--accent-soft);
   color: var(--accent);
@@ -565,6 +605,36 @@ html, body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.chip-item {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--accent-soft);
+  border-radius: 16px;
+  padding-right: 4px;
+  max-width: 100%;
+}
+
+.chip-item .chip {
+  background: none;
+  padding-right: 6px;
+}
+
+.chip-star {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  padding: 4px 6px;
+  flex-shrink: 0;
+}
+
+.chip-star.active {
+  color: var(--warning);
 }
 
 .hint {

@@ -61,6 +61,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById(id).addEventListener('input', () => UI.clearPendingPer100g());
   });
   document.getElementById('entryName').addEventListener('change', () => UI.autofillFromName());
+  document.getElementById('recentToggleBtn').addEventListener('click', () => UI.toggleRecentSection());
+  document.getElementById('favoriteToggleBtn').addEventListener('click', () => UI.toggleFavoriteSection());
 
   document.querySelectorAll('#mealSelect button').forEach((btn) => {
     btn.addEventListener('click', () => UI.selectMeal(btn.dataset.meal));

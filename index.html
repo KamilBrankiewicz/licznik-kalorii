@@ -167,7 +167,21 @@
       <div id="voiceStatus" class="hint"></div>
       <div id="voiceError" class="error-msg"></div>
 
-      <div class="chips" id="recentProducts"></div>
+      <div class="recent-fav-row">
+        <div class="recent-section" id="recentSection" hidden>
+          <button type="button" class="recent-toggle" id="recentToggleBtn" aria-expanded="false">
+            <span>Ostatnie posiłki</span><span class="recent-toggle-arrow">▾</span>
+          </button>
+          <div class="chips collapsed" id="recentProducts"></div>
+        </div>
+
+        <div class="recent-section" id="favoriteSection" hidden>
+          <button type="button" class="recent-toggle" id="favoriteToggleBtn" aria-expanded="false">
+            <span>Ulubione posiłki</span><span class="recent-toggle-arrow">▾</span>
+          </button>
+          <div class="chips collapsed" id="favoriteProducts"></div>
+        </div>
+      </div>
 
       <div class="form-group">
         <label>Nazwa produktu / posiłku</label>

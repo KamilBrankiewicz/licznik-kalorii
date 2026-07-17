@@ -98,6 +98,19 @@ async function pullWeights() {
   return snap.exists() ? snap.data().map || {} : {};
 }
 
+async function pushFavorites(favorites) {
+  if (!currentUser) return;
+  const { doc, setDoc } = firestoreMod;
+  await setDoc(doc(db, 'users', currentUser.uid, 'meta', 'favorites'), { list: favorites });
+}
+
+async function pullFavorites() {
+  if (!currentUser) return [];
+  const { doc, getDoc } = firestoreMod;
+  const snap = await getDoc(doc(db, 'users', currentUser.uid, 'meta', 'favorites'));
+  return snap.exists() ? snap.data().list || [] : [];
+}
+
 const FirebaseSync = {
   init,
   signIn,
@@ -111,6 +124,8 @@ const FirebaseSync = {
   pullSettings,
   pushWeights,
   pullWeights,
+  pushFavorites,
+  pullFavorites,
   parseFirebaseConfig
 };
 

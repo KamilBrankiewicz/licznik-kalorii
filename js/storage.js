@@ -2,6 +2,7 @@ const Storage = (() => {
   const SETTINGS_KEY = 'settings';
   const ENTRY_PREFIX = 'entries_';
   const WEIGHTS_KEY = 'weights';
+  const FAVORITES_KEY = 'favoriteProducts';
 
   const DEFAULT_SETTINGS = {
     kcalGoal: 2000,
@@ -185,6 +186,76 @@ const Storage = (() => {
       .map((i) => i.entry);
   }
 
+  // Surowa lista zawiera także nagrobki (deleted: true) potrzebne do synchronizacji
+  function getRawFavoriteProducts() {
+    const raw = localStorage.getItem(FAVORITES_KEY);
+    return raw ? JSON.parse(raw) : [];
+  }
+
+  function getFavoriteProducts() {
+    return getRawFavoriteProducts().filter((p) => !p.deleted);
+  }
+
+  function saveFavoriteProducts(list) {
+    localStorage.setItem(FAVORITES_KEY, JSON.stringify(list));
+  }
+
+  function isFavoriteProduct(name) {
+    const key = (name || '').trim().toLowerCase();
+    if (!key) return false;
+    return getFavoriteProducts().some((p) => p.key === key);
+  }
+
+  function addFavoriteProduct(product) {
+    const key = (product.name || '').trim().toLowerCase();
+    if (!key) return;
+    const list = getRawFavoriteProducts().filter((p) => p.key !== key);
+    list.push({
+      key,
+      name: product.name,
+      grams: product.grams,
+      kcal: product.kcal,
+      protein: product.protein,
+      carbs: product.carbs,
+      fat: product.fat,
+      fiber: product.fiber,
+      per100g: product.per100g || null,
+      source: product.source || 'manual',
+      updatedAt: new Date().toISOString()
+    });
+    saveFavoriteProducts(list);
+  }
+
+  function removeFavoriteProduct(name) {
+    const key = (name || '').trim().toLowerCase();
+    const list = getRawFavoriteProducts();
+    const idx = list.findIndex((p) => p.key === key);
+    if (idx === -1) return;
+    list[idx] = { key, deleted: true, updatedAt: new Date().toISOString() };
+    saveFavoriteProducts(list);
+  }
+
+  // Przełącza status ulubionego; zwraca nowy stan (true = dodano, false = usunięto)
+  function toggleFavoriteProduct(product) {
+    if (isFavoriteProduct(product.name)) {
+      removeFavoriteProduct(product.name);
+      return false;
+    }
+    addFavoriteProduct(product);
+    return true;
+  }
+
+  // Scala dwie listy ulubionych po key; przy konflikcie wygrywa nowszy updatedAt
+  // (ten sam mechanizm nagrobków co przy wpisach/wadze)
+  function mergeFavoriteProducts(listA, listB) {
+    const byKey = new Map();
+    [...listA, ...listB].forEach((p) => {
+      const prev = byKey.get(p.key);
+      if (!prev || (p.updatedAt || '') > (prev.updatedAt || '')) byKey.set(p.key, p);
+    });
+    return [...byKey.values()];
+  }
+
   function exportData() {
     const entries = {};
     getAllDates().forEach((date) => {
@@ -194,13 +265,21 @@ const Storage = (() => {
       exportedAt: new Date().toISOString(),
       settings: getSettings(),
       entries,
-      weights: getWeights()
+      weights: getWeights(),
+      favoriteProducts: getRawFavoriteProducts()
     };
   }
 
   function importData(data, mode) {
     if (mode === 'replace') clearAllData();
     if (data.settings) saveSettings({ ...DEFAULT_SETTINGS, ...data.settings });
+    if (data.favoriteProducts) {
+      saveFavoriteProducts(
+        mode === 'replace'
+          ? data.favoriteProducts
+          : mergeFavoriteProducts(getRawFavoriteProducts(), data.favoriteProducts)
+      );
+    }
     if (data.entries) {
       Object.entries(data.entries).forEach(([date, importedEntries]) => {
         if (mode === 'replace') {
@@ -219,7 +298,7 @@ const Storage = (() => {
     const keysToRemove = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key === SETTINGS_KEY || key === WEIGHTS_KEY || key.startsWith(ENTRY_PREFIX)) {
+      if (key === SETTINGS_KEY || key === WEIGHTS_KEY || key === FAVORITES_KEY || key.startsWith(ENTRY_PREFIX)) {
         keysToRemove.push(key);
       }
     }
@@ -241,6 +320,14 @@ const Storage = (() => {
     getWeightHistory,
     mergeWeights,
     getFrequentProducts,
+    getFavoriteProducts,
+    getRawFavoriteProducts,
+    saveFavoriteProducts,
+    isFavoriteProduct,
+    addFavoriteProduct,
+    removeFavoriteProduct,
+    toggleFavoriteProduct,
+    mergeFavoriteProducts,
     addEntry,
     updateEntry,
     deleteEntry,
