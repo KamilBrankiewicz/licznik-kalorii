@@ -186,5 +186,104 @@ Jeśli na zdjęciu nie widać jedzenia, zwróć: {"error": "nie rozpoznano jedze
     );
   }
 
-  return { analyzeLabel, analyzeVoiceEntry, analyzeScreenshot, analyzeMealPhoto };
+  const PROMPT_RECIPE = `Przeanalizuj tekst przepisu kulinarnego podany przez użytkownika. Zidentyfikuj wszystkie składniki, przelicz miary kuchenne (łyżki, szklanki, sztuki itp.) na gramy i oszacuj wartości odżywcze na 100g dla każdego składnika.
+
+Tekst przepisu:
+"%RECIPE_TEXT%"
+
+Zwróć WYŁĄCZNIE JSON w formacie:
+{
+  "name": "nazwa przepisu jeśli można ją wywnioskować, inaczej null",
+  "ingredients": [
+    {
+      "name": "nazwa składnika",
+      "grams": number (waga w gramach),
+      "per100g": {
+        "kcal": number,
+        "protein": number,
+        "carbs": number,
+        "fat": number,
+        "fiber": number lub null
+      }
+    }
+  ]
+}
+
+Zasady:
+- Przeliczaj WSZYSTKIE miary na gramy: 1 łyżka = 15g (płynów/oleju) lub 10-12g (sypkich), 1 łyżeczka = 5g, 1 szklanka = 250ml, 1 dag = 10g
+- Sztuki przeliczaj na typową wagę: 1 ogórek ≈ 300g, 1 awokado ≈ 150g (miąższ), 1 jajko ≈ 60g
+- Wartości per100g to standardowe wartości odżywcze na 100g danego składnika (NIE na porcję)
+- Podawaj realistyczne, typowe wartości odżywcze
+- Jeśli nie rozpoznajesz żadnych składników, zwróć: {"error": "nie rozpoznano przepisu"}`;
+
+  async function analyzeRecipeText(text, apiKey) {
+    const prompt = PROMPT_RECIPE.replace('%RECIPE_TEXT%', text);
+    return callGemini([{ text: prompt }], apiKey);
+  }
+
+  const PROMPT_RECIPE_IMAGE = `Przeanalizuj zdjęcie/zrzut ekranu przepisu kulinarnego (może być zrzutem ekranu ze strony, aplikacji, notatki lub zdjęciem przepisu z książki/kartki). Zidentyfikuj wszystkie składniki, przelicz miary kuchenne (łyżki, szklanki, sztuki itp.) na gramy i oszacuj wartości odżywcze na 100g dla każdego składnika.
+
+Zwróć WYŁĄCZNIE JSON w formacie:
+{
+  "name": "nazwa przepisu jeśli widoczna lub można ją wywnioskować, inaczej null",
+  "ingredients": [
+    {
+      "name": "nazwa składnika",
+      "grams": number (waga w gramach),
+      "per100g": {
+        "kcal": number,
+        "protein": number,
+        "carbs": number,
+        "fat": number,
+        "fiber": number lub null
+      }
+    }
+  ]
+}
+
+Zasady:
+- Przeliczaj WSZYSTKIE miary na gramy: 1 łyżka = 15g (płynów/oleju) lub 10-12g (sypkich), 1 łyżeczka = 5g, 1 szklanka = 250ml, 1 dag = 10g
+- Sztuki przeliczaj na typową wagę: 1 ogórek ≈ 300g, 1 awokado ≈ 150g (miąższ), 1 jajko ≈ 60g
+- Wartości per100g to standardowe wartości odżywcze na 100g danego składnika (NIE na porcję)
+- Podawaj realistyczne, typowe wartości odżywcze
+- Jeśli na obrazie nie widać listy składników przepisu, zwróć: {"error": "nie rozpoznano przepisu"}`;
+
+  const PROMPT_INGREDIENT_LOOKUP = `Użytkownik podał nazwę lub krótki opis pojedynczego składnika kulinarnego (wpisany ręcznie lub podyktowany głosowo): "%TEXT%"
+
+Podaj typowe wartości odżywcze na 100g dla tego składnika.
+
+Zwróć WYŁĄCZNIE JSON w formacie:
+{
+  "name": "nazwa składnika (poprawiona/znormalizowana forma)",
+  "per100g": {
+    "kcal": number,
+    "protein": number,
+    "carbs": number,
+    "fat": number,
+    "fiber": number lub null jeśli trudno oszacować
+  }
+}
+
+Zasady:
+- Wartości per100g to standardowe, typowe wartości odżywcze na 100g SUROWEGO/BAZOWEGO produktu (chyba że opis jednoznacznie wskazuje na formę przetworzoną, np. "ugotowany ryż" — wtedy uwzględnij to)
+- Przy niepewności wybieraj wartości typowe/środkowe dla danego typu produktu
+Jeśli nie rozpoznajesz żadnego składnika w podanym tekście, zwróć: {"error": "nie rozpoznano składnika"}`;
+
+  async function analyzeIngredientLookup(text, apiKey) {
+    const prompt = PROMPT_INGREDIENT_LOOKUP.replace('%TEXT%', text);
+    return callGemini([{ text: prompt }], apiKey);
+  }
+
+  async function analyzeRecipeImage(file, apiKey) {
+    const base64 = await resizeImageToBase64(file);
+    return callGemini(
+      [
+        { text: PROMPT_RECIPE_IMAGE },
+        { inline_data: { mime_type: 'image/jpeg', data: base64 } }
+      ],
+      apiKey
+    );
+  }
+
+  return { analyzeLabel, analyzeVoiceEntry, analyzeScreenshot, analyzeMealPhoto, analyzeRecipeText, analyzeRecipeImage, analyzeIngredientLookup };
 })();

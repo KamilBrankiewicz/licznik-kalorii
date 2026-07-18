@@ -111,6 +111,19 @@ async function pullFavorites() {
   return snap.exists() ? snap.data().list || [] : [];
 }
 
+async function pushRecipes(recipes) {
+  if (!currentUser) return;
+  const { doc, setDoc } = firestoreMod;
+  await setDoc(doc(db, 'users', currentUser.uid, 'meta', 'recipes'), { list: recipes });
+}
+
+async function pullRecipes() {
+  if (!currentUser) return [];
+  const { doc, getDoc } = firestoreMod;
+  const snap = await getDoc(doc(db, 'users', currentUser.uid, 'meta', 'recipes'));
+  return snap.exists() ? snap.data().list || [] : [];
+}
+
 const FirebaseSync = {
   init,
   signIn,
@@ -126,6 +139,8 @@ const FirebaseSync = {
   pullWeights,
   pushFavorites,
   pullFavorites,
+  pushRecipes,
+  pullRecipes,
   parseFirebaseConfig
 };
 

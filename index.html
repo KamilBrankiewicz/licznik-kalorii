@@ -69,6 +69,13 @@
     <div id="historyList"></div>
   </section>
 
+  <!-- WIDOK: PRZEPISY -->
+  <section id="view-przepisy" class="view">
+    <h1 class="page-title">Przepisy</h1>
+    <button class="btn btn-primary" id="newRecipeBtn" style="margin-bottom:16px;">+ Nowy przepis</button>
+    <div id="recipeList"></div>
+  </section>
+
   <!-- WIDOK: USTAWIENIA -->
   <section id="view-ustawienia" class="view">
     <h1 class="page-title">Ustawienia</h1>
@@ -143,6 +150,7 @@
   <!-- NAWIGACJA -->
   <nav class="bottom-nav">
     <button class="nav-btn active" data-view="dziennik">Dziennik</button>
+    <button class="nav-btn" data-view="przepisy">Przepisy</button>
     <button class="nav-btn" data-view="historia">Historia</button>
     <button class="nav-btn" data-view="ustawienia">Ustawienia</button>
   </nav>
@@ -158,6 +166,7 @@
         <button type="button" class="btn scan-btn" id="scanMealPhotoBtn">🍽️ Zdjęcie posiłku</button>
         <button type="button" class="btn scan-btn" id="scanScreenshotBtn">🖼️ Zrzut ekranu</button>
         <button type="button" class="btn scan-btn" id="voiceEntryBtn">🎤 Dyktuj</button>
+        <button type="button" class="btn scan-btn" id="fromRecipeBtn">🍳 Z przepisu</button>
       </div>
       <input type="file" id="labelFileInput" accept="image/*" capture="environment" style="display:none;">
       <input type="file" id="mealPhotoFileInput" accept="image/*" capture="environment" style="display:none;">
@@ -256,6 +265,165 @@
       <div class="btn-row">
         <button class="btn btn-secondary" id="barcodeCancelBtn">Anuluj</button>
         <button class="btn btn-primary" id="barcodeManualSearchBtn">Szukaj</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: KREATOR PRZEPISU -->
+  <div class="modal-overlay" id="recipeModalOverlay">
+    <div class="modal-sheet">
+      <h3 id="recipeModalTitle">Nowy przepis</h3>
+
+      <div class="form-group">
+        <label>Nazwa przepisu</label>
+        <input type="text" id="recipeName" placeholder="np. Sałatka a la sushi">
+      </div>
+
+      <div class="form-group">
+        <label>Wklej tekst przepisu (AI rozpozna składniki)</label>
+        <textarea id="recipeTextInput" rows="4" placeholder="np. 25 dag ryżu do sushi, 1 awokado, 2 łyżki oleju..."></textarea>
+      </div>
+      <div class="scan-grid" style="margin-bottom:16px;">
+        <button type="button" class="btn scan-btn" id="recipeParseAiBtn">🤖 Przeanalizuj przepis</button>
+        <button type="button" class="btn scan-btn" id="recipeVoiceBtn">🎤 Dyktuj przepis</button>
+        <button type="button" class="btn scan-btn" id="recipeScreenshotBtn">🖼️ Zrzut ekranu przepisu</button>
+      </div>
+      <input type="file" id="recipeScreenshotFileInput" accept="image/*" style="display:none;">
+      <div id="recipeAiStatus" class="hint"></div>
+      <div id="recipeAiError" class="error-msg"></div>
+
+      <div class="recipe-ingredients-header">
+        <h4 style="margin:0;">Składniki</h4>
+        <button type="button" class="btn btn-secondary" id="recipeAddIngredientBtn" style="width:auto;padding:8px 14px;font-size:12px;">+ Dodaj</button>
+      </div>
+      <div id="recipeIngredientsList" class="recipe-ingredients-list"></div>
+
+      <div id="recipeTotals" class="recipe-totals" hidden></div>
+
+      <div class="form-group" style="margin-top:14px;">
+        <label>Waga po ugotowaniu (opcjonalnie, w gramach)</label>
+        <input type="number" id="recipeCookedWeight" inputmode="numeric" placeholder="np. 800">
+        <div class="hint">Jeśli podasz, makra na 100g będą liczone od tej wagi zamiast sumy składników</div>
+      </div>
+
+      <div id="recipeFormError" class="error-msg"></div>
+
+      <div class="btn-row">
+        <button class="btn btn-secondary" id="cancelRecipeBtn">Anuluj</button>
+        <button class="btn btn-primary" id="saveRecipeBtn">Zapisz przepis</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: DODAWANIE SKŁADNIKA DO PRZEPISU -->
+  <div class="modal-overlay" id="ingredientModalOverlay">
+    <div class="modal-sheet">
+      <h3>Dodaj składnik</h3>
+
+      <div class="scan-grid">
+        <button type="button" class="btn scan-btn" id="ingredientScanLabelBtn">📷 Etykieta</button>
+        <button type="button" class="btn scan-btn" id="ingredientScanBarcodeBtn">🔢 Kod kreskowy</button>
+        <button type="button" class="btn scan-btn" id="ingredientVoiceBtn">🎤 Dyktuj</button>
+      </div>
+      <input type="file" id="ingredientLabelFileInput" accept="image/*" capture="environment" style="display:none;">
+      <div id="ingredientScanStatus" class="hint"></div>
+      <div id="ingredientScanError" class="error-msg"></div>
+
+      <div class="recent-section" id="ingredientFavoriteSection" hidden>
+        <button type="button" class="recent-toggle" id="ingredientFavoriteToggleBtn" aria-expanded="false">
+          <span>Ulubione produkty</span><span class="recent-toggle-arrow">▾</span>
+        </button>
+        <div class="chips collapsed" id="ingredientFavoriteProducts"></div>
+      </div>
+
+      <div class="form-group">
+        <label>Nazwa składnika</label>
+        <input type="text" id="ingredientName" placeholder="np. Ryż do sushi" list="ingredientSuggestions">
+        <datalist id="ingredientSuggestions"></datalist>
+      </div>
+      <button type="button" class="btn btn-secondary" id="ingredientLookupBtn" style="margin-bottom:14px;">🔍 Sprawdź makro dla tej nazwy (AI)</button>
+
+      <div class="form-group">
+        <label>Waga (g) *</label>
+        <input type="number" id="ingredientGrams" inputmode="numeric" placeholder="np. 250">
+      </div>
+
+      <h4 style="margin:12px 0 8px;font-size:13px;color:var(--text-muted);">Wartości na 100g</h4>
+      <div class="form-row-2">
+        <div class="form-group">
+          <label>Kalorie (kcal)</label>
+          <input type="number" id="ingredientKcal" inputmode="numeric">
+        </div>
+        <div class="form-group">
+          <label>Białko (g)</label>
+          <input type="number" id="ingredientProtein" inputmode="decimal" step="0.1">
+        </div>
+        <div class="form-group">
+          <label>Węgle (g)</label>
+          <input type="number" id="ingredientCarbs" inputmode="decimal" step="0.1">
+        </div>
+        <div class="form-group">
+          <label>Tłuszcz (g)</label>
+          <input type="number" id="ingredientFat" inputmode="decimal" step="0.1">
+        </div>
+        <div class="form-group">
+          <label>Błonnik (g)</label>
+          <input type="number" id="ingredientFiber" inputmode="decimal" step="0.1">
+        </div>
+      </div>
+
+      <div id="ingredientFormError" class="error-msg"></div>
+
+      <div class="btn-row">
+        <button class="btn btn-secondary" id="cancelIngredientBtn">Anuluj</button>
+        <button class="btn btn-primary" id="saveIngredientBtn">Dodaj składnik</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: LOGOWANIE PORCJI Z PRZEPISU -->
+  <div class="modal-overlay" id="portionModalOverlay">
+    <div class="modal-sheet">
+      <h3>Dodaj porcję z przepisu</h3>
+
+      <div class="form-group">
+        <label>Przepis</label>
+        <select id="portionRecipeSelect" style="width:100%;background:var(--bg-card);border:1px solid var(--border);color:var(--text);padding:12px;border-radius:10px;font-size:15px;font-family:inherit;"></select>
+      </div>
+
+      <div id="portionRecipeInfo" class="recipe-totals" hidden></div>
+
+      <div class="form-group">
+        <label>Sposób podania porcji</label>
+        <div class="meal-select" id="portionModeSelect" style="grid-template-columns:repeat(3,1fr);">
+          <button type="button" data-mode="grams" class="active">Gramy</button>
+          <button type="button" data-mode="percent">Procent</button>
+          <button type="button" data-mode="fraction">Ułamek</button>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label id="portionInputLabel">Ile gramów zjadłeś?</label>
+        <input type="number" id="portionValue" inputmode="decimal" step="any" placeholder="np. 150">
+      </div>
+
+      <div class="form-group">
+        <label>Posiłek</label>
+        <div class="meal-select" id="portionMealSelect">
+          <button type="button" data-meal="sniadanie">Śniadanie</button>
+          <button type="button" data-meal="obiad">Obiad</button>
+          <button type="button" data-meal="kolacja">Kolacja</button>
+          <button type="button" data-meal="przekaska">Przekąska</button>
+        </div>
+      </div>
+
+      <div id="portionPreview" class="recipe-totals" hidden></div>
+
+      <div id="portionFormError" class="error-msg"></div>
+
+      <div class="btn-row">
+        <button class="btn btn-secondary" id="cancelPortionBtn">Anuluj</button>
+        <button class="btn btn-primary" id="savePortionBtn">Dodaj do dziennika</button>
       </div>
     </div>
   </div>

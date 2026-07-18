@@ -3,6 +3,7 @@ const Storage = (() => {
   const ENTRY_PREFIX = 'entries_';
   const WEIGHTS_KEY = 'weights';
   const FAVORITES_KEY = 'favoriteProducts';
+  const RECIPES_KEY = 'recipes';
 
   const DEFAULT_SETTINGS = {
     kcalGoal: 2000,
@@ -256,6 +257,58 @@ const Storage = (() => {
     return [...byKey.values()];
   }
 
+  // ── Przepisy ──
+
+  function getRawRecipes() {
+    const raw = localStorage.getItem(RECIPES_KEY);
+    return raw ? JSON.parse(raw) : [];
+  }
+
+  function getRecipes() {
+    return getRawRecipes().filter((r) => !r.deleted);
+  }
+
+  function saveRecipes(list) {
+    localStorage.setItem(RECIPES_KEY, JSON.stringify(list));
+  }
+
+  function addRecipe(recipe) {
+    const list = getRawRecipes();
+    const newRecipe = { ...recipe, id: crypto.randomUUID(), updatedAt: new Date().toISOString() };
+    list.push(newRecipe);
+    saveRecipes(list);
+    return newRecipe;
+  }
+
+  function updateRecipe(id, data) {
+    const list = getRawRecipes();
+    const idx = list.findIndex((r) => r.id === id);
+    if (idx === -1) return null;
+    list[idx] = { ...list[idx], ...data, updatedAt: new Date().toISOString() };
+    saveRecipes(list);
+    return list[idx];
+  }
+
+  function deleteRecipe(id) {
+    const list = getRawRecipes().map((r) =>
+      r.id === id ? { id: r.id, deleted: true, updatedAt: new Date().toISOString() } : r
+    );
+    saveRecipes(list);
+  }
+
+  function getRecipeById(id) {
+    return getRecipes().find((r) => r.id === id) || null;
+  }
+
+  function mergeRecipes(listA, listB) {
+    const byId = new Map();
+    [...listA, ...listB].forEach((r) => {
+      const prev = byId.get(r.id);
+      if (!prev || (r.updatedAt || '') > (prev.updatedAt || '')) byId.set(r.id, r);
+    });
+    return [...byId.values()];
+  }
+
   function exportData() {
     const entries = {};
     getAllDates().forEach((date) => {
@@ -266,7 +319,8 @@ const Storage = (() => {
       settings: getSettings(),
       entries,
       weights: getWeights(),
-      favoriteProducts: getRawFavoriteProducts()
+      favoriteProducts: getRawFavoriteProducts(),
+      recipes: getRawRecipes()
     };
   }
 
@@ -292,13 +346,16 @@ const Storage = (() => {
     if (data.weights) {
       saveWeights(mode === 'replace' ? data.weights : mergeWeights(getWeights(), data.weights));
     }
+    if (data.recipes) {
+      saveRecipes(mode === 'replace' ? data.recipes : mergeRecipes(getRawRecipes(), data.recipes));
+    }
   }
 
   function clearAllData() {
     const keysToRemove = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key === SETTINGS_KEY || key === WEIGHTS_KEY || key === FAVORITES_KEY || key.startsWith(ENTRY_PREFIX)) {
+      if (key === SETTINGS_KEY || key === WEIGHTS_KEY || key === FAVORITES_KEY || key === RECIPES_KEY || key.startsWith(ENTRY_PREFIX)) {
         keysToRemove.push(key);
       }
     }
@@ -334,6 +391,14 @@ const Storage = (() => {
     getDailySummary,
     getAllDatesWithEntries,
     getAllDates,
+    getRecipes,
+    getRawRecipes,
+    saveRecipes,
+    addRecipe,
+    updateRecipe,
+    deleteRecipe,
+    getRecipeById,
+    mergeRecipes,
     exportData,
     importData,
     clearAllData

@@ -787,6 +787,128 @@ h1.page-title {
   font-size: 13px;
 }
 
+/* Przepisy */
+.recipe-ingredients-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.recipe-ingredients-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.recipe-ingredient-card {
+  background: var(--bg-card);
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.recipe-ingredient-card .ing-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.recipe-ingredient-card .ing-name {
+  font-weight: 600;
+  font-size: 13.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recipe-ingredient-card .ing-meta {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.recipe-ingredient-card .ing-kcal {
+  font-weight: 700;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.recipe-ingredient-card .ing-delete {
+  background: none;
+  border: none;
+  color: var(--danger);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 2px 4px;
+  line-height: 1;
+}
+
+.recipe-totals {
+  background: var(--accent-soft);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+
+.recipe-totals .totals-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-bottom: 8px;
+}
+
+.recipe-totals .totals-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  text-align: center;
+}
+
+.recipe-totals .totals-grid .t-value {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.recipe-totals .totals-grid .t-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+
+.recipe-card {
+  background: var(--bg-card);
+  border-radius: 16px;
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  cursor: pointer;
+}
+
+.recipe-card .recipe-title {
+  font-weight: 700;
+  font-size: 15px;
+  margin-bottom: 4px;
+}
+
+.recipe-card .recipe-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.recipe-card .recipe-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.recipe-card .recipe-actions button {
+  flex: 1;
+}
+
 .toast {
   position: fixed;
   bottom: 100px;

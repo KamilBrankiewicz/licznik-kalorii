@@ -45,15 +45,44 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   document.getElementById('scanBarcodeBtn').addEventListener('click', () => UI.openBarcodeScanner());
-  document.getElementById('barcodeCancelBtn').addEventListener('click', () => UI.closeBarcodeScanner());
+  document.getElementById('barcodeCancelBtn').addEventListener('click', () => {
+    if (window._barcodeReturnToIngredient) {
+      window._barcodeReturnToIngredient = false;
+      Barcode.stop();
+      document.getElementById('barcodeOverlay').classList.remove('active');
+      document.getElementById('ingredientModalOverlay').classList.add('active');
+    } else {
+      UI.closeBarcodeScanner();
+    }
+  });
   document.getElementById('barcodeManualSearchBtn').addEventListener('click', () => {
-    UI.lookupBarcode(document.getElementById('barcodeManualInput').value, false);
+    const code = document.getElementById('barcodeManualInput').value;
+    if (window._barcodeReturnToIngredient) {
+      UI.lookupIngredientBarcode(code);
+    } else {
+      UI.lookupBarcode(code, false);
+    }
   });
   document.getElementById('barcodeManualInput').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') UI.lookupBarcode(e.target.value, false);
+    if (e.key === 'Enter') {
+      if (window._barcodeReturnToIngredient) {
+        UI.lookupIngredientBarcode(e.target.value);
+      } else {
+        UI.lookupBarcode(e.target.value, false);
+      }
+    }
   });
   document.getElementById('barcodeOverlay').addEventListener('click', (e) => {
-    if (e.target.id === 'barcodeOverlay') UI.closeBarcodeScanner();
+    if (e.target.id === 'barcodeOverlay') {
+      if (window._barcodeReturnToIngredient) {
+        window._barcodeReturnToIngredient = false;
+        Barcode.stop();
+        document.getElementById('barcodeOverlay').classList.remove('active');
+        document.getElementById('ingredientModalOverlay').classList.add('active');
+      } else {
+        UI.closeBarcodeScanner();
+      }
+    }
   });
 
   document.getElementById('entryGrams').addEventListener('input', () => UI.recalcFromPer100g());
@@ -70,10 +99,79 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('weightInput').addEventListener('change', () => UI.saveWeightFromInput());
 
+  // Przycisk "Z przepisu" w modalu dodawania
+  document.getElementById('fromRecipeBtn').addEventListener('click', () => {
+    UI.closeEntryModal();
+    UI.openPortionModal();
+  });
+
+  // ── Przepisy ──
+  document.getElementById('newRecipeBtn').addEventListener('click', () => UI.openRecipeModal());
+  document.getElementById('cancelRecipeBtn').addEventListener('click', () => UI.closeRecipeModal());
+  document.getElementById('saveRecipeBtn').addEventListener('click', () => UI.saveRecipe());
+  document.getElementById('recipeParseAiBtn').addEventListener('click', () => UI.parseRecipeWithAi());
+  document.getElementById('recipeVoiceBtn').addEventListener('click', () => UI.handleRecipeVoice());
+  document.getElementById('recipeScreenshotBtn').addEventListener('click', () => {
+    document.getElementById('recipeScreenshotFileInput').click();
+  });
+  document.getElementById('recipeScreenshotFileInput').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) UI.handleRecipeScreenshot(file);
+    e.target.value = '';
+  });
+  document.getElementById('recipeModalOverlay').addEventListener('click', (e) => {
+    if (e.target.id === 'recipeModalOverlay') UI.closeRecipeModal();
+  });
+  document.getElementById('recipeCookedWeight').addEventListener('input', () => UI.renderRecipeIngredients());
+
+  // Składnik
+  document.getElementById('recipeAddIngredientBtn').addEventListener('click', () => UI.openIngredientModal());
+  document.getElementById('cancelIngredientBtn').addEventListener('click', () => UI.closeIngredientModal());
+  document.getElementById('saveIngredientBtn').addEventListener('click', () => UI.saveIngredient());
+  document.getElementById('ingredientModalOverlay').addEventListener('click', (e) => {
+    if (e.target.id === 'ingredientModalOverlay') UI.closeIngredientModal();
+  });
+  document.getElementById('ingredientScanLabelBtn').addEventListener('click', () => {
+    document.getElementById('ingredientLabelFileInput').click();
+  });
+  document.getElementById('ingredientLabelFileInput').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) UI.handleIngredientLabelScan(file);
+    e.target.value = '';
+  });
+  document.getElementById('ingredientScanBarcodeBtn').addEventListener('click', () => UI.openIngredientBarcodeScanner());
+  document.getElementById('ingredientVoiceBtn').addEventListener('click', () => UI.handleIngredientVoice());
+  document.getElementById('ingredientLookupBtn').addEventListener('click', () => UI.handleIngredientLookup());
+  document.getElementById('ingredientFavoriteToggleBtn').addEventListener('click', () => UI.toggleIngredientFavoriteSection());
+
+  // Porcja z przepisu
+  document.getElementById('cancelPortionBtn').addEventListener('click', () => UI.closePortionModal());
+  document.getElementById('savePortionBtn').addEventListener('click', () => UI.savePortionEntry());
+  document.getElementById('portionModalOverlay').addEventListener('click', (e) => {
+    if (e.target.id === 'portionModalOverlay') UI.closePortionModal();
+  });
+  document.getElementById('portionRecipeSelect').addEventListener('change', () => {
+    UI.updatePortionRecipeInfo();
+    UI.updatePortionPreview();
+  });
+  document.getElementById('portionValue').addEventListener('input', () => UI.updatePortionPreview());
+  document.querySelectorAll('#portionModeSelect button').forEach((btn) => {
+    btn.addEventListener('click', () => UI.selectPortionMode(btn.dataset.mode));
+  });
+  document.querySelectorAll('#portionMealSelect button').forEach((btn) => {
+    btn.addEventListener('click', () => UI.selectPortionMeal(btn.dataset.meal));
+  });
+
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
     if (document.getElementById('barcodeOverlay').classList.contains('active')) {
       UI.closeBarcodeScanner();
+    } else if (document.getElementById('ingredientModalOverlay').classList.contains('active')) {
+      UI.closeIngredientModal();
+    } else if (document.getElementById('recipeModalOverlay').classList.contains('active')) {
+      UI.closeRecipeModal();
+    } else if (document.getElementById('portionModalOverlay').classList.contains('active')) {
+      UI.closePortionModal();
     } else if (document.getElementById('entryModalOverlay').classList.contains('active')) {
       UI.closeEntryModal();
     }
