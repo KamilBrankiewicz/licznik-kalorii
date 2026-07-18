@@ -111,6 +111,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('saveRecipeBtn').addEventListener('click', () => UI.saveRecipe());
   document.getElementById('recipeParseAiBtn').addEventListener('click', () => UI.parseRecipeWithAi());
   document.getElementById('recipeVoiceBtn').addEventListener('click', () => UI.handleRecipeVoice());
+  document.getElementById('recipeVoiceSendBtn').addEventListener('click', () => UI.handleRecipeVoiceSend());
+  document.getElementById('recipeVoiceDiscardBtn').addEventListener('click', () => UI.handleRecipeVoiceDiscard());
   document.getElementById('recipeScreenshotBtn').addEventListener('click', () => {
     document.getElementById('recipeScreenshotFileInput').click();
   });

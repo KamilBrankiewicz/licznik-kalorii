@@ -1079,7 +1079,6 @@ const UI = (() => {
     document.getElementById('recipeAiError').textContent = '';
     document.getElementById('recipeFormError').textContent = '';
     stopRecipeVoiceIfActive();
-    setRecipeVoiceButtonState(false);
 
     recipeIngredients = recipe ? [...recipe.ingredients.map((i) => ({ ...i, per100g: { ...i.per100g } }))] : [];
     renderRecipeIngredients();
@@ -1194,70 +1193,123 @@ const UI = (() => {
     }
   }
 
-  let recipeVoiceController = null;
+  let recipeAudioRecorder = null;
+  let recipeRecordingState = 'idle'; // idle | recording | paused
 
-  function setRecipeVoiceButtonState(listening) {
+  function setRecipeVoiceUiState(state) {
+    recipeRecordingState = state;
     const btn = document.getElementById('recipeVoiceBtn');
-    btn.textContent = listening ? '⏸ Wstrzymaj dyktowanie' : '🎤 Dyktuj przepis';
+    const controls = document.getElementById('recipeVoiceControls');
+    if (state === 'recording') {
+      btn.textContent = '⏸ Pauza';
+    } else if (state === 'paused') {
+      btn.textContent = '🎤 Wznów nagrywanie';
+    } else {
+      btn.textContent = '🎤 Nagraj przepis';
+    }
+    controls.style.display = state === 'idle' ? 'none' : '';
   }
 
   function stopRecipeVoiceIfActive() {
-    if (recipeVoiceController) {
-      recipeVoiceController.stop();
+    if (recipeAudioRecorder) {
+      recipeAudioRecorder.discard();
+      recipeAudioRecorder = null;
     }
+    setRecipeVoiceUiState('idle');
   }
 
-  // Mikrofon tylko nagrywa do pola tekstowego — nie wysyła nic do Gemini.
-  // Użytkownik dyktuje, w dowolnym momencie może wstrzymać/wznowić (kliknięcie
-  // przełącza nasłuch), a wysyłkę do AI wykonuje świadomie przyciskiem
-  // „Przeanalizuj przepis" (parseRecipeWithAi), kiedy uzna tekst za kompletny.
-  function handleRecipeVoice() {
+  // Mikrofon nagrywa dźwięk (nie wysyła nic do Gemini w locie). Użytkownik może w
+  // dowolnym momencie wstrzymać/wznowić nagrywanie (to samo nagranie, MediaRecorder
+  // pause/resume), a wysyłkę do transkrypcji wykonuje świadomie przyciskiem „Wyślij
+  // nagranie do AI", kiedy uzna, że skończył dyktować. Transkrybowany tekst trafia do
+  // pola tekstowego — analizę składników robi osobno „Przeanalizuj przepis".
+  //
+  // Świadomie NIE używamy tu wbudowanego rozpoznawania mowy przeglądarki (Web Speech
+  // API) — na Androidzie w trybie ciągłym okazało się zbyt niestabilne (patrz historia
+  // w docs/CHANGELOG.md: trzy próby naprawy duplikowania tekstu). Wysłanie całego
+  // nagrania do Gemini za jednym razem tego problemu nie ma.
+  async function handleRecipeVoice() {
     const statusEl = document.getElementById('recipeAiStatus');
     const errorEl = document.getElementById('recipeAiError');
     errorEl.textContent = '';
 
-    if (recipeVoiceController) {
-      recipeVoiceController.stop();
+    if (recipeRecordingState === 'recording') {
+      recipeAudioRecorder.pause();
+      setRecipeVoiceUiState('paused');
+      statusEl.textContent = 'Wstrzymano. Wznów nagrywanie albo wyślij nagranie do AI.';
       return;
     }
 
-    if (!Voice.isSupported()) {
-      errorEl.textContent = 'Rozpoznawanie mowy nie jest obsługiwane w tej przeglądarce.';
+    if (recipeRecordingState === 'paused') {
+      recipeAudioRecorder.resume();
+      setRecipeVoiceUiState('recording');
+      statusEl.textContent = 'Nagrywam...';
       return;
     }
 
-    const textarea = document.getElementById('recipeTextInput');
-    const baseText = textarea.value.trim();
-    statusEl.textContent = 'Słucham... (kliknij mikrofon, aby wstrzymać)';
+    if (!Voice.isRecordingSupported()) {
+      errorEl.textContent = 'Nagrywanie dźwięku nie jest obsługiwane w tej przeglądarce.';
+      return;
+    }
 
-    recipeVoiceController = Voice.startContinuous({
-      onResult({ finalTranscript, interim }) {
-        const combinedFinal = baseText ? `${baseText} ${finalTranscript}`.trim() : finalTranscript;
-        textarea.value = interim ? `${combinedFinal} ${interim}`.trim() : combinedFinal;
-      },
-      onError(err) {
-        recipeVoiceController = null;
-        setRecipeVoiceButtonState(false);
-        statusEl.textContent = '';
-        if (err.message === 'PERMISSION_DENIED') {
-          errorEl.textContent = 'Brak dostępu do mikrofonu. Zezwól na dostęp w ustawieniach przeglądarki.';
-        } else {
-          errorEl.textContent = 'Rozpoznawanie mowy nie jest obsługiwane w tej przeglądarce.';
-        }
-      },
-      onEnd(finalTranscript) {
-        recipeVoiceController = null;
-        setRecipeVoiceButtonState(false);
-
-        const fullText = (baseText ? `${baseText} ${finalTranscript}` : finalTranscript).trim();
-        textarea.value = fullText;
-        statusEl.textContent = fullText
-          ? 'Wstrzymano. Kliknij mikrofon, aby kontynuować, albo „Przeanalizuj przepis”, aby wysłać do AI.'
-          : '';
+    const recorder = Voice.createAudioRecorder();
+    try {
+      await recorder.start();
+    } catch (err) {
+      if (err.message === 'PERMISSION_DENIED') {
+        errorEl.textContent = 'Brak dostępu do mikrofonu. Zezwól na dostęp w ustawieniach przeglądarki.';
+      } else {
+        errorEl.textContent = 'Nie udało się uruchomić nagrywania.';
       }
-    });
+      return;
+    }
 
-    setRecipeVoiceButtonState(true);
+    recipeAudioRecorder = recorder;
+    setRecipeVoiceUiState('recording');
+    statusEl.textContent = 'Nagrywam...';
+  }
+
+  async function handleRecipeVoiceSend() {
+    const statusEl = document.getElementById('recipeAiStatus');
+    const errorEl = document.getElementById('recipeAiError');
+    errorEl.textContent = '';
+
+    if (!recipeAudioRecorder) return;
+
+    const settings = requireGeminiKeyOrPrompt(errorEl);
+    if (!settings) return;
+
+    const recorder = recipeAudioRecorder;
+    recipeAudioRecorder = null;
+    setRecipeVoiceUiState('idle');
+    statusEl.textContent = 'Przepisuję nagranie...';
+
+    try {
+      const blob = await recorder.stopAndGetBlob();
+      const transcript = await Ocr.transcribeAudio(blob, settings.geminiApiKey);
+      const textarea = document.getElementById('recipeTextInput');
+      const baseText = textarea.value.trim();
+      textarea.value = baseText ? `${baseText} ${transcript}`.trim() : transcript;
+      statusEl.textContent = 'Dodano przepisany tekst — sprawdź go i kliknij „Przeanalizuj przepis”.';
+    } catch (err) {
+      statusEl.textContent = '';
+      if (err.message === 'NO_API_KEY') {
+        errorEl.textContent = 'Brak klucza Gemini API.';
+      } else if (err.message === 'NETWORK_ERROR') {
+        errorEl.textContent = 'Błąd sieci — sprawdź połączenie.';
+      } else {
+        errorEl.textContent = 'Nie udało się przepisać nagrania. Spróbuj ponownie.';
+      }
+    }
+  }
+
+  function handleRecipeVoiceDiscard() {
+    if (recipeAudioRecorder) {
+      recipeAudioRecorder.discard();
+      recipeAudioRecorder = null;
+    }
+    setRecipeVoiceUiState('idle');
+    document.getElementById('recipeAiStatus').textContent = '';
   }
 
   async function handleRecipeScreenshot(file) {
@@ -1878,6 +1930,8 @@ const UI = (() => {
     saveRecipe,
     parseRecipeWithAi,
     handleRecipeVoice,
+    handleRecipeVoiceSend,
+    handleRecipeVoiceDiscard,
     handleRecipeScreenshot,
     openIngredientModal,
     closeIngredientModal,

@@ -15,6 +15,29 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku — niezacommitowane] 2026-07-18 — Dyktowanie przepisu: nagranie audio + transkrypcja Gemini zamiast Web Speech API
+**Co:** „Dyktuj przepis" zastąpione „Nagraj przepis" — zamiast rozpoznawania mowy na żywo
+w przeglądarce, mikrofon teraz nagrywa dźwięk (można wstrzymać/wznowić w trakcie tego
+samego nagrania), a po kliknięciu „Wyślij nagranie do AI" całe nagranie trafia jednym
+requestem do Gemini, które zwraca przepisany tekst wstawiany do pola przepisu. Jest też
+„Odrzuć nagranie" do anulowania bez wysyłki.
+**Dlaczego:** trzy poprawki tego samego dnia (patrz wpisy niżej) nie rozwiązały trwale
+duplikowania tekstu w Web Speech API na Androidzie — nawet rezygnacja z `continuous=true`
+na rzecz łańcucha krótkich sesji nadal nie dawała satysfakcjonującego efektu w praktyce na
+urządzeniu użytkownika. Transkrypcja całego nagrania za jednym razem przez Gemini nie ma
+tej klasy błędów, bo nie polega na niestabilnej segmentacji w locie po stronie silnika
+przeglądarki/systemu.
+**Pliki:** `js/voice.js`, `js/ocr.js`, `js/ui.js`, `js/app.js`, `index.html`, `sw.js`
+**Uwagi:** `Voice.startContinuous` (Web Speech API) usunięte całkowicie z `voice.js` —
+zastąpione `Voice.createAudioRecorder()` (MediaRecorder: start/pause/resume/stopAndGetBlob/
+discard). `Voice.listenOnce` (rozpoznawanie jednorazowe, używane gdzie indziej — szybkie
+dodawanie posiłku głosem, wyszukiwanie składnika) zostaje bez zmian, bo nie miało tego
+problemu. Nowa funkcja `Ocr.transcribeAudio(blob, apiKey)` wysyła nagranie jako
+`inline_data` do Gemini i zwraca surowy tekst (nie JSON, w przeciwieństwie do reszty
+promptów w `ocr.js`). Zweryfikowane w przeglądarce mockiem `getUserMedia`/`MediaRecorder`/
+`fetch` — pełny przepływ nagraj → pauza → wznów → wyślij → tekst w polu, oraz osobno
+„odrzuć nagranie".
+
 ## [w toku — niezacommitowane] 2026-07-18 — Dyktowanie: rezygnacja z continuous=true (trzecia próba)
 **Co:** dyktowanie przepisu na Androidzie nadal powielało tekst mimo dwóch wcześniejszych
 poprawek tego samego dnia — tym razem w jeszcze bardziej chaotyczny sposób, mieszając

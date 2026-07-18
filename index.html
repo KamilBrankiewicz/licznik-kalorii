@@ -80,7 +80,7 @@
   <section id="view-ustawienia" class="view">
     <div style="display:flex; align-items:baseline; justify-content:space-between; gap:8px;">
       <h1 class="page-title" style="margin-bottom:0;">Ustawienia</h1>
-      <span class="hint" style="white-space:nowrap;">v19</span>
+      <span class="hint" style="white-space:nowrap;">v20</span>
     </div>
 
     <div class="form-group">
@@ -288,10 +288,15 @@
       </div>
       <div class="scan-grid" style="margin-bottom:16px;">
         <button type="button" class="btn scan-btn" id="recipeParseAiBtn">🤖 Przeanalizuj przepis</button>
-        <button type="button" class="btn scan-btn" id="recipeVoiceBtn">🎤 Dyktuj przepis</button>
+        <button type="button" class="btn scan-btn" id="recipeVoiceBtn">🎤 Nagraj przepis</button>
         <button type="button" class="btn scan-btn" id="recipeScreenshotBtn">🖼️ Zrzut ekranu przepisu</button>
       </div>
       <input type="file" id="recipeScreenshotFileInput" accept="image/*" style="display:none;">
+      <div id="recipeVoiceControls" class="hint" style="display:none; margin-top:-10px; margin-bottom:12px;">
+        <button type="button" class="link-btn" id="recipeVoiceSendBtn">✅ Wyślij nagranie do AI</button>
+        ·
+        <button type="button" class="link-btn" id="recipeVoiceDiscardBtn">🗑️ Odrzuć nagranie</button>
+      </div>
       <div id="recipeAiStatus" class="hint"></div>
       <div id="recipeAiError" class="error-msg"></div>
 

@@ -285,5 +285,54 @@ Jeśli nie rozpoznajesz żadnego składnika w podanym tekście, zwróć: {"error
     );
   }
 
-  return { analyzeLabel, analyzeVoiceEntry, analyzeScreenshot, analyzeMealPhoto, analyzeRecipeText, analyzeRecipeImage, analyzeIngredientLookup };
+  const PROMPT_TRANSCRIBE = `Przepisz dokładnie to nagranie głosowe na tekst po polsku. Zwróć WYŁĄCZNIE surowy przepisany tekst, bez żadnych dodatkowych komentarzy, cudzysłowów, wprowadzeń ani formatowania.`;
+
+  function blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Nie udało się odczytać nagrania'));
+      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  async function transcribeAudio(blob, apiKey) {
+    if (!apiKey) throw new Error('NO_API_KEY');
+
+    const base64 = await blobToBase64(blob);
+    const mimeType = blob.type || 'audio/webm';
+
+    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent';
+    const payload = {
+      contents: [{
+        parts: [
+          { text: PROMPT_TRANSCRIBE },
+          { inline_data: { mime_type: mimeType, data: base64 } }
+        ]
+      }]
+    };
+
+    let response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+        body: JSON.stringify(payload)
+      });
+    } catch (e) {
+      throw new Error('NETWORK_ERROR');
+    }
+
+    if (!response.ok) {
+      throw new Error('API_ERROR');
+    }
+
+    const data = await response.json();
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    if (!text) throw new Error('PARSE_ERROR');
+
+    return text;
+  }
+
+  return { analyzeLabel, analyzeVoiceEntry, analyzeScreenshot, analyzeMealPhoto, analyzeRecipeText, analyzeRecipeImage, analyzeIngredientLookup, transcribeAudio };
 })();
