@@ -15,6 +15,26 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku — niezacommitowane] 2026-07-18 — Fix powielania słów przy dyktowaniu na Androidzie
+**Co:** dyktowanie przepisu na Androidzie nadal wstawiało powielony, narastający tekst
+(np. „25 25 25 g 25 g 25 g ryżu 25 g ryżu do sushi” zamiast „25 g ryżu do sushi”) mimo
+poprzedniej poprawki tego samego dnia.
+**Dlaczego:** poprzedni fix zakładał, że duplikaty to identyczne powtórzone zdarzenia
+`onresult` dla tego samego wyniku. Na Androidzie rozpoznawanie mowy w trybie `continuous`
+finalizuje ten sam wypowiedziany fragment wielokrotnie jako **osobne, kolejno
+doprecyzowywane** wpisy w `event.results` („25” → „25 g” → „25 g ryżu” → „25 g ryżu do
+sushi”), więc samo sumowanie wszystkich `isFinal` wpisów nadal je doklejało zamiast
+zastępować.
+**Pliki:** `js/voice.js`, `sw.js`, `index.html`
+**Uwagi:** dodano `mergeFinalChunks()` — jeśli kolejny finalny fragment jest powtórzeniem
+lub rozszerzeniem (`startsWith`) poprzedniego, zastępuje go zamiast doklejać. Zweryfikowane
+w przeglądarce mockiem `SpeechRecognition` odtwarzającym dokładnie ten wzorzec progresywnych
+rewizji, oraz ponownie scenariuszem identycznych duplikatów z poprzedniej poprawki. Przy
+okazji wykryto, że pierwszy fix tego dnia nie był widoczny w testach lokalnie, bo service
+worker serwował starą wersję `voice.js` z cache `CACHE_NAME` sprzed tej zmiany — przypomnienie,
+że bump wersji musi iść w tym samym kroku co edycja JS, inaczej własne testy w przeglądarce
+łapią stary kod.
+
 ## [w toku — niezacommitowane] 2026-07-18 — Fix powielania słów przy dyktowaniu przepisu
 **Co:** dyktowanie przepisu głosem przestało wstawiać to samo słowo kilka razy pod rząd
 (np. „gruszka gruszka gruszka gruszka”).

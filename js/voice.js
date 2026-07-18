@@ -3,6 +3,28 @@ const Voice = (() => {
     return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
   }
 
+  // Rozpoznawanie mowy na Androidzie (i czasem Chrome desktop) w trybie continuous
+  // potrafi "finalizować" ten sam wypowiedziany fragment kilka razy z rzędu, za każdym
+  // razem jako osobny wpis w event.results, stopniowo doprecyzowując treść: "25", "25",
+  // "25 g", "25 g", "25 g ryżu", "25 g ryżu do sushi". Sklejenie tych wpisów wprost dałoby
+  // "25 25 25 g 25 g 25 g ryżu 25 g ryżu do sushi". Traktujemy każdy kolejny finalny
+  // fragment, który jest powtórzeniem lub rozszerzeniem poprzedniego, jako jego rewizję —
+  // zastępujemy nim poprzedni zamiast doklejać.
+  function mergeFinalChunks(chunks) {
+    const merged = [];
+    for (const chunk of chunks) {
+      const prev = merged[merged.length - 1];
+      if (prev !== undefined && (chunk === prev || chunk.startsWith(prev))) {
+        merged[merged.length - 1] = chunk;
+      } else if (prev !== undefined && prev.startsWith(chunk)) {
+        // nowy fragment to podzbiór już zapisanego — nic nowego do dodania
+      } else {
+        merged.push(chunk);
+      }
+    }
+    return merged.join(' ');
+  }
+
   function listenOnce() {
     return new Promise((resolve, reject) => {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -76,16 +98,17 @@ const Voice = (() => {
       r.maxAlternatives = 1;
 
       r.onresult = (event) => {
-        let sessionFinal = '';
+        const finalChunks = [];
         let interim = '';
         for (let i = 0; i < event.results.length; i++) {
-          const chunk = event.results[i][0].transcript;
+          const chunk = event.results[i][0].transcript.trim();
           if (event.results[i].isFinal) {
-            sessionFinal = sessionFinal ? `${sessionFinal} ${chunk.trim()}` : chunk.trim();
+            if (chunk) finalChunks.push(chunk);
           } else {
-            interim += chunk;
+            interim += event.results[i][0].transcript;
           }
         }
+        const sessionFinal = mergeFinalChunks(finalChunks);
         lastSessionFinal = sessionFinal;
         const combined = finalTranscript ? `${finalTranscript} ${sessionFinal}`.trim() : sessionFinal;
         onResult({ finalTranscript: combined, interim });
