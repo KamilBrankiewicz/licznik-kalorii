@@ -1,5 +1,11 @@
 # Plan implementacji — Licznik Kalorii (PWA)
 
+> **Ten plik to zakres i stan prac.** Pozostała dokumentacja:
+> [CLAUDE.md](CLAUDE.md) — zasady pracy nad repo (czytaj jako pierwsze) ·
+> [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — jak to działa ·
+> [docs/MAINTENANCE.md](docs/MAINTENANCE.md) — checklista wdrożenia ·
+> [docs/CHANGELOG.md](docs/CHANGELOG.md) — co i kiedy się zmieniło.
+
 ## Stan realizacji (2026-07-16)
 
 **Zrobione:**

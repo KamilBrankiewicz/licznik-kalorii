@@ -1078,6 +1078,8 @@ const UI = (() => {
     document.getElementById('recipeAiStatus').textContent = '';
     document.getElementById('recipeAiError').textContent = '';
     document.getElementById('recipeFormError').textContent = '';
+    stopRecipeVoiceIfActive();
+    setRecipeVoiceButtonState(false);
 
     recipeIngredients = recipe ? [...recipe.ingredients.map((i) => ({ ...i, per100g: { ...i.per100g } }))] : [];
     renderRecipeIngredients();
@@ -1086,6 +1088,7 @@ const UI = (() => {
   }
 
   function closeRecipeModal() {
+    stopRecipeVoiceIfActive();
     document.getElementById('recipeModalOverlay').classList.remove('active');
   }
 
@@ -1191,10 +1194,28 @@ const UI = (() => {
     }
   }
 
-  async function handleRecipeVoice() {
+  let recipeVoiceController = null;
+
+  function setRecipeVoiceButtonState(listening) {
+    const btn = document.getElementById('recipeVoiceBtn');
+    btn.textContent = listening ? '⏹ Zakończ dyktowanie' : '🎤 Dyktuj przepis';
+  }
+
+  function stopRecipeVoiceIfActive() {
+    if (recipeVoiceController) {
+      recipeVoiceController.stop();
+    }
+  }
+
+  function handleRecipeVoice() {
     const statusEl = document.getElementById('recipeAiStatus');
     const errorEl = document.getElementById('recipeAiError');
     errorEl.textContent = '';
+
+    if (recipeVoiceController) {
+      recipeVoiceController.stop();
+      return;
+    }
 
     if (!Voice.isSupported()) {
       errorEl.textContent = 'Rozpoznawanie mowy nie jest obsługiwane w tej przeglądarce.';
@@ -1204,34 +1225,51 @@ const UI = (() => {
     const settings = requireGeminiKeyOrPrompt(errorEl);
     if (!settings) return;
 
-    statusEl.textContent = 'Słucham... podyktuj składniki przepisu';
+    const textarea = document.getElementById('recipeTextInput');
+    const baseText = textarea.value.trim();
+    statusEl.textContent = 'Słucham... podyktuj składniki przepisu (kliknij ponownie, aby zakończyć)';
 
-    let transcript;
-    try {
-      transcript = await Voice.listenOnce();
-    } catch (err) {
-      statusEl.textContent = '';
-      if (err.message === 'PERMISSION_DENIED') {
-        errorEl.textContent = 'Brak dostępu do mikrofonu. Zezwól na dostęp w ustawieniach przeglądarki.';
-      } else if (err.message === 'NO_SPEECH') {
-        errorEl.textContent = 'Nie wykryto mowy. Spróbuj ponownie.';
-      } else {
-        errorEl.textContent = 'Rozpoznawanie mowy nie jest obsługiwane w tej przeglądarce.';
+    recipeVoiceController = Voice.startContinuous({
+      onResult({ finalTranscript, interim }) {
+        const combinedFinal = baseText ? `${baseText} ${finalTranscript}`.trim() : finalTranscript;
+        textarea.value = interim ? `${combinedFinal} ${interim}`.trim() : combinedFinal;
+      },
+      onError(err) {
+        recipeVoiceController = null;
+        setRecipeVoiceButtonState(false);
+        statusEl.textContent = '';
+        if (err.message === 'PERMISSION_DENIED') {
+          errorEl.textContent = 'Brak dostępu do mikrofonu. Zezwól na dostęp w ustawieniach przeglądarki.';
+        } else {
+          errorEl.textContent = 'Rozpoznawanie mowy nie jest obsługiwane w tej przeglądarce.';
+        }
+      },
+      async onEnd(finalTranscript) {
+        recipeVoiceController = null;
+        setRecipeVoiceButtonState(false);
+
+        const fullText = (baseText ? `${baseText} ${finalTranscript}` : finalTranscript).trim();
+        textarea.value = fullText;
+
+        if (!fullText) {
+          statusEl.textContent = '';
+          errorEl.textContent = 'Nie wykryto mowy. Spróbuj ponownie.';
+          return;
+        }
+
+        statusEl.textContent = 'Analizuję przepis...';
+        try {
+          const result = await Ocr.analyzeRecipeText(fullText, settings.geminiApiKey);
+          statusEl.textContent = '';
+          applyParsedRecipe(result);
+        } catch (err) {
+          statusEl.textContent = '';
+          showRecipeAiError(err, errorEl);
+        }
       }
-      return;
-    }
+    });
 
-    document.getElementById('recipeTextInput').value = transcript;
-    statusEl.textContent = `Rozpoznano: „${transcript}” — analizuję...`;
-
-    try {
-      const result = await Ocr.analyzeRecipeText(transcript, settings.geminiApiKey);
-      statusEl.textContent = '';
-      applyParsedRecipe(result);
-    } catch (err) {
-      statusEl.textContent = '';
-      showRecipeAiError(err, errorEl);
-    }
+    setRecipeVoiceButtonState(true);
   }
 
   async function handleRecipeScreenshot(file) {
