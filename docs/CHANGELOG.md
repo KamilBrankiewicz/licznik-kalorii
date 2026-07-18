@@ -15,6 +15,20 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku — niezacommitowane] 2026-07-18 — Numer wersji w Ustawieniach
+**Co:** obok nagłówka „Ustawienia" (od razu widoczny, bez przewijania) widać teraz „vN" —
+pozwala sprawdzić na telefonie, czy po wdrożeniu przeglądarka wczytała już nową wersję,
+czy jeszcze serwuje starą.
+**Dlaczego:** aplikacja jest PWA z cache'em stale-while-revalidate; bez widocznego numeru
+nie było łatwego sposobu odróżnienia „nowa wersja się nie wczytała" od „nic się nie zmieniło".
+**Pliki:** `index.html`, `sw.js`, `docs/MAINTENANCE.md`
+**Uwagi:** to zwykły statyczny tekst w `index.html`, nie odczyt z service workera — `index.html`
+jest jedynym zasobem serwowanym network-first, więc jako jedyny gwarantuje zgodność wyświetlanego
+numeru z tym, co faktycznie jest teraz na ekranie. Numer trzeba bumpować ręcznie razem z
+`CACHE_NAME` w `sw.js` (dopisane do checklisty C1 w `MAINTENANCE.md`) — świadomie bez
+mechanizmu automatycznego, żeby nie dodawać message-passing do service workera dla
+jednorazowej, personalnej apki.
+
 ## [w toku — niezacommitowane] 2026-07-18 — Dyktowanie przepisu: mikrofon tylko nagrywa, wysyłka ręczna
 **Co:** przycisk mikrofonu w kreatorze przepisu przełącza wyłącznie nasłuch (start/pauza/
 wznowienie) i dopisuje rozpoznaną mowę do pola tekstowego — nie wysyła nic do Gemini

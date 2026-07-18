@@ -36,6 +36,15 @@ jedynym zabezpieczeniem przed regresją.
 ### C1. Bump cache — **zawsze**
 - [ ] `CACHE_NAME` w `sw.js` podniesiony (`licznik-kalorii-vN` → `vN+1`).
       Dotyczy każdej zmiany w JS, CSS lub HTML. To najczęstsza przyczyna „nowa funkcja nie działa".
+- [ ] Ten sam numer wpisany w statycznym tekście „vN" obok nagłówka „Ustawienia" w
+      `index.html` (od razu widoczny, bez przewijania). To jedyny widoczny dla użytkownika sposób sprawdzenia
+      na telefonie, czy przeglądarka wczytała już najnowszą wersję po wdrożeniu — musi być
+      bumpowany razem z `CACHE_NAME`, inaczej wprowadza w błąd. Celowo to zwykły tekst w
+      HTML, nie odczyt z `CACHE_NAME` przez service workera: `index.html` jest jedynym
+      zasobem serwowanym network-first (patrz `sw.js`), więc tylko on gwarantuje, że numer
+      odpowiada dokładnie temu, co faktycznie jest teraz na ekranie — odpytanie service
+      workera o wersję mogłoby pokazać nowszy numer, zanim przeglądarka realnie doładuje
+      nowe pliki JS (`stale-while-revalidate`).
 
 ### C2. Test w przeglądarce
 Uruchom lokalny serwer (konfiguracja `licznik-kalorii` w `.claude/launch.json`, `npx serve .`)
