@@ -3,28 +3,6 @@ const Voice = (() => {
     return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
   }
 
-  // Rozpoznawanie mowy na Androidzie (i czasem Chrome desktop) w trybie continuous
-  // potrafi "finalizować" ten sam wypowiedziany fragment kilka razy z rzędu, za każdym
-  // razem jako osobny wpis w event.results, stopniowo doprecyzowując treść: "25", "25",
-  // "25 g", "25 g", "25 g ryżu", "25 g ryżu do sushi". Sklejenie tych wpisów wprost dałoby
-  // "25 25 25 g 25 g 25 g ryżu 25 g ryżu do sushi". Traktujemy każdy kolejny finalny
-  // fragment, który jest powtórzeniem lub rozszerzeniem poprzedniego, jako jego rewizję —
-  // zastępujemy nim poprzedni zamiast doklejać.
-  function mergeFinalChunks(chunks) {
-    const merged = [];
-    for (const chunk of chunks) {
-      const prev = merged[merged.length - 1];
-      if (prev !== undefined && (chunk === prev || chunk.startsWith(prev))) {
-        merged[merged.length - 1] = chunk;
-      } else if (prev !== undefined && prev.startsWith(chunk)) {
-        // nowy fragment to podzbiór już zapisanego — nic nowego do dodania
-      } else {
-        merged.push(chunk);
-      }
-    }
-    return merged.join(' ');
-  }
-
   function listenOnce() {
     return new Promise((resolve, reject) => {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -70,10 +48,19 @@ const Voice = (() => {
   }
 
   // Nasłuchuje w trybie ciągłym, aż wywołasz stop() na zwróconym kontrolerze.
-  // Chrome i tak potrafi ubić rozpoznawanie po chwili ciszy (nawet z continuous=true) —
-  // dlatego po każdym "onend" wznawiamy je automatycznie, chyba że użytkownik sam
-  // kliknął stop. Dzięki temu pauza w dyktowaniu nie kończy sesji ani nie kasuje
-  // tego, co już rozpoznano.
+  //
+  // Celowo NIE używamy continuous=true silnika rozpoznawania. Na Androidzie wewnętrzna
+  // segmentacja continuous jest niestabilna — potrafi wielokrotnie "finalizować" ten sam
+  // fragment jako osobne wpisy w event.results, w dodatku w nieprzewidywalnej kolejności
+  // (raz jako narastająca cała fraza, raz jako pojedyncze nowe słowo), więc żadne łatanie
+  // tego po fakcie (próbowaliśmy dwa razy) nie jest niezawodne.
+  //
+  // Zamiast tego każda sesja to pojedyncze, krótkie rozpoznanie (jak listenOnce) —
+  // silnik zwraca dokładnie jeden finalny wynik i sam kończy nasłuch po pauzie w mowie
+  // (onend). "Ciągłość" dyktowania zapewniamy sami: po każdym onend automatycznie
+  // tworzymy nową sesję, chyba że użytkownik sam kliknął stop. Dzięki temu pauza w
+  // dyktowaniu nie kończy sesji ani nie kasuje tego, co już rozpoznano — a każdy
+  // finalny fragment pojawia się w tekście dokładnie raz.
   function startContinuous({ onResult, onError, onEnd }) {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -81,37 +68,33 @@ const Voice = (() => {
       return null;
     }
 
-    // finalTranscript = tekst zatwierdzony w poprzednich sesjach (przed każdym auto-restartem).
-    // lastSessionFinal = tekst finalny bieżącej sesji, przeliczany od zera przy każdym onresult
-    // (nie doklejany), bo Chrome w trybie continuous potrafi wielokrotnie wywołać onresult dla
-    // tego samego już-finalnego wyniku — inkrementalne += powielało wtedy słowa.
-    let finalTranscript = '';
-    let lastSessionFinal = '';
+    let finalTranscript = ''; // tekst zatwierdzony w poprzednich (zakończonych) sesjach
     let stoppedByUser = false;
     let recognition = null;
 
     function createRecognition() {
       const r = new SpeechRecognition();
       r.lang = 'pl-PL';
-      r.continuous = true;
+      r.continuous = false;
       r.interimResults = true;
       r.maxAlternatives = 1;
 
+      let sessionFinal = '';
+
       r.onresult = (event) => {
-        const finalChunks = [];
         let interim = '';
         for (let i = 0; i < event.results.length; i++) {
-          const chunk = event.results[i][0].transcript.trim();
+          const chunk = event.results[i][0].transcript;
           if (event.results[i].isFinal) {
-            if (chunk) finalChunks.push(chunk);
+            sessionFinal = chunk.trim();
           } else {
-            interim += event.results[i][0].transcript;
+            interim += chunk;
           }
         }
-        const sessionFinal = mergeFinalChunks(finalChunks);
-        lastSessionFinal = sessionFinal;
-        const combined = finalTranscript ? `${finalTranscript} ${sessionFinal}`.trim() : sessionFinal;
-        onResult({ finalTranscript: combined, interim });
+        const combined = finalTranscript
+          ? (sessionFinal ? `${finalTranscript} ${sessionFinal}`.trim() : finalTranscript)
+          : sessionFinal;
+        onResult({ finalTranscript: combined, interim: sessionFinal ? '' : interim });
       };
 
       r.onerror = (event) => {
@@ -126,8 +109,8 @@ const Voice = (() => {
       };
 
       r.onend = () => {
-        finalTranscript = finalTranscript ? `${finalTranscript} ${lastSessionFinal}`.trim() : lastSessionFinal;
-        lastSessionFinal = '';
+        finalTranscript = finalTranscript ? `${finalTranscript} ${sessionFinal}`.trim() : sessionFinal;
+        sessionFinal = '';
 
         if (stoppedByUser) {
           onEnd(finalTranscript);

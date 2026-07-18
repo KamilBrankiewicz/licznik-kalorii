@@ -15,6 +15,27 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku — niezacommitowane] 2026-07-18 — Dyktowanie: rezygnacja z continuous=true (trzecia próba)
+**Co:** dyktowanie przepisu na Androidzie nadal powielało tekst mimo dwóch wcześniejszych
+poprawek tego samego dnia — tym razem w jeszcze bardziej chaotyczny sposób, mieszając
+narastające pełne frazy z pojedynczymi słowami w nieprzewidywalnej kolejności
+(„25 25 25 25 dag … 25 dag ryżu do sushi 10 25 dag ryżu do sushi 10 g … wędzonego łososia”).
+**Dlaczego:** obie poprzednie poprawki próbowały odgadnąć i naprawić duplikaty parsując
+wzorce w `event.results` z założeniem, że silnik zachowuje się w miarę przewidywalnie
+(albo identyczne powtórzone eventy, albo czyste progresywne rozszerzenia). Realne
+zachowanie silnika Androida w trybie `continuous=true` jest znacznie bardziej niestabilne
+niż oba te założenia — nie da się tego niezawodnie odgadnąć samym parsowaniem po fakcie.
+**Pliki:** `js/voice.js`, `sw.js`, `index.html`
+**Uwagi:** zamiast łatać duplikaty, usunięto `continuous=true` z korzenia problemu.
+`startContinuous` teraz otwiera krótkie, pojedyncze sesje (`continuous=false`, jak
+działający od dawna `listenOnce`) i sam odpowiada za „ciągłość", automatycznie tworząc
+nową sesję po każdym `onend`, dopóki użytkownik nie kliknie stop. Każda sesja daje więc
+z definicji dokładnie jeden finalny wynik — nie ma czego duplikować. Usunięto
+`mergeFinalChunks()` z poprzedniej (nieudanej) próby jako zbędny. Zweryfikowane w
+przeglądarce mockiem `SpeechRecognition` sterowanym krok po kroku (bez zagnieżdżonych
+`setTimeout`, które w tym środowisku testowym nie odpalają się poprawnie) — dwie kolejne
+sesje po auto-restarcie dają poprawnie sklejony tekst bez duplikatów.
+
 ## [w toku — niezacommitowane] 2026-07-18 — Fix powielania słów przy dyktowaniu na Androidzie
 **Co:** dyktowanie przepisu na Androidzie nadal wstawiało powielony, narastający tekst
 (np. „25 25 25 g 25 g 25 g ryżu 25 g ryżu do sushi” zamiast „25 g ryżu do sushi”) mimo
