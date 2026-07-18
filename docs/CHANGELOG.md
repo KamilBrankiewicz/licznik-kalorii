@@ -15,6 +15,20 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku — niezacommitowane] 2026-07-18 — Fix powielania słów przy dyktowaniu przepisu
+**Co:** dyktowanie przepisu głosem przestało wstawiać to samo słowo kilka razy pod rząd
+(np. „gruszka gruszka gruszka gruszka”).
+**Dlaczego:** `Voice.startContinuous` doklejał (`+=`) każdy finalny fragment mowy do
+`finalTranscript`, a Chrome w trybie `continuous`/`interimResults` potrafi wielokrotnie
+wywołać `onresult` dla tego samego już-finalnego wyniku — każde powtórzenie dodawało to
+samo słowo ponownie.
+**Pliki:** `js/voice.js`, `sw.js`
+**Uwagi:** naprawa przelicza finalny tekst bieżącej sesji rozpoznawania od zera z całej
+tablicy `event.results` (idempotentnie) zamiast doklejać przyrostowo, a przy `onend`
+(w tym przy auto-restarcie po ciszy) scala go z tekstem poprzednich sesji, żeby nic się
+nie zgubiło. Zweryfikowane w przeglądarce mockiem `SpeechRecognition` symulującym
+duplikaty zdarzeń oraz restart sesji.
+
 ## [w toku — niezacommitowane] 2026-07-18 — Numer wersji w Ustawieniach
 **Co:** obok nagłówka „Ustawienia" (od razu widoczny, bez przewijania) widać teraz „vN" —
 pozwala sprawdzić na telefonie, czy po wdrożeniu przeglądarka wczytała już nową wersję,

@@ -59,7 +59,12 @@ const Voice = (() => {
       return null;
     }
 
+    // finalTranscript = tekst zatwierdzony w poprzednich sesjach (przed każdym auto-restartem).
+    // lastSessionFinal = tekst finalny bieżącej sesji, przeliczany od zera przy każdym onresult
+    // (nie doklejany), bo Chrome w trybie continuous potrafi wielokrotnie wywołać onresult dla
+    // tego samego już-finalnego wyniku — inkrementalne += powielało wtedy słowa.
     let finalTranscript = '';
+    let lastSessionFinal = '';
     let stoppedByUser = false;
     let recognition = null;
 
@@ -71,16 +76,19 @@ const Voice = (() => {
       r.maxAlternatives = 1;
 
       r.onresult = (event) => {
+        let sessionFinal = '';
         let interim = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
+        for (let i = 0; i < event.results.length; i++) {
           const chunk = event.results[i][0].transcript;
           if (event.results[i].isFinal) {
-            finalTranscript = (finalTranscript ? finalTranscript + ' ' : '') + chunk.trim();
+            sessionFinal = sessionFinal ? `${sessionFinal} ${chunk.trim()}` : chunk.trim();
           } else {
             interim += chunk;
           }
         }
-        onResult({ finalTranscript, interim });
+        lastSessionFinal = sessionFinal;
+        const combined = finalTranscript ? `${finalTranscript} ${sessionFinal}`.trim() : sessionFinal;
+        onResult({ finalTranscript: combined, interim });
       };
 
       r.onerror = (event) => {
@@ -95,6 +103,9 @@ const Voice = (() => {
       };
 
       r.onend = () => {
+        finalTranscript = finalTranscript ? `${finalTranscript} ${lastSessionFinal}`.trim() : lastSessionFinal;
+        lastSessionFinal = '';
+
         if (stoppedByUser) {
           onEnd(finalTranscript);
         } else {
