@@ -1042,6 +1042,7 @@ const UI = (() => {
       const ingKcal = Math.round(((ing.per100g.kcal || 0) * (ing.grams || 0)) / 100);
       const card = document.createElement('div');
       card.className = 'recipe-ingredient-card';
+      card.dataset.idx = idx;
       card.innerHTML = `
         <div class="ing-info">
           <div class="ing-name">${escapeHtml(ing.name)}</div>
@@ -1051,6 +1052,12 @@ const UI = (() => {
         <button class="ing-delete" data-idx="${idx}" aria-label="Usuń">×</button>
       `;
       list.appendChild(card);
+    });
+
+    list.querySelectorAll('.recipe-ingredient-card').forEach((card) => {
+      card.addEventListener('click', () => {
+        openIngredientModal(Number(card.dataset.idx));
+      });
     });
 
     list.querySelectorAll('.ing-delete').forEach((btn) => {

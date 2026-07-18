@@ -809,6 +809,7 @@ h1.page-title {
   display: flex;
   align-items: center;
   gap: 10px;
+  cursor: pointer;
 }
 
 .recipe-ingredient-card .ing-info {

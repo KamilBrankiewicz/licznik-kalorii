@@ -15,6 +15,20 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku — niezacommitowane] 2026-07-18 — Edycja składnika przepisu po kliknięciu karty
+**Co:** kliknięcie karty składnika na liście w kreatorze przepisu otwiera teraz jego
+edycję (nazwa, gramatura, makra na 100g) — wcześniej karta miała tylko przycisk usuwania.
+**Dlaczego:** po dodaniu składników przez AI/dyktowanie/zrzut ekranu użytkownik często
+musi poprawić pojedynczą wartość (np. źle rozpoznaną gramaturę), a jedyną opcją było
+usunięcie całego składnika i ręczne dodanie go od nowa.
+**Pliki:** `js/ui.js`, `css/style.css`, `sw.js`
+**Uwagi:** funkcja edycji (`openIngredientModal(editIdx)` + `saveIngredient()`
+nadpisujący `recipeIngredients[ingredientEditIndex]`) już istniała i była używana przez
+`+ Dodaj`/edycję zapisanego przepisu — brakowało tylko wpięcia kliknięcia karty. Przycisk
+usuwania woła `e.stopPropagation()`, więc klik w „×” nie otwiera przy okazji edycji.
+Zweryfikowane w przeglądarce: klik w kartę wypełnia formularz poprawnymi danymi, zapis
+nadpisuje ten sam wpis (nie duplikuje), usuwanie działa niezależnie od edycji.
+
 ## [w toku — niezacommitowane] 2026-07-18 — Dyktowanie przepisu: nagranie audio + transkrypcja Gemini zamiast Web Speech API
 **Co:** „Dyktuj przepis" zastąpione „Nagraj przepis" — zamiast rozpoznawania mowy na żywo
 w przeglądarce, mikrofon teraz nagrywa dźwięk (można wstrzymać/wznowić w trakcie tego
