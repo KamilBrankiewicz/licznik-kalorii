@@ -1198,7 +1198,7 @@ const UI = (() => {
 
   function setRecipeVoiceButtonState(listening) {
     const btn = document.getElementById('recipeVoiceBtn');
-    btn.textContent = listening ? '⏹ Zakończ dyktowanie' : '🎤 Dyktuj przepis';
+    btn.textContent = listening ? '⏸ Wstrzymaj dyktowanie' : '🎤 Dyktuj przepis';
   }
 
   function stopRecipeVoiceIfActive() {
@@ -1207,6 +1207,10 @@ const UI = (() => {
     }
   }
 
+  // Mikrofon tylko nagrywa do pola tekstowego — nie wysyła nic do Gemini.
+  // Użytkownik dyktuje, w dowolnym momencie może wstrzymać/wznowić (kliknięcie
+  // przełącza nasłuch), a wysyłkę do AI wykonuje świadomie przyciskiem
+  // „Przeanalizuj przepis" (parseRecipeWithAi), kiedy uzna tekst za kompletny.
   function handleRecipeVoice() {
     const statusEl = document.getElementById('recipeAiStatus');
     const errorEl = document.getElementById('recipeAiError');
@@ -1222,12 +1226,9 @@ const UI = (() => {
       return;
     }
 
-    const settings = requireGeminiKeyOrPrompt(errorEl);
-    if (!settings) return;
-
     const textarea = document.getElementById('recipeTextInput');
     const baseText = textarea.value.trim();
-    statusEl.textContent = 'Słucham... podyktuj składniki przepisu (kliknij ponownie, aby zakończyć)';
+    statusEl.textContent = 'Słucham... (kliknij mikrofon, aby wstrzymać)';
 
     recipeVoiceController = Voice.startContinuous({
       onResult({ finalTranscript, interim }) {
@@ -1244,28 +1245,15 @@ const UI = (() => {
           errorEl.textContent = 'Rozpoznawanie mowy nie jest obsługiwane w tej przeglądarce.';
         }
       },
-      async onEnd(finalTranscript) {
+      onEnd(finalTranscript) {
         recipeVoiceController = null;
         setRecipeVoiceButtonState(false);
 
         const fullText = (baseText ? `${baseText} ${finalTranscript}` : finalTranscript).trim();
         textarea.value = fullText;
-
-        if (!fullText) {
-          statusEl.textContent = '';
-          errorEl.textContent = 'Nie wykryto mowy. Spróbuj ponownie.';
-          return;
-        }
-
-        statusEl.textContent = 'Analizuję przepis...';
-        try {
-          const result = await Ocr.analyzeRecipeText(fullText, settings.geminiApiKey);
-          statusEl.textContent = '';
-          applyParsedRecipe(result);
-        } catch (err) {
-          statusEl.textContent = '';
-          showRecipeAiError(err, errorEl);
-        }
+        statusEl.textContent = fullText
+          ? 'Wstrzymano. Kliknij mikrofon, aby kontynuować, albo „Przeanalizuj przepis”, aby wysłać do AI.'
+          : '';
       }
     });
 

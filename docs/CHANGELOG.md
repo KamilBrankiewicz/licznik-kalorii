@@ -15,7 +15,28 @@ Format wpisu — nowe na górze:
 
 ---
 
-## [w toku — niezacommitowane] 2026-07-18 — Dyktowanie przepisu: start/stop zamiast jednorazowego nasłuchu
+## [w toku — niezacommitowane] 2026-07-18 — Dyktowanie przepisu: mikrofon tylko nagrywa, wysyłka ręczna
+**Co:** przycisk mikrofonu w kreatorze przepisu przełącza wyłącznie nasłuch (start/pauza/
+wznowienie) i dopisuje rozpoznaną mowę do pola tekstowego — nie wysyła nic do Gemini
+samoczynnie. Wysyłkę do AI wykonuje wyłącznie istniejący przycisk „Przeanalizuj przepis”,
+kiedy użytkownik uzna dyktowanie za skończone.
+**Dlaczego:** poprzednia wersja (commit `bf33cad`) sama wysyłała tekst do Gemini po każdym
+zatrzymaniu nasłuchu, więc przy trzecim z rzędu dyktowaniu do tego samego przepisu ponowna
+analiza całego (coraz dłuższego) tekstu przez AI czasem gubiła wcześniej rozpoznane składniki
+i nadpisywała listę. Oddzielenie „nagrywania” od „wysyłki” daje użytkownikowi pełną kontrolę
+nad tym, kiedy dokładnie tekst trafia do Gemini, i sprowadza to zwykle do jednej wysyłki na
+cały przepis zamiast wielu wysyłek narastającego tekstu.
+**Pliki:** `js/ui.js`, `sw.js`
+**Uwagi:** `Voice.startContinuous()` (dodane w poprzedniej zmianie) zostaje bez zmian —
+zmieniło się tylko to, co `js/ui.js` robi w callbacku `onEnd` (aktualizacja statusu zamiast
+wywołania `Ocr.analyzeRecipeText`). `parseRecipeWithAi` nadal nadpisuje całą listę składników
+wynikiem najnowszej analizy (jak przy wklejaniu tekstu) — jeśli użytkownik świadomie kliknie
+„Przeanalizuj przepis” kilka razy z rzędu zamiast raz na końcu, nadal może stracić wcześniej
+rozpoznane składniki, jeśli AI inaczej sparsuje dłuższy tekst. To świadomy kompromis: prosty,
+przewidywalny model „jedno pole tekstowe → jedna analiza → jedna lista składników”, spójny
+z zachowaniem wklejania tekstu i zrzutu ekranu.
+
+## [bf33cad] 2026-07-18 — Dyktowanie przepisu: start/stop zamiast jednorazowego nasłuchu
 **Co:** przycisk „Dyktuj przepis" działa teraz jako przełącznik start/stop zamiast
 jednorazowego nasłuchu kończącego się po pierwszej pauzie w mowie. Rozpoznana mowa
 dokleja się do wcześniej podyktowanego tekstu zamiast go nadpisywać, a zapytanie do
