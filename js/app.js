@@ -186,6 +186,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  document.querySelectorAll('#themeSelect button').forEach((btn) => {
+    btn.addEventListener('click', () => UI.setTheme(btn.dataset.themeValue));
+  });
+
   document.getElementById('saveSettingsBtn').addEventListener('click', () => UI.saveSettingsFromForm());
   document.getElementById('clearDataBtn').addEventListener('click', () => UI.clearAllData());
 

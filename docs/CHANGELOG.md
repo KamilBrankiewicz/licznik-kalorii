@@ -15,6 +15,27 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku — niezacommitowane] 2026-07-19 — Reorganizacja Ustawień w akordeon + ręczny motyw jasny/ciemny
+**Co:** zakładka Ustawienia była jedną długą listą 7 sekcji od góry do dołu. Teraz: sekcja
+„Wygląd” z przełącznikiem Jasny/Ciemny/Auto na samej górze (zawsze widoczna), „Cele dzienne”
+rozwinięte domyślnie, reszta (Profil zdrowotny, Klucz Gemini API, Cele analizy dnia, Kopia
+zapasowa, Synchronizacja i udostępnianie, Strefa niebezpieczna) jako zwijane `<details>`.
+Wszystkie dotychczasowe id pól zostały zachowane bez zmian.
+**Dlaczego:** sekcja urosła organicznie (profil zdrowotny, cele analizy AI, udostępnianie
+przepisów) i przewijanie stało się uciążliwe; brakowało ręcznego przełącznika motywu — apka
+reagowała wyłącznie na `prefers-color-scheme` systemu.
+**Pliki:** `index.html`, `css/style.css`, `js/ui.js`, `js/app.js`, `js/storage.js`, `sw.js`.
+**Uwagi:** motyw jest **per-urządzenie** (świadomie), zapisany w `localStorage` pod kluczem
+`themePreference` przez `Storage.getTheme/saveTheme` — celowo **nie** wchodzi do `settings` i
+nie synchronizuje się przez Firebase ani nie jest usuwany przez „Wyczyść wszystkie dane”.
+CSS: `:root[data-theme="light"]` nadpisuje jasne wartości niezależnie od systemu, a media query
+`prefers-color-scheme: light` używa `:root:not([data-theme="dark"])`, żeby ręczny wybór
+„Ciemny” działał nawet gdy system jest jasny. Inline `<script>` w `<head>` ustawia atrybut
+`data-theme` przed pierwszym malowaniem strony (bez tego byłby flash jasnego motywu przy
+starcie w trybie ciemnym). Bump `CACHE_NAME` → `licznik-kalorii-v27`.
+
+---
+
 ## [w toku — niezacommitowane] 2026-07-19 — Zakładki Własne/Udostępnione w widoku Przepisy + kopiowanie UID
 **Co:** przycisk „Kopiuj” obok własnego UID w Ustawieniach (kopiuje do schowka, toast
 potwierdzenia). W widoku „Przepisy” doszły dwie zakładki nad listą, „Własne” i

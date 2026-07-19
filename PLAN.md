@@ -25,6 +25,7 @@
   - Błonnik jako piąty składnik (cel, pasek, formularz, OCR/AI, Open Food Facts) (Faza 4)
   - Raport odżywczy — analiza dnia przez Gemini względem własnych, zapisanych celów (np. żelazo), z generycznym formatem wyniku (Faza 5)
   - Udostępnianie przepisów między dwoma kontami (partner UID w Ustawieniach, skrzynka `sharedRecipes` w Firestore) — przepis trafia do listy przepisów drugiej osoby, każdy sam deklaruje swoją porcję przez „Dodaj porcję”; przycisk kopiowania własnego UID w Ustawieniach; zakładki „Własne”/„Udostępnione” w widoku Przepisy rozdzielają otrzymane przepisy od własnych
+  - Ustawienia przeorganizowane w zwijane sekcje (`<details>`), z sekcją „Wygląd” na górze: ręczny przełącznik motywu Jasny/Ciemny/Auto, zapisywany per-urządzenie (`Storage.getTheme/saveTheme`, poza syncem Firebase)
 
 **Pozostało (świadomie odłożone):**
 - Wielojęzyczność — raczej bez sensu przy aplikacji dla jednego użytkownika

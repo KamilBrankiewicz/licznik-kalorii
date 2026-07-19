@@ -7,6 +7,7 @@ const Storage = (() => {
   const GOALS_KEY = 'analysisGoals';
   const DAILY_ANALYSES_KEY = 'dailyAnalyses';
   const SEEN_SHARED_RECIPES_KEY = 'seenSharedRecipeIds';
+  const THEME_KEY = 'themePreference';
 
   const DEFAULT_SETTINGS = {
     kcalGoal: 2000,
@@ -28,6 +29,15 @@ const Storage = (() => {
 
   function saveSettings(settings) {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  }
+
+  // Preferencja motywu jest per-urządzenie — celowo nie wchodzi do settings/sync
+  function getTheme() {
+    return localStorage.getItem(THEME_KEY) || 'auto';
+  }
+
+  function saveTheme(theme) {
+    localStorage.setItem(THEME_KEY, theme);
   }
 
   // Surowa lista zawiera także nagrobki (deleted: true) potrzebne do synchronizacji
@@ -497,6 +507,8 @@ const Storage = (() => {
   return {
     getSettings,
     saveSettings,
+    getTheme,
+    saveTheme,
     getEntries,
     getRawEntries,
     saveEntries,

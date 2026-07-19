@@ -406,8 +406,26 @@ const UI = (() => {
     });
   }
 
+  function setTheme(theme) {
+    Storage.saveTheme(theme);
+    if (theme === 'auto') {
+      document.documentElement.removeAttribute('data-theme');
+    } else {
+      document.documentElement.setAttribute('data-theme', theme);
+    }
+    renderThemeSelect();
+  }
+
+  function renderThemeSelect() {
+    const current = Storage.getTheme();
+    document.querySelectorAll('#themeSelect button').forEach((b) => {
+      b.classList.toggle('active', b.dataset.themeValue === current);
+    });
+  }
+
   function renderSettings() {
     const s = Storage.getSettings();
+    renderThemeSelect();
     document.getElementById('settingKcalGoal').value = s.kcalGoal;
     document.getElementById('settingProteinGoal').value = s.proteinGoal;
     document.getElementById('settingCarbsGoal').value = s.carbsGoal;
@@ -2242,6 +2260,7 @@ const UI = (() => {
     renderDiary,
     renderHistory,
     renderSettings,
+    setTheme,
     saveSettingsFromForm,
     openEntryModal,
     closeEntryModal,

@@ -16,7 +16,7 @@
 }
 
 @media (prefers-color-scheme: light) {
-  :root {
+  :root:not([data-theme="dark"]) {
     --bg: #f5f5fa;
     --bg-elevated: #ffffff;
     --bg-card: #ffffff;
@@ -26,6 +26,17 @@
     --accent-soft: rgba(52,211,153,0.12);
     color-scheme: light;
   }
+}
+
+:root[data-theme="light"] {
+  --bg: #f5f5fa;
+  --bg-elevated: #ffffff;
+  --bg-card: #ffffff;
+  --text: #1a1a2e;
+  --text-muted: #6b6b80;
+  --border: #e2e2ec;
+  --accent-soft: rgba(52,211,153,0.12);
+  color-scheme: light;
 }
 
 * {
@@ -340,6 +351,74 @@ html, body {
   background: var(--accent-soft);
   border-color: var(--accent);
   color: var(--accent);
+}
+
+/* Przełącznik motywu (Ustawienia) */
+.theme-select {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.theme-select button {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 10px;
+  padding: 9px 2px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  min-height: 40px;
+}
+
+.theme-select button.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Zwijane sekcje w Ustawieniach */
+.settings-accordion {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 10px;
+  overflow: hidden;
+  background: var(--bg-card);
+}
+
+.settings-accordion summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 14px 16px;
+  font-size: 15px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.settings-accordion summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-accordion summary::after {
+  content: '▸';
+  color: var(--text-muted);
+  font-size: 13px;
+  transition: transform 0.15s ease;
+}
+
+.settings-accordion[open] summary::after {
+  transform: rotate(90deg);
+}
+
+.settings-accordion .settings-accordion-body {
+  padding: 0 16px 16px;
+}
+
+.settings-accordion.danger-zone summary {
+  color: var(--danger);
 }
 
 .recipe-tabs {
