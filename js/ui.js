@@ -133,57 +133,58 @@ const UI = (() => {
 
     if (entries.length === 0) {
       list.innerHTML = '<div class="empty-state">Brak wpisów. Dodaj pierwszy posiłek przyciskiem +</div>';
-      return;
+    } else {
+      MEALS.forEach((meal) => {
+        const mealEntries = entries.filter((e) => (e.meal || mealFromTime(e.time)) === meal.key);
+        if (mealEntries.length === 0) return;
+
+        const mealKcal = mealEntries.reduce((s, e) => s + (Number(e.kcal) || 0), 0);
+        const header = document.createElement('div');
+        header.className = 'meal-header';
+        header.innerHTML = `<span>${meal.label}</span><span class="meal-kcal">${Math.round(mealKcal)} kcal</span>`;
+        list.appendChild(header);
+
+        mealEntries.forEach((e) => {
+          const card = document.createElement('div');
+          card.className = 'entry-card';
+          const gramsStr = e.grams ? `${e.grams} g · ` : '';
+          const initial = (e.name || '?').trim().charAt(0).toUpperCase();
+          card.innerHTML = `
+            <div class="entry-avatar">${escapeHtml(initial)}</div>
+            <div class="entry-info">
+              <div class="name">${escapeHtml(e.name)}</div>
+              <div class="meta">${gramsStr}${e.time || ''} · B:${Math.round(e.protein || 0)} W:${Math.round(e.carbs || 0)} T:${Math.round(e.fat || 0)}</div>
+            </div>
+            <div class="entry-kcal">${Math.round(e.kcal)} kcal</div>
+            <button class="entry-relog" data-id="${e.id}" aria-label="Dodaj ponownie dziś" title="Dodaj ponownie dziś">⟳</button>
+            <button class="entry-delete" data-id="${e.id}" aria-label="Usuń">×</button>
+          `;
+          card.addEventListener('click', (ev) => {
+            if (ev.target.closest('.entry-delete') || ev.target.closest('.entry-relog')) return;
+            openEntryModal(e.id);
+          });
+          list.appendChild(card);
+        });
+      });
+
+      list.querySelectorAll('.entry-delete').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          Storage.deleteEntry(currentDate, btn.dataset.id);
+          pushDayToCloud(currentDate);
+          renderDiary();
+          showToast('Usunięto wpis');
+        });
+      });
+
+      list.querySelectorAll('.entry-relog').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const entry = entries.find((e) => e.id === btn.dataset.id);
+          if (entry) relogEntry(entry);
+        });
+      });
     }
 
-    MEALS.forEach((meal) => {
-      const mealEntries = entries.filter((e) => (e.meal || mealFromTime(e.time)) === meal.key);
-      if (mealEntries.length === 0) return;
-
-      const mealKcal = mealEntries.reduce((s, e) => s + (Number(e.kcal) || 0), 0);
-      const header = document.createElement('div');
-      header.className = 'meal-header';
-      header.innerHTML = `<span>${meal.label}</span><span class="meal-kcal">${Math.round(mealKcal)} kcal</span>`;
-      list.appendChild(header);
-
-      mealEntries.forEach((e) => {
-        const card = document.createElement('div');
-        card.className = 'entry-card';
-        const gramsStr = e.grams ? `${e.grams} g · ` : '';
-        const initial = (e.name || '?').trim().charAt(0).toUpperCase();
-        card.innerHTML = `
-          <div class="entry-avatar">${escapeHtml(initial)}</div>
-          <div class="entry-info">
-            <div class="name">${escapeHtml(e.name)}</div>
-            <div class="meta">${gramsStr}${e.time || ''} · B:${Math.round(e.protein || 0)} W:${Math.round(e.carbs || 0)} T:${Math.round(e.fat || 0)}</div>
-          </div>
-          <div class="entry-kcal">${Math.round(e.kcal)} kcal</div>
-          <button class="entry-relog" data-id="${e.id}" aria-label="Dodaj ponownie dziś" title="Dodaj ponownie dziś">⟳</button>
-          <button class="entry-delete" data-id="${e.id}" aria-label="Usuń">×</button>
-        `;
-        card.addEventListener('click', (ev) => {
-          if (ev.target.closest('.entry-delete') || ev.target.closest('.entry-relog')) return;
-          openEntryModal(e.id);
-        });
-        list.appendChild(card);
-      });
-    });
-
-    list.querySelectorAll('.entry-delete').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        Storage.deleteEntry(currentDate, btn.dataset.id);
-        pushDayToCloud(currentDate);
-        renderDiary();
-        showToast('Usunięto wpis');
-      });
-    });
-
-    list.querySelectorAll('.entry-relog').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const entry = entries.find((e) => e.id === btn.dataset.id);
-        if (entry) relogEntry(entry);
-      });
-    });
+    renderDailyAnalysesSection();
   }
 
   // Relog: kopiuje wpis na dziś z bieżącą godziną (kategoria wg godziny)
@@ -236,6 +237,18 @@ const UI = (() => {
   function pushFavoritesToCloud() {
     if (window.FirebaseSync && FirebaseSync.isSignedIn()) {
       FirebaseSync.pushFavorites(Storage.getRawFavoriteProducts()).catch(() => showToast('Błąd synchronizacji ulubionych'));
+    }
+  }
+
+  function pushGoalsToCloud() {
+    if (window.FirebaseSync && FirebaseSync.isSignedIn()) {
+      FirebaseSync.pushGoals(Storage.getRawGoals()).catch(() => showToast('Błąd synchronizacji celów'));
+    }
+  }
+
+  function pushDailyAnalysesToCloud() {
+    if (window.FirebaseSync && FirebaseSync.isSignedIn()) {
+      FirebaseSync.pushDailyAnalyses(Storage.getRawDailyAnalyses()).catch(() => showToast('Błąd synchronizacji raportów'));
     }
   }
 
@@ -400,9 +413,11 @@ const UI = (() => {
     document.getElementById('settingFatGoal').value = s.fatGoal;
     document.getElementById('settingFiberGoal').value = s.fiberGoal;
     document.getElementById('settingApiKey').value = s.geminiApiKey;
+    document.getElementById('settingHealthProfile').value = s.healthProfile || '';
     document.getElementById('firebaseConfigInput').value = s.firebaseConfig || '';
     document.getElementById('settingsToast').textContent = '';
     renderFirebaseAuthBlock();
+    renderGoalsList();
   }
 
   function renderFirebaseAuthBlock() {
@@ -509,6 +524,16 @@ const UI = (() => {
       Storage.saveRecipes(mergedRecipes);
       await FirebaseSync.pushRecipes(mergedRecipes);
 
+      const remoteGoals = await FirebaseSync.pullGoals();
+      const mergedGoals = Storage.mergeGoals(remoteGoals, Storage.getRawGoals());
+      Storage.saveGoals(mergedGoals);
+      await FirebaseSync.pushGoals(mergedGoals);
+
+      const remoteAnalyses = await FirebaseSync.pullDailyAnalyses();
+      const mergedAnalyses = Storage.mergeDailyAnalyses(remoteAnalyses, Storage.getRawDailyAnalyses());
+      Storage.saveRawDailyAnalyses(mergedAnalyses);
+      await FirebaseSync.pushDailyAnalyses(mergedAnalyses);
+
       const remoteSettings = await FirebaseSync.pullSettings();
       const localSettings = Storage.getSettings();
       if (remoteSettings) {
@@ -532,7 +557,8 @@ const UI = (() => {
       carbsGoal: Number(document.getElementById('settingCarbsGoal').value) || 0,
       fatGoal: Number(document.getElementById('settingFatGoal').value) || 0,
       fiberGoal: Number(document.getElementById('settingFiberGoal').value) || 0,
-      geminiApiKey: document.getElementById('settingApiKey').value.trim()
+      geminiApiKey: document.getElementById('settingApiKey').value.trim(),
+      healthProfile: document.getElementById('settingHealthProfile').value.trim()
     };
     Storage.saveSettings(settings);
     pushSettingsToCloud(settings);
@@ -1847,6 +1873,242 @@ const UI = (() => {
     }
   }
 
+  // ── Cele analizy dnia ──
+
+  let editingGoalId = null;
+
+  function renderGoalsList() {
+    const container = document.getElementById('goalsList');
+    const goals = Storage.getGoals();
+
+    if (goals.length === 0) {
+      container.innerHTML = '<div class="hint">Brak zapisanych celów.</div>';
+      return;
+    }
+
+    container.innerHTML = goals.map((g) => `
+      <div class="goal-item">
+        <span class="goal-item-name">${escapeHtml(g.name)}</span>
+        <div class="goal-item-actions">
+          <button class="btn btn-secondary" data-action="edit" data-id="${g.id}" style="font-size:12px;padding:8px 12px;width:auto;">Edytuj</button>
+          <button class="btn btn-danger" data-action="delete" data-id="${g.id}" style="font-size:12px;padding:8px;width:auto;">×</button>
+        </div>
+      </div>
+    `).join('');
+
+    container.querySelectorAll('[data-action="edit"]').forEach((btn) => {
+      btn.addEventListener('click', () => openGoalModal(btn.dataset.id));
+    });
+    container.querySelectorAll('[data-action="delete"]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (confirm('Usunąć ten cel? Zapisane wcześniej raporty pozostaną.')) {
+          Storage.deleteGoal(btn.dataset.id);
+          pushGoalsToCloud();
+          renderGoalsList();
+          showToast('Usunięto cel');
+        }
+      });
+    });
+  }
+
+  function openGoalModal(goalId) {
+    editingGoalId = goalId || null;
+    const goal = editingGoalId ? Storage.getGoals().find((g) => g.id === editingGoalId) : null;
+    document.getElementById('goalModalTitle').textContent = goal ? 'Edytuj cel' : 'Nowy cel';
+    document.getElementById('goalName').value = goal ? goal.name : '';
+    document.getElementById('goalSystemPrompt').value = goal ? goal.systemPrompt : '';
+    document.getElementById('goalFormError').textContent = '';
+    document.getElementById('goalModalOverlay').classList.add('active');
+  }
+
+  function closeGoalModal() {
+    document.getElementById('goalModalOverlay').classList.remove('active');
+  }
+
+  function saveGoalFromForm() {
+    const name = document.getElementById('goalName').value.trim();
+    const systemPrompt = document.getElementById('goalSystemPrompt').value.trim();
+    const errorEl = document.getElementById('goalFormError');
+
+    if (!name) { errorEl.textContent = 'Podaj nazwę celu'; return; }
+    if (!systemPrompt) { errorEl.textContent = 'Podaj treść system promptu'; return; }
+
+    if (editingGoalId) {
+      Storage.updateGoal(editingGoalId, { name, systemPrompt });
+    } else {
+      Storage.addGoal({ name, systemPrompt });
+    }
+    pushGoalsToCloud();
+    closeGoalModal();
+    renderGoalsList();
+    showToast(editingGoalId ? 'Zapisano zmiany' : 'Cel zapisany');
+  }
+
+  // ── Raport odżywczy (wyniki analizy dnia względem zapisanych celów) ──
+
+  function overallFlag(result) {
+    const meals = (result && result.meals) || [];
+    if (meals.some((m) => m.flag === 'warning')) return 'warning';
+    if (meals.some((m) => m.flag === 'good')) return 'good';
+    return 'neutral';
+  }
+
+  function flagDot(flag) {
+    return `<span class="flag-dot flag-${flag || 'neutral'}"></span>`;
+  }
+
+  function renderAnalysisBody(result) {
+    if (!result) return '';
+    const assumptions = result.assumptions || [];
+    const meals = result.meals || [];
+    const summary = result.daily_summary || {};
+    const gaps = result.data_gaps || [];
+    const recommendations = summary.recommendations || [];
+
+    return `
+      ${assumptions.length ? `<div class="analysis-block"><strong>Założenia:</strong> ${assumptions.map(escapeHtml).join('; ')}</div>` : ''}
+      ${meals.map((m) => `
+        <div class="analysis-meal">
+          ${flagDot(m.flag)}<strong>${escapeHtml(m.meal_name || '')}</strong>${m.time ? ` · ${escapeHtml(m.time)}` : ''}
+          ${m.contribution ? `<div class="analysis-meal-contribution">${escapeHtml(m.contribution)}</div>` : ''}
+          ${m.analysis ? `<div class="analysis-meal-text">${escapeHtml(m.analysis)}</div>` : ''}
+        </div>
+      `).join('')}
+      <div class="analysis-block">
+        <strong>Podsumowanie dnia</strong>
+        ${summary.total_estimate ? `<div>Szacunek: ${escapeHtml(summary.total_estimate)}</div>` : ''}
+        ${summary.target ? `<div>Cel: ${escapeHtml(summary.target)}${summary.target_met_pct ? ` (realizacja: ${escapeHtml(summary.target_met_pct)})` : ''}</div>` : ''}
+        ${summary.overall_assessment ? `<div style="margin-top:6px;">${escapeHtml(summary.overall_assessment)}</div>` : ''}
+        ${recommendations.length ? `<ul class="analysis-recommendations">${recommendations.map((r) => `<li>${escapeHtml(r)}</li>`).join('')}</ul>` : ''}
+      </div>
+      ${gaps.length ? `<div class="analysis-block hint">Braki w danych: ${gaps.map(escapeHtml).join('; ')}</div>` : ''}
+      ${result.disclaimer ? `<div class="hint" style="margin-top:8px;">${escapeHtml(result.disclaimer)}</div>` : ''}
+    `;
+  }
+
+  function renderDailyAnalysesSection() {
+    const container = document.getElementById('dailyAnalysesSection');
+    if (!container) return;
+    const results = Storage.getDailyAnalyses(currentDate);
+
+    const listHtml = results.length === 0
+      ? '<div class="hint">Brak zapisanych analiz dla tego dnia.</div>'
+      : results.map((r) => `
+          <div class="analysis-card flag-border-${overallFlag(r.result)}">
+            <div class="analysis-card-header" data-action="toggle">
+              ${flagDot(overallFlag(r.result))}<span class="analysis-card-title">${escapeHtml(r.goalName)}</span>
+              <button class="entry-delete" data-action="delete" data-goal-id="${r.goalId}" aria-label="Usuń raport">×</button>
+            </div>
+            <div class="analysis-card-body" hidden>${renderAnalysisBody(r.result)}</div>
+          </div>
+        `).join('');
+
+    container.innerHTML = `
+      <div class="section-header-row">
+        <h3 class="section-title">Raport odżywczy</h3>
+        <button class="btn btn-secondary" id="newAnalysisBtn" style="width:auto;padding:8px 14px;font-size:12px;">+ Nowa analiza</button>
+      </div>
+      <div id="dailyAnalysesList">${listHtml}</div>
+    `;
+
+    document.getElementById('newAnalysisBtn').addEventListener('click', () => openGoalPickerModal());
+
+    container.querySelectorAll('[data-action="toggle"]').forEach((el) => {
+      el.addEventListener('click', (e) => {
+        if (e.target.closest('[data-action="delete"]')) return;
+        const body = el.parentElement.querySelector('.analysis-card-body');
+        body.hidden = !body.hidden;
+      });
+    });
+    container.querySelectorAll('[data-action="delete"]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (confirm('Usunąć ten raport?')) {
+          Storage.deleteDailyAnalysis(currentDate, btn.dataset.goalId);
+          pushDailyAnalysesToCloud();
+          renderDailyAnalysesSection();
+          showToast('Usunięto raport');
+        }
+      });
+    });
+  }
+
+  function openGoalPickerModal() {
+    const goals = Storage.getGoals();
+    const container = document.getElementById('analysisGoalPickerList');
+
+    if (goals.length === 0) {
+      container.innerHTML = '<div class="hint">Brak zapisanych celów. Dodaj cel w Ustawieniach → Cele analizy dnia.</div>';
+    } else {
+      container.innerHTML = goals.map((g) => `<button type="button" class="btn scan-btn" data-goal-id="${g.id}">${escapeHtml(g.name)}</button>`).join('');
+      container.querySelectorAll('button').forEach((btn) => {
+        btn.addEventListener('click', () => runGoalAnalysis(btn.dataset.goalId));
+      });
+    }
+
+    document.getElementById('analysisGoalPickerStatus').textContent = '';
+    document.getElementById('analysisGoalPickerError').textContent = '';
+    document.getElementById('analysisGoalPickerOverlay').classList.add('active');
+  }
+
+  function closeGoalPickerModal() {
+    document.getElementById('analysisGoalPickerOverlay').classList.remove('active');
+  }
+
+  function analysisErrorMessage(code) {
+    switch (code) {
+      case 'NO_API_KEY': return 'Brak klucza Gemini API — dodaj go w Ustawieniach.';
+      case 'NETWORK_ERROR': return 'Brak połączenia z siecią.';
+      case 'API_ERROR': return 'Błąd API Gemini. Spróbuj ponownie.';
+      case 'NOT_RECOGNIZED': return 'AI nie było w stanie przeanalizować danych z tego dnia pod kątem tego celu.';
+      default: return 'Nie udało się wykonać analizy.';
+    }
+  }
+
+  async function runGoalAnalysis(goalId) {
+    const goal = Storage.getGoals().find((g) => g.id === goalId);
+    if (!goal) return;
+
+    const entries = Storage.getEntries(currentDate).sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+    const errorEl = document.getElementById('analysisGoalPickerError');
+    const statusEl = document.getElementById('analysisGoalPickerStatus');
+    errorEl.textContent = '';
+
+    if (entries.length === 0) {
+      errorEl.textContent = 'Brak wpisów w tym dniu do analizy.';
+      return;
+    }
+
+    const mealsForPrompt = entries.map((e) => ({
+      nazwa: e.name,
+      gramatura: e.grams || null,
+      posilek: (MEALS.find((m) => m.key === (e.meal || mealFromTime(e.time))) || {}).label || null,
+      godzina: e.time || null,
+      kcal: Math.round(Number(e.kcal) || 0),
+      bialko_g: Number(e.protein) || 0,
+      wegle_g: Number(e.carbs) || 0,
+      tluszcz_g: Number(e.fat) || 0,
+      blonnik_g: Number(e.fiber) || 0
+    }));
+
+    const apiKey = Storage.getSettings().geminiApiKey;
+    const healthProfile = Storage.getSettings().healthProfile;
+    statusEl.textContent = 'Analizuję dzień...';
+
+    try {
+      const result = await Ocr.analyzeDayAgainstGoal(currentDate, mealsForPrompt, goal.systemPrompt, healthProfile, apiKey);
+      Storage.saveDailyAnalysis(currentDate, goal.id, goal.name, result);
+      pushDailyAnalysesToCloud();
+      statusEl.textContent = '';
+      closeGoalPickerModal();
+      renderDailyAnalysesSection();
+      showToast('Zapisano raport');
+    } catch (e) {
+      statusEl.textContent = '';
+      errorEl.textContent = analysisErrorMessage(e.message);
+    }
+  }
+
   function exportDataToFile() {
     const data = Storage.exportData();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -1958,6 +2220,11 @@ const UI = (() => {
     updatePortionPreview,
     savePortionEntry,
     renderRecipeList,
+    openGoalModal,
+    closeGoalModal,
+    saveGoalFromForm,
+    openGoalPickerModal,
+    closeGoalPickerModal,
     getCurrentDate: () => currentDate
   };
 })();

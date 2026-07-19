@@ -124,6 +124,32 @@ async function pullRecipes() {
   return snap.exists() ? snap.data().list || [] : [];
 }
 
+async function pushGoals(goals) {
+  if (!currentUser) return;
+  const { doc, setDoc } = firestoreMod;
+  await setDoc(doc(db, 'users', currentUser.uid, 'meta', 'goals'), { list: goals });
+}
+
+async function pullGoals() {
+  if (!currentUser) return [];
+  const { doc, getDoc } = firestoreMod;
+  const snap = await getDoc(doc(db, 'users', currentUser.uid, 'meta', 'goals'));
+  return snap.exists() ? snap.data().list || [] : [];
+}
+
+async function pushDailyAnalyses(map) {
+  if (!currentUser) return;
+  const { doc, setDoc } = firestoreMod;
+  await setDoc(doc(db, 'users', currentUser.uid, 'meta', 'dailyAnalyses'), { map });
+}
+
+async function pullDailyAnalyses() {
+  if (!currentUser) return {};
+  const { doc, getDoc } = firestoreMod;
+  const snap = await getDoc(doc(db, 'users', currentUser.uid, 'meta', 'dailyAnalyses'));
+  return snap.exists() ? snap.data().map || {} : {};
+}
+
 const FirebaseSync = {
   init,
   signIn,
@@ -141,6 +167,10 @@ const FirebaseSync = {
   pullFavorites,
   pushRecipes,
   pullRecipes,
+  pushGoals,
+  pullGoals,
+  pushDailyAnalyses,
+  pullDailyAnalyses,
   parseFirebaseConfig
 };
 

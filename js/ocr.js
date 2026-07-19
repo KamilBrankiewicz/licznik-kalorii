@@ -334,5 +334,44 @@ Jeśli nie rozpoznajesz żadnego składnika w podanym tekście, zwróć: {"error
     return text;
   }
 
-  return { analyzeLabel, analyzeVoiceEntry, analyzeScreenshot, analyzeMealPhoto, analyzeRecipeText, analyzeRecipeImage, analyzeIngredientLookup, transcribeAudio };
+  const GOAL_RESPONSE_FORMAT = `## Format odpowiedzi — WYŁĄCZNIE poniższy JSON, bez tekstu przed/po:
+{
+  "assumptions": ["jawne założenia przyjęte przy analizie, np. 'przyjęto porcję 120g'"],
+  "meals": [
+    {
+      "meal_name": "nazwa posiłku z listy",
+      "time": "godzina posiłku lub null",
+      "analysis": "zwięzła analiza tego posiłku pod kątem celu (2-4 zdania)",
+      "contribution": "konkretna liczba/zakres istotna dla celu, np. '1.5–2.0 mg Fe'",
+      "flag": "good, neutral lub warning"
+    }
+  ],
+  "daily_summary": {
+    "total_estimate": "łączny szacunek dla całego dnia",
+    "target": "cel/norma dla tego profilu",
+    "target_met_pct": "procent realizacji celu, np. '60–80%'",
+    "overall_assessment": "2-3 zdania podsumowania całego dnia",
+    "recommendations": ["konkretna, wykonalna porada (maks. 4 pozycje)"]
+  },
+  "data_gaps": ["czego zabrakło w danych, np. 'brak gramatury dla mięsa'"],
+  "confidence_overall": "low, medium lub high",
+  "disclaimer": "krótkie zastrzeżenie, że to szacunek, nie diagnostyka"
+}
+Jeśli lista posiłków jest pusta lub nie zawiera żadnych danych istotnych dla tego celu analizy, zwróć: {"error": "brak danych do analizy"}`;
+
+  async function analyzeDayAgainstGoal(date, meals, goalSystemPrompt, healthProfile, apiKey) {
+    const profileText = (healthProfile || '').trim() || 'Nie podano.';
+    const prompt = `${goalSystemPrompt}
+
+## Profil użytkownika
+${profileText}
+
+## Dane z dnia ${date}
+${JSON.stringify(meals)}
+
+${GOAL_RESPONSE_FORMAT}`;
+    return callGemini([{ text: prompt }], apiKey);
+  }
+
+  return { analyzeLabel, analyzeVoiceEntry, analyzeScreenshot, analyzeMealPhoto, analyzeRecipeText, analyzeRecipeImage, analyzeIngredientLookup, transcribeAudio, analyzeDayAgainstGoal };
 })();

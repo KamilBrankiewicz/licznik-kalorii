@@ -931,3 +931,126 @@ h1.page-title {
 .toast.show {
   opacity: 1;
 }
+
+/* Cele analizy dnia (Ustawienia) */
+.goal-item {
+  background: var(--bg-card);
+  border-radius: 14px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.goal-item-name {
+  font-weight: 600;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.goal-item-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* Raport odżywczy (widok dnia) */
+.section-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.section-header-row .section-title {
+  margin: 0;
+}
+
+#dailyAnalysesList {
+  margin-top: 12px;
+}
+
+.analysis-card {
+  background: var(--bg-card);
+  border-radius: 16px;
+  padding: 4px 16px;
+  margin-bottom: 10px;
+  border-left: 3px solid var(--border);
+}
+
+.analysis-card.flag-border-good {
+  border-left-color: var(--accent);
+}
+
+.analysis-card.flag-border-warning {
+  border-left-color: var(--warning);
+}
+
+.analysis-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0;
+  cursor: pointer;
+}
+
+.analysis-card-title {
+  font-weight: 700;
+  font-size: 14.5px;
+  flex: 1;
+}
+
+.analysis-card-body {
+  padding-bottom: 14px;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.analysis-block {
+  margin-bottom: 12px;
+}
+
+.analysis-meal {
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+  font-size: 13.5px;
+}
+
+.analysis-meal-contribution {
+  color: var(--accent);
+  font-size: 12.5px;
+  margin-top: 2px;
+}
+
+.analysis-meal-text {
+  color: var(--text-muted);
+  font-size: 12.5px;
+  margin-top: 2px;
+}
+
+.analysis-recommendations {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.flag-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.flag-dot.flag-good {
+  background: var(--accent);
+}
+
+.flag-dot.flag-warning {
+  background: var(--warning);
+}

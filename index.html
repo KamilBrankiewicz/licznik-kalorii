@@ -59,6 +59,8 @@
     </div>
 
     <div class="entries-list" id="entriesList"></div>
+
+    <div id="dailyAnalysesSection"></div>
   </section>
 
   <!-- WIDOK: HISTORIA -->
@@ -80,7 +82,7 @@
   <section id="view-ustawienia" class="view">
     <div style="display:flex; align-items:baseline; justify-content:space-between; gap:8px;">
       <h1 class="page-title" style="margin-bottom:0;">Ustawienia</h1>
-      <span class="hint" style="white-space:nowrap;">v21</span>
+      <span class="hint" style="white-space:nowrap;">v22</span>
     </div>
 
     <div class="form-group">
@@ -116,6 +118,23 @@
     <button class="btn btn-primary" id="saveSettingsBtn">Zapisz ustawienia</button>
 
     <div id="settingsToast" class="hint" style="margin-top:10px;"></div>
+
+    <hr class="section-divider">
+    <h3 class="section-title">Profil zdrowotny</h3>
+    <div class="hint" style="margin-bottom:10px;">
+      Opcjonalnie: płeć, wiek, stan fizjologiczny, wyniki badań itp. Ten tekst jest dołączany do każdej analizy dnia jako kontekst.
+    </div>
+    <div class="form-group">
+      <textarea id="settingHealthProfile" rows="3" placeholder="np. kobieta, 35 lat, ferrytyna 21,57 ng/ml, tendencja do anemii"></textarea>
+    </div>
+
+    <hr class="section-divider">
+    <h3 class="section-title">Cele analizy dnia</h3>
+    <div class="hint" style="margin-bottom:10px;">
+      Własne system prompty do oceny posiłków z całego dnia pod kątem konkretnego celu (np. żelazo, sód, cukry proste). Uruchamiane przyciskiem „+ Nowa analiza” w widoku dnia.
+    </div>
+    <div id="goalsList"></div>
+    <button class="btn btn-secondary" id="newGoalBtn" style="margin-top:10px;">+ Nowy cel</button>
 
     <hr class="section-divider">
     <h3 class="section-title">Kopia zapasowa</h3>
@@ -432,6 +451,44 @@
       <div class="btn-row">
         <button class="btn btn-secondary" id="cancelPortionBtn">Anuluj</button>
         <button class="btn btn-primary" id="savePortionBtn">Dodaj do dziennika</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: EDYCJA CELU ANALIZY -->
+  <div class="modal-overlay" id="goalModalOverlay">
+    <div class="modal-sheet">
+      <h3 id="goalModalTitle">Nowy cel</h3>
+
+      <div class="form-group">
+        <label>Nazwa celu</label>
+        <input type="text" id="goalName" placeholder="np. Żelazo">
+      </div>
+
+      <div class="form-group">
+        <label>System prompt (instrukcja dla Gemini)</label>
+        <textarea id="goalSystemPrompt" rows="12" placeholder="Jesteś asystentem żywieniowym oceniającym..."></textarea>
+        <div class="hint">Appka doklei do tego promptu profil użytkownika, listę posiłków z danego dnia oraz wymagany format odpowiedzi JSON — nie trzeba tego opisywać.</div>
+      </div>
+
+      <div id="goalFormError" class="error-msg"></div>
+
+      <div class="btn-row">
+        <button class="btn btn-secondary" id="cancelGoalBtn">Anuluj</button>
+        <button class="btn btn-primary" id="saveGoalBtn">Zapisz cel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: WYBÓR CELU DO NOWEJ ANALIZY DNIA -->
+  <div class="modal-overlay" id="analysisGoalPickerOverlay">
+    <div class="modal-sheet">
+      <h3>Analizuj dzień</h3>
+      <div class="scan-grid" id="analysisGoalPickerList"></div>
+      <div id="analysisGoalPickerStatus" class="hint"></div>
+      <div id="analysisGoalPickerError" class="error-msg"></div>
+      <div class="btn-row">
+        <button class="btn btn-secondary" id="cancelAnalysisGoalPickerBtn">Anuluj</button>
       </div>
     </div>
   </div>

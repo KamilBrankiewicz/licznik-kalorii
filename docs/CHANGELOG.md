@@ -15,6 +15,35 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku — niezacommitowane] 2026-07-19 — Raport odżywczy: analiza dnia względem własnych celów (AI)
+**Co:** nowa funkcja „Raport odżywczy” w widoku dnia — przycisk „+ Nowa analiza” wysyła
+listę posiłków z danego dnia do Gemini razem z wybranym, zapisanym wcześniej „celem
+analizy” (własny system prompt, np. ocena spożycia żelaza z uwzględnieniem czynników
+wchłaniania). Cele zarządzane w Ustawieniach → „Cele analizy dnia” (dodaj/edytuj/usuń,
+nazwa + treść system promptu). Dodano też globalne pole „Profil zdrowotny” (wiek, płeć,
+stan fizjologiczny itp.), dołączane automatycznie do każdej analizy jako kontekst. Wynik
+zapisuje się per dzień+cel (nadpisuje poprzedni przy ponownym uruchomieniu) i jest widoczny
+po przeładowaniu jako rozwijana karta z kolorowym oznaczeniem (dobrze/neutralnie/uwaga).
+**Dlaczego:** appka liczy makra, ale nie mikroelementy ani interakcje wchłaniania —
+użytkownik chciał okazjonalnej, głębszej analizy dnia pod kątem konkretnego celu (np.
+żelazo przy niedoborach) bez trzymania tej logiki na sztywno w kodzie, żeby móc dodawać
+własne cele (sód, cukry proste, witaminy...) samodzielnie przez UI.
+**Pliki:** `js/storage.js`, `js/ocr.js`, `js/firebase-sync.js`, `js/ui.js`, `js/app.js`,
+`index.html`, `css/style.css`, `sw.js`
+**Uwagi:** appka celowo nie ustala schematu JSON per cel — dokleja do każdego user-owego
+system promptu stały, generyczny fragment (`GOAL_RESPONSE_FORMAT` w `ocr.js`) wymuszający
+jeden kształt odpowiedzi (`meals[].flag`, `daily_summary`, `data_gaps`...), dzięki czemu
+jeden renderer w `ui.js` (`renderAnalysisBody`) obsługuje dowolny cel bez zmian w kodzie.
+Nowe kolekcje `analysisGoals` (lista, id) i `dailyAnalyses` (mapa `"YYYY-MM-DD__goalId"`)
+mają nagrobki + `merge*` + push/pull do Firestore (`meta/goals`, `meta/dailyAnalyses`),
+zgodnie z zasadą 1 z CLAUDE.md. Usunięcie celu w Ustawieniach nie kasuje wcześniej
+zapisanych raportów (trzymają snapshot `goalName` w chwili analizy). Zweryfikowane w
+przeglądarce: dodanie/edycja/usunięcie celu, uruchomienie analizy (błąd przy braku klucza
+API pokazuje czytelny komunikat), zapis i rozwijanie karty raportu, trwałość po
+przeładowaniu, usuwanie raportu, brak regresji w istniejącym dodawaniu/usuwaniu wpisów
+przy pustym dniu (wcześniejszy wczesny `return` w `renderDiary` pomijał renderowanie
+sekcji raportu przy braku wpisów — poprawione).
+
 ## [w toku — niezacommitowane] 2026-07-18 — Edycja składnika przepisu po kliknięciu karty
 **Co:** kliknięcie karty składnika na liście w kreatorze przepisu otwiera teraz jego
 edycję (nazwa, gramatura, makra na 100g) — wcześniej karta miała tylko przycisk usuwania.

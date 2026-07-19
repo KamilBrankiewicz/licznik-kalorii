@@ -4,6 +4,8 @@ const Storage = (() => {
   const WEIGHTS_KEY = 'weights';
   const FAVORITES_KEY = 'favoriteProducts';
   const RECIPES_KEY = 'recipes';
+  const GOALS_KEY = 'analysisGoals';
+  const DAILY_ANALYSES_KEY = 'dailyAnalyses';
 
   const DEFAULT_SETTINGS = {
     kcalGoal: 2000,
@@ -12,7 +14,8 @@ const Storage = (() => {
     fatGoal: 70,
     fiberGoal: 30,
     geminiApiKey: '',
-    firebaseConfig: ''
+    firebaseConfig: '',
+    healthProfile: ''
   };
 
   function getSettings() {
@@ -309,6 +312,100 @@ const Storage = (() => {
     return [...byId.values()];
   }
 
+  // ── Cele analizy dnia (własne system prompty do oceny posiłków przez Gemini) ──
+
+  function getRawGoals() {
+    const raw = localStorage.getItem(GOALS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  }
+
+  function getGoals() {
+    return getRawGoals().filter((g) => !g.deleted);
+  }
+
+  function saveGoals(list) {
+    localStorage.setItem(GOALS_KEY, JSON.stringify(list));
+  }
+
+  function addGoal(goal) {
+    const list = getRawGoals();
+    const newGoal = { ...goal, id: crypto.randomUUID(), updatedAt: new Date().toISOString() };
+    list.push(newGoal);
+    saveGoals(list);
+    return newGoal;
+  }
+
+  function updateGoal(id, data) {
+    const list = getRawGoals();
+    const idx = list.findIndex((g) => g.id === id);
+    if (idx === -1) return null;
+    list[idx] = { ...list[idx], ...data, updatedAt: new Date().toISOString() };
+    saveGoals(list);
+    return list[idx];
+  }
+
+  function deleteGoal(id) {
+    const list = getRawGoals().map((g) =>
+      g.id === id ? { id: g.id, deleted: true, updatedAt: new Date().toISOString() } : g
+    );
+    saveGoals(list);
+  }
+
+  function mergeGoals(listA, listB) {
+    const byId = new Map();
+    [...listA, ...listB].forEach((g) => {
+      const prev = byId.get(g.id);
+      if (!prev || (g.updatedAt || '') > (prev.updatedAt || '')) byId.set(g.id, g);
+    });
+    return [...byId.values()];
+  }
+
+  // ── Zapisane raporty analizy dnia — mapa { "YYYY-MM-DD__goalId": {...} },
+  // usunięcia jako nagrobki, ten sam mechanizm merge co przy wadze/ulubionych ──
+
+  function analysisMapKey(date, goalId) {
+    return `${date}__${goalId}`;
+  }
+
+  function getRawDailyAnalyses() {
+    const raw = localStorage.getItem(DAILY_ANALYSES_KEY);
+    return raw ? JSON.parse(raw) : {};
+  }
+
+  function saveRawDailyAnalyses(map) {
+    localStorage.setItem(DAILY_ANALYSES_KEY, JSON.stringify(map));
+  }
+
+  function getDailyAnalyses(date) {
+    return Object.values(getRawDailyAnalyses())
+      .filter((a) => a.date === date && !a.deleted)
+      .sort((a, b) => (a.goalName || '').localeCompare(b.goalName || ''));
+  }
+
+  function saveDailyAnalysis(date, goalId, goalName, result) {
+    const map = getRawDailyAnalyses();
+    const key = analysisMapKey(date, goalId);
+    map[key] = { date, goalId, goalName, result, updatedAt: new Date().toISOString() };
+    saveRawDailyAnalyses(map);
+  }
+
+  function deleteDailyAnalysis(date, goalId) {
+    const map = getRawDailyAnalyses();
+    const key = analysisMapKey(date, goalId);
+    if (!map[key]) return;
+    map[key] = { date, goalId, deleted: true, updatedAt: new Date().toISOString() };
+    saveRawDailyAnalyses(map);
+  }
+
+  function mergeDailyAnalyses(mapA, mapB) {
+    const merged = { ...mapA };
+    Object.entries(mapB).forEach(([key, a]) => {
+      const prev = merged[key];
+      if (!prev || (a.updatedAt || '') > (prev.updatedAt || '')) merged[key] = a;
+    });
+    return merged;
+  }
+
   function exportData() {
     const entries = {};
     getAllDates().forEach((date) => {
@@ -320,7 +417,9 @@ const Storage = (() => {
       entries,
       weights: getWeights(),
       favoriteProducts: getRawFavoriteProducts(),
-      recipes: getRawRecipes()
+      recipes: getRawRecipes(),
+      analysisGoals: getRawGoals(),
+      dailyAnalyses: getRawDailyAnalyses()
     };
   }
 
@@ -349,13 +448,29 @@ const Storage = (() => {
     if (data.recipes) {
       saveRecipes(mode === 'replace' ? data.recipes : mergeRecipes(getRawRecipes(), data.recipes));
     }
+    if (data.analysisGoals) {
+      saveGoals(mode === 'replace' ? data.analysisGoals : mergeGoals(getRawGoals(), data.analysisGoals));
+    }
+    if (data.dailyAnalyses) {
+      saveRawDailyAnalyses(
+        mode === 'replace' ? data.dailyAnalyses : mergeDailyAnalyses(getRawDailyAnalyses(), data.dailyAnalyses)
+      );
+    }
   }
 
   function clearAllData() {
     const keysToRemove = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key === SETTINGS_KEY || key === WEIGHTS_KEY || key === FAVORITES_KEY || key === RECIPES_KEY || key.startsWith(ENTRY_PREFIX)) {
+      if (
+        key === SETTINGS_KEY ||
+        key === WEIGHTS_KEY ||
+        key === FAVORITES_KEY ||
+        key === RECIPES_KEY ||
+        key === GOALS_KEY ||
+        key === DAILY_ANALYSES_KEY ||
+        key.startsWith(ENTRY_PREFIX)
+      ) {
         keysToRemove.push(key);
       }
     }
@@ -399,6 +514,19 @@ const Storage = (() => {
     deleteRecipe,
     getRecipeById,
     mergeRecipes,
+    getGoals,
+    getRawGoals,
+    saveGoals,
+    addGoal,
+    updateGoal,
+    deleteGoal,
+    mergeGoals,
+    getDailyAnalyses,
+    getRawDailyAnalyses,
+    saveRawDailyAnalyses,
+    saveDailyAnalysis,
+    deleteDailyAnalysis,
+    mergeDailyAnalyses,
     exportData,
     importData,
     clearAllData

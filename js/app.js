@@ -176,6 +176,10 @@ document.addEventListener('DOMContentLoaded', () => {
       UI.closePortionModal();
     } else if (document.getElementById('entryModalOverlay').classList.contains('active')) {
       UI.closeEntryModal();
+    } else if (document.getElementById('goalModalOverlay').classList.contains('active')) {
+      UI.closeGoalModal();
+    } else if (document.getElementById('analysisGoalPickerOverlay').classList.contains('active')) {
+      UI.closeGoalPickerModal();
     }
   });
 
@@ -201,6 +205,18 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   document.getElementById('saveFirebaseConfigBtn').addEventListener('click', () => UI.saveFirebaseConfigFromForm());
+
+  // ── Cele analizy dnia ──
+  document.getElementById('newGoalBtn').addEventListener('click', () => UI.openGoalModal());
+  document.getElementById('cancelGoalBtn').addEventListener('click', () => UI.closeGoalModal());
+  document.getElementById('saveGoalBtn').addEventListener('click', () => UI.saveGoalFromForm());
+  document.getElementById('goalModalOverlay').addEventListener('click', (e) => {
+    if (e.target.id === 'goalModalOverlay') UI.closeGoalModal();
+  });
+  document.getElementById('cancelAnalysisGoalPickerBtn').addEventListener('click', () => UI.closeGoalPickerModal());
+  document.getElementById('analysisGoalPickerOverlay').addEventListener('click', (e) => {
+    if (e.target.id === 'analysisGoalPickerOverlay') UI.closeGoalPickerModal();
+  });
 
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch((err) => {

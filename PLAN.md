@@ -6,7 +6,7 @@
 > [docs/MAINTENANCE.md](docs/MAINTENANCE.md) — checklista wdrożenia ·
 > [docs/CHANGELOG.md](docs/CHANGELOG.md) — co i kiedy się zmieniło.
 
-## Stan realizacji (2026-07-16)
+## Stan realizacji (2026-07-19)
 
 **Zrobione:**
 - ✅ Faza 1 (MVP) w całości: szkielet PWA, storage, widok dzienny, formularz ręczny, OCR etykiet (Gemini), ustawienia, nawigacja + historia
@@ -23,6 +23,7 @@
   - Kategorie posiłków (śniadanie/obiad/kolacja/przekąska) z grupowaniem w dzienniku (Faza 4)
   - Relog — ponowne dodanie wpisu na dziś jednym tapnięciem (Faza 4)
   - Błonnik jako piąty składnik (cel, pasek, formularz, OCR/AI, Open Food Facts) (Faza 4)
+  - Raport odżywczy — analiza dnia przez Gemini względem własnych, zapisanych celów (np. żelazo), z generycznym formatem wyniku (Faza 5)
 
 **Pozostało (świadomie odłożone):**
 - Wielojęzyczność — raczej bez sensu przy aplikacji dla jednego użytkownika
@@ -203,6 +204,9 @@ Payload:
 - **Kategorie posiłków:** pole `meal` we wpisie (`sniadanie|obiad|kolacja|przekaska`), wybór segmentowany w formularzu z domyślną kategorią wg godziny (`mealFromTime`: 4–11 śniadanie, 11–16 obiad, 16–22 kolacja, reszta przekąska). Dziennik grupuje wpisy w sekcje z sumą kcal; stare wpisy bez `meal` są przypisywane wg godziny.
 - **Relog:** przycisk ⟳ na karcie wpisu kopiuje go na dziś z bieżącą godziną i kategorią wg godziny — działa też z dni historycznych.
 - **Błonnik:** pole `fiber` we wpisie + `fiberGoal` w ustawieniach (domyślnie 30 g). Czwarty pasek w podsumowaniu dnia, pole w formularzu, "śr. błonnik" w statystykach tygodnia. Źródła danych: prompty Gemini (etykieta per100g, głos, zrzut, zdjęcie) i Open Food Facts (`fiber_100g`); przelicznik /100g uwzględnia błonnik, gdy jest znany.
+
+## Faza 5 — dodane po analizie potrzeb (2026-07-19)
+- **Raport odżywczy (analiza dnia względem własnych celów):** przycisk "+ Nowa analiza" pod listą wpisów w widoku dnia otwiera wybór zapisanego "celu analizy" i wysyła do Gemini listę posiłków tego dnia (nazwa, gramatura, pora, godzina, kcal/B/W/T/błonnik) razem z treścią celu i globalnym "Profilem zdrowotnym" z Ustawień. Cele to własne system prompty (nazwa + treść), zarządzane w Ustawieniach → "Cele analizy dnia" (`Storage.getGoals/addGoal/updateGoal/deleteGoal`, kolekcja `analysisGoals` z nagrobkami). Appka dokleja do każdego promptu użytkownika stały, generyczny fragment wymuszający jeden kształt odpowiedzi JSON (`meals[].flag` good/neutral/warning, `daily_summary`, `data_gaps`...) — dzięki temu jeden renderer (`renderAnalysisBody` w `js/ui.js`) obsługuje dowolny cel bez zmian w kodzie. Wynik zapisuje się per dzień+cel (`Storage.saveDailyAnalysis`, kolekcja `dailyAnalyses`, klucz `"YYYY-MM-DD__goalId"`, nadpisuje poprzedni przy ponownym uruchomieniu) i jest widoczny jako rozwijana karta z kolorowym oznaczeniem. Sync obu kolekcji przez Firestore (`meta/goals`, `meta/dailyAnalyses`). Moduł: `Ocr.analyzeDayAgainstGoal` w `js/ocr.js`.
 
 ## Co NIE weszło (świadomie)
 - Wielojęzyczność
