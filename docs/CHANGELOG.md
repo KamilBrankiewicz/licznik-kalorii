@@ -15,6 +15,27 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku — niezacommitowane] 2026-07-19 — Udostępnianie przepisów partnerowi (dwa konta Firebase)
+**Co:** przycisk „Udostępnij” na karcie przepisu w widoku „Przepisy” wysyła kopię przepisu
+(nazwa, składniki, waga po ugotowaniu, wartości na 100g) na konto partnera — osobne konto
+Google/Firebase drugiej osoby, skonfigurowane wcześniej w Ustawieniach polem „UID partnera”
+(własne UID widoczne w Ustawieniach po zalogowaniu, do skopiowania i przesłania partnerowi).
+Przy najbliższej synchronizacji przepis pojawia się automatycznie na liście przepisów drugiej
+osoby (bez potwierdzenia — to tylko dopisanie do listy, nie zalogowanie kcal), skąd może
+użyć istniejącego „Dodaj porcję”, żeby zadeklarować własną zjedzoną gramaturę.
+**Dlaczego:** dwie osoby używające aplikacji na osobnych kontach czasem gotują i jedzą to
+samo danie, ale w innych porcjach — ręczne przepisywanie tego samego przepisu przez obie
+osoby było zbędną pracą. Nie skopiowano gotowego wpisu dziennika (stałe kcal dla konkretnej
+gramatury), tylko sam przepis, bo każda osoba je inną ilość.
+**Pliki:** `js/storage.js`, `js/firebase-sync.js`, `js/ui.js`, `index.html`, `sw.js`
+**Uwagi:** nowa kolekcja Firestore `sharedRecipes/{recipientUid}/inbox/{itemId}` jest
+świadomym wyjątkiem od zasady 1 z CLAUDE.md (nagrobki + `merge*` dla każdej synchronizowanej
+kolekcji) — to jednorazowa skrzynka odbiorcza, nie stan replikowany między urządzeniami
+tego samego użytkownika: dokument jest usuwany z Firestore od razu po imporcie, a lokalny
+`seenSharedRecipeIds` w `storage.js` (czysto lokalny, niesynchronizowany) chroni przed
+duplikatem, gdyby usunięcie się nie powiodło. Reguły bezpieczeństwa Firestore trzeba dopisać
+ręcznie w konsoli Firebase (repo nie zawiera pliku `.rules`) — patrz `docs/ARCHITECTURE.md`.
+
 ## [w toku — niezacommitowane] 2026-07-19 — Raport odżywczy: analiza dnia względem własnych celów (AI)
 **Co:** nowa funkcja „Raport odżywczy” w widoku dnia — przycisk „+ Nowa analiza” wysyła
 listę posiłków z danego dnia do Gemini razem z wybranym, zapisanym wcześniej „celem

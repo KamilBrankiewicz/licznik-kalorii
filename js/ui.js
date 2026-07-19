@@ -415,6 +415,7 @@ const UI = (() => {
     document.getElementById('settingApiKey').value = s.geminiApiKey;
     document.getElementById('settingHealthProfile').value = s.healthProfile || '';
     document.getElementById('firebaseConfigInput').value = s.firebaseConfig || '';
+    document.getElementById('settingPartnerUid').value = s.partnerUid || '';
     document.getElementById('settingsToast').textContent = '';
     renderFirebaseAuthBlock();
     renderGoalsList();
@@ -441,6 +442,7 @@ const UI = (() => {
       const user = FirebaseSync.getCurrentUser();
       authBlock.innerHTML = `
         <div class="hint" style="margin-bottom:10px;">Zalogowano jako <strong>${escapeHtml(user.email || user.displayName || '')}</strong></div>
+        <div class="hint" style="margin-bottom:10px;">Twoje UID (do udostępniania przepisów): <code>${escapeHtml(user.uid)}</code></div>
         <button class="btn btn-secondary" id="firebaseSignOutBtn">Wyloguj</button>
       `;
       document.getElementById('firebaseSignOutBtn').addEventListener('click', async () => {
@@ -519,6 +521,23 @@ const UI = (() => {
       Storage.saveFavoriteProducts(mergedFavorites);
       await FirebaseSync.pushFavorites(mergedFavorites);
 
+      const incomingShared = await FirebaseSync.pullSharedRecipes();
+      const seenShared = new Set(Storage.getSeenSharedRecipeIds());
+      let importedSharedCount = 0;
+      for (const item of incomingShared) {
+        if (!seenShared.has(item.id)) {
+          Storage.addRecipe({
+            name: item.name,
+            ingredients: item.ingredients,
+            totalWeightCooked: item.totalWeightCooked,
+            per100g: item.per100g
+          });
+          Storage.addSeenSharedRecipeId(item.id);
+          importedSharedCount++;
+        }
+        await FirebaseSync.deleteSharedRecipe(item.id).catch(() => {});
+      }
+
       const remoteRecipes = await FirebaseSync.pullRecipes();
       const mergedRecipes = Storage.mergeRecipes(remoteRecipes, Storage.getRawRecipes());
       Storage.saveRecipes(mergedRecipes);
@@ -543,6 +562,10 @@ const UI = (() => {
       }
 
       renderDiary();
+      if (importedSharedCount > 0) {
+        renderRecipeList();
+        showToast(importedSharedCount === 1 ? 'Otrzymano przepis od partnera' : `Otrzymano ${importedSharedCount} przepisy od partnera`);
+      }
       statusEl.textContent = 'Zsynchronizowano ✓';
     } catch (e) {
       statusEl.textContent = 'Błąd synchronizacji danych.';
@@ -558,7 +581,8 @@ const UI = (() => {
       fatGoal: Number(document.getElementById('settingFatGoal').value) || 0,
       fiberGoal: Number(document.getElementById('settingFiberGoal').value) || 0,
       geminiApiKey: document.getElementById('settingApiKey').value.trim(),
-      healthProfile: document.getElementById('settingHealthProfile').value.trim()
+      healthProfile: document.getElementById('settingHealthProfile').value.trim(),
+      partnerUid: document.getElementById('settingPartnerUid').value.trim()
     };
     Storage.saveSettings(settings);
     pushSettingsToCloud(settings);
@@ -1842,6 +1866,7 @@ const UI = (() => {
         <div class="recipe-actions">
           <button class="btn btn-primary" data-action="portion" data-id="${recipe.id}" style="font-size:12px;padding:10px;">Dodaj porcję</button>
           <button class="btn btn-secondary" data-action="edit" data-id="${recipe.id}" style="font-size:12px;padding:10px;">Edytuj</button>
+          <button class="btn btn-secondary" data-action="share" data-id="${recipe.id}" style="font-size:12px;padding:10px;">Udostępnij</button>
           <button class="btn btn-danger" data-action="delete" data-id="${recipe.id}" style="font-size:12px;padding:10px;width:auto;">×</button>
         </div>
       `;
@@ -1854,6 +1879,9 @@ const UI = (() => {
     container.querySelectorAll('[data-action="edit"]').forEach((btn) => {
       btn.addEventListener('click', (e) => { e.stopPropagation(); openRecipeModal(btn.dataset.id); });
     });
+    container.querySelectorAll('[data-action="share"]').forEach((btn) => {
+      btn.addEventListener('click', (e) => { e.stopPropagation(); shareRecipeWithPartner(btn.dataset.id); });
+    });
     container.querySelectorAll('[data-action="delete"]').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -1865,6 +1893,26 @@ const UI = (() => {
         }
       });
     });
+  }
+
+  async function shareRecipeWithPartner(id) {
+    if (!window.FirebaseSync || !FirebaseSync.isSignedIn()) {
+      showToast('Zaloguj się przez Google w Ustawieniach, aby udostępniać przepisy');
+      return;
+    }
+    const partnerUid = (Storage.getSettings().partnerUid || '').trim();
+    if (!partnerUid) {
+      showToast('Ustaw UID partnera w Ustawieniach, aby udostępniać przepisy');
+      return;
+    }
+    const recipe = Storage.getRecipeById(id);
+    if (!recipe) return;
+    try {
+      await FirebaseSync.pushSharedRecipe(partnerUid, recipe);
+      showToast('Udostępniono przepis partnerowi');
+    } catch (e) {
+      showToast('Błąd udostępniania przepisu');
+    }
   }
 
   function pushRecipesToCloud() {

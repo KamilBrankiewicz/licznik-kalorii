@@ -6,6 +6,7 @@ const Storage = (() => {
   const RECIPES_KEY = 'recipes';
   const GOALS_KEY = 'analysisGoals';
   const DAILY_ANALYSES_KEY = 'dailyAnalyses';
+  const SEEN_SHARED_RECIPES_KEY = 'seenSharedRecipeIds';
 
   const DEFAULT_SETTINGS = {
     kcalGoal: 2000,
@@ -15,7 +16,8 @@ const Storage = (() => {
     fiberGoal: 30,
     geminiApiKey: '',
     firebaseConfig: '',
-    healthProfile: ''
+    healthProfile: '',
+    partnerUid: ''
   };
 
   function getSettings() {
@@ -312,6 +314,21 @@ const Storage = (() => {
     return [...byId.values()];
   }
 
+  // Lokalny guard przed duplikatem importu udostępnionego przepisu — czysto lokalny,
+  // nie synchronizowany, na wypadek gdyby usunięcie ze skrzynki Firestore się nie udało
+  function getSeenSharedRecipeIds() {
+    const raw = localStorage.getItem(SEEN_SHARED_RECIPES_KEY);
+    return raw ? JSON.parse(raw) : [];
+  }
+
+  function addSeenSharedRecipeId(id) {
+    const ids = getSeenSharedRecipeIds();
+    if (!ids.includes(id)) {
+      ids.push(id);
+      localStorage.setItem(SEEN_SHARED_RECIPES_KEY, JSON.stringify(ids));
+    }
+  }
+
   // ── Cele analizy dnia (własne system prompty do oceny posiłków przez Gemini) ──
 
   function getRawGoals() {
@@ -514,6 +531,8 @@ const Storage = (() => {
     deleteRecipe,
     getRecipeById,
     mergeRecipes,
+    getSeenSharedRecipeIds,
+    addSeenSharedRecipeId,
     getGoals,
     getRawGoals,
     saveGoals,

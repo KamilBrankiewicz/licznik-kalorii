@@ -85,11 +85,18 @@ users/{uid}/meta/settings       → Settings
 users/{uid}/meta/weights        → { map: {...} }
 users/{uid}/meta/favorites      → { list: [...] }
 users/{uid}/meta/recipes        → { list: [...] }
+
+sharedRecipes/{recipientUid}/inbox/{itemId} → kopia Recipe + { sharedBy: uid, sharedAt }
 ```
 
 Dane dnia trzymane per-dokument, żeby push jednego dnia nie przepisywał całej historii.
 Kolekcje globalne (waga, ulubione, przepisy) siedzą w `meta/` jako pojedyncze dokumenty —
 są małe, a to upraszcza merge.
+
+`sharedRecipes` jest świadomie **poza** drzewem `users/{uid}` — to skrzynka odbiorcza do
+udostępniania przepisu drugiemu, niezależnemu kontu (np. partnerowi, który je te same
+posiłki, ale w innej gramaturze), nie kolejna kolekcja synchronizowana między urządzeniami
+tego samego użytkownika. Patrz sekcja 7.
 
 ## 4. Synchronizacja i rozwiązywanie konfliktów
 
@@ -166,5 +173,23 @@ Nie są to braki do „naprawienia" — to decyzje projektowe:
 - brak testów automatycznych (weryfikacja ręczna wg checklisty),
 - brak paginacji historii (skala jednego użytkownika),
 - nagrobki nigdy nie są usuwane.
+
+**Wyjątek od zasady nagrobków — `sharedRecipes`:** ta kolekcja to jednorazowa skrzynka
+odbiorcza (przepis wysłany drugiemu, niezależnemu kontu — patrz `CHANGELOG.md`, wpis
+„Udostępnianie przepisów partnerowi"), nie stan replikowany między urządzeniami jednego
+użytkownika. Dokument jest usuwany z Firestore od razu po imporcie; nie ma dla niej
+`merge*` ani nagrobków, bo nie ma czego scalać — importowany przepis staje się zwykłym,
+niezależnym wpisem w kolekcji `recipes` odbiorcy (własne `id`/`updatedAt`, dalej żyje wg
+normalnych zasad tej kolekcji). Ochronę przed podwójnym importem (gdyby usunięcie ze
+skrzynki się nie powiodło) daje czysto lokalny, niesynchronizowany `seenSharedRecipeIds`
+w `storage.js`. Reguły bezpieczeństwa Firestore dla tej kolekcji trzeba dopisać ręcznie
+w konsoli Firebase (repo nie zawiera pliku `.rules`):
+```
+match /sharedRecipes/{recipientUid}/inbox/{itemId} {
+  allow create: if request.auth != null && request.auth.uid == request.resource.data.sharedBy;
+  allow read, delete: if request.auth != null &&
+    (request.auth.uid == recipientUid || request.auth.uid == resource.data.sharedBy);
+}
+```
 
 Jeśli któreś ma się zmienić, to decyzja użytkownika — nie zmieniaj z własnej inicjatywy.

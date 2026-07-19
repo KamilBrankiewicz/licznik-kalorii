@@ -82,7 +82,7 @@
   <section id="view-ustawienia" class="view">
     <div style="display:flex; align-items:baseline; justify-content:space-between; gap:8px;">
       <h1 class="page-title" style="margin-bottom:0;">Ustawienia</h1>
-      <span class="hint" style="white-space:nowrap;">v22</span>
+      <span class="hint" style="white-space:nowrap;">v23</span>
     </div>
 
     <div class="form-group">
@@ -160,6 +160,15 @@
     </div>
     <div id="firebaseAuthBlock" style="margin-top:14px;"></div>
     <div id="firebaseStatus" class="hint" style="margin-top:8px;"></div>
+
+    <div class="form-group" style="margin-top:14px;">
+      <label>UID partnera (do udostępniania przepisów)</label>
+      <input type="text" id="settingPartnerUid" placeholder="wklej UID drugiej osoby">
+      <div class="hint" style="margin-top:6px;">
+        Poproś partnera o jego UID (widoczne powyżej po zalogowaniu) i wklej tutaj — umożliwi to
+        przycisk „Udostępnij” przy przepisach.
+      </div>
+    </div>
 
     <div style="margin-top:30px;">
       <button class="btn btn-danger" id="clearDataBtn">Wyczyść wszystkie dane</button>
