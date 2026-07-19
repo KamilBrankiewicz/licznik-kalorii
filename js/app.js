@@ -107,6 +107,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ── Przepisy ──
   document.getElementById('newRecipeBtn').addEventListener('click', () => UI.openRecipeModal());
+  document.querySelectorAll('#recipeTabs button').forEach((btn) => {
+    btn.addEventListener('click', () => UI.setRecipeTab(btn.dataset.tab));
+  });
   document.getElementById('cancelRecipeBtn').addEventListener('click', () => UI.closeRecipeModal());
   document.getElementById('saveRecipeBtn').addEventListener('click', () => UI.saveRecipe());
   document.getElementById('recipeParseAiBtn').addEventListener('click', () => UI.parseRecipeWithAi());

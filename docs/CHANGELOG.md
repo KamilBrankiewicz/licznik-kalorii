@@ -15,6 +15,33 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku — niezacommitowane] 2026-07-19 — Zakładki Własne/Udostępnione w widoku Przepisy + kopiowanie UID
+**Co:** przycisk „Kopiuj” obok własnego UID w Ustawieniach (kopiuje do schowka, toast
+potwierdzenia). W widoku „Przepisy” doszły dwie zakładki nad listą, „Własne” i
+„Udostępnione” — przepisy zaimportowane od partnera (patrz wpis niżej) mają teraz osobną
+zakładkę zamiast mieszać się z własnymi przepisami na jednej liście. Lista przepisów (obie
+zakładki) sortuje się teraz od najnowszych do najstarszych (`updatedAt` malejąco), zamiast
+kolejności wstawienia. Naprawiono też bug: udostępniony przepis, którego odbiorca usunął
+lokalnie, nie pojawiał się ponownie po ponownym udostępnieniu przez nadawcę tego samego
+przepisu.
+**Dlaczego:** po pierwszym użyciu udostępniania przepis od partnera lądował na końcu tej
+samej listy co własne przepisy, trudno było go odróżnić. Bug z brakiem ponownego pojawienia
+się: dokument w `sharedRecipes/{recipientUid}/inbox/{itemId}` używał jako `itemId` identyfikatora
+przepisu nadawcy (`recipe.id`), stałego między kolejnymi udostępnieniami tego samego przepisu.
+Lokalny `seenSharedRecipeIds` u odbiorcy (guard przeciw duplikatom, patrz `storage.js`) raz
+zapisany dla tego `itemId` blokował import na zawsze, nawet po tym, jak odbiorca świadomie
+usunął swoją kopię i nadawca udostępnił przepis ponownie.
+**Pliki:** `js/ui.js`, `js/app.js`, `js/firebase-sync.js`, `index.html`, `css/style.css`, `sw.js`
+**Uwagi:** import ustawia nowe pole `shared: true` na obiekcie przepisu — wsteczna
+zgodność zachowana, bo filtr „Własne” to `!r.shared`, więc stare przepisy bez tego pola
+trafiają tam domyślnie. Przełączenie zakładki jest czysto lokalnym stanem UI
+(`recipeTabFilter` w `ui.js`), nie synchronizowanym — świeżo zaimportowany przepis nie
+przełącza widoku automatycznie, trzeba samemu kliknąć „Udostępnione”. Naprawa buga: `itemId`
+w skrzynce `sharedRecipes` to teraz świeży `crypto.randomUUID()` generowany przy każdym
+wywołaniu „Udostępnij”, nie `recipe.id` nadawcy — każde udostępnienie tego samego przepisu
+tworzy nowy, unikalny wpis w skrzynce odbiorcy, więc `seenSharedRecipeIds` już go nie myli
+z poprzednim.
+
 ## [w toku — niezacommitowane] 2026-07-19 — Udostępnianie przepisów partnerowi (dwa konta Firebase)
 **Co:** przycisk „Udostępnij” na karcie przepisu w widoku „Przepisy” wysyła kopię przepisu
 (nazwa, składniki, waga po ugotowaniu, wartości na 100g) na konto partnera — osobne konto

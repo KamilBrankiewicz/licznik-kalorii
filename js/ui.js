@@ -6,6 +6,7 @@ const UI = (() => {
   let pendingMeal = 'przekaska';
   let toastTimeout = null;
   let authListenerRegistered = false;
+  let recipeTabFilter = 'own';
 
   const MEALS = [
     { key: 'sniadanie', label: 'Śniadanie' },
@@ -541,7 +542,8 @@ const UI = (() => {
             name: item.name,
             ingredients: item.ingredients,
             totalWeightCooked: item.totalWeightCooked,
-            per100g: item.per100g
+            per100g: item.per100g,
+            shared: true
           });
           Storage.addSeenSharedRecipeId(item.id);
           importedSharedCount++;
@@ -1857,13 +1859,25 @@ const UI = (() => {
 
   // ── Lista przepisów ──
 
+  function setRecipeTab(tab) {
+    recipeTabFilter = tab;
+    document.querySelectorAll('#recipeTabs button').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.tab === tab);
+    });
+    renderRecipeList();
+  }
+
   function renderRecipeList() {
     const container = document.getElementById('recipeList');
-    const recipes = Storage.getRecipes();
+    const recipes = Storage.getRecipes()
+      .filter((r) => (recipeTabFilter === 'shared' ? !!r.shared : !r.shared))
+      .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
     container.innerHTML = '';
 
     if (recipes.length === 0) {
-      container.innerHTML = '<div class="empty-state">Brak przepisów. Stwórz pierwszy przyciskiem powyżej.</div>';
+      container.innerHTML = recipeTabFilter === 'shared'
+        ? '<div class="empty-state">Brak udostępnionych przepisów.</div>'
+        : '<div class="empty-state">Brak przepisów. Stwórz pierwszy przyciskiem powyżej.</div>';
       return;
     }
 
@@ -2279,6 +2293,7 @@ const UI = (() => {
     updatePortionPreview,
     savePortionEntry,
     renderRecipeList,
+    setRecipeTab,
     openGoalModal,
     closeGoalModal,
     saveGoalFromForm,

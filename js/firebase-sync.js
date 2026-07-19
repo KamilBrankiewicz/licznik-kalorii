@@ -140,7 +140,8 @@ async function pullGoals() {
 async function pushSharedRecipe(recipientUid, recipe) {
   if (!currentUser) return;
   const { doc, setDoc } = firestoreMod;
-  await setDoc(doc(db, 'sharedRecipes', recipientUid, 'inbox', recipe.id), {
+  const shareId = crypto.randomUUID();
+  await setDoc(doc(db, 'sharedRecipes', recipientUid, 'inbox', shareId), {
     name: recipe.name,
     ingredients: recipe.ingredients,
     totalWeightCooked: recipe.totalWeightCooked,
