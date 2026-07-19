@@ -442,9 +442,20 @@ const UI = (() => {
       const user = FirebaseSync.getCurrentUser();
       authBlock.innerHTML = `
         <div class="hint" style="margin-bottom:10px;">Zalogowano jako <strong>${escapeHtml(user.email || user.displayName || '')}</strong></div>
-        <div class="hint" style="margin-bottom:10px;">Twoje UID (do udostępniania przepisów): <code>${escapeHtml(user.uid)}</code></div>
+        <div class="hint" style="margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span>Twoje UID (do udostępniania przepisów): <code>${escapeHtml(user.uid)}</code></span>
+          <button class="btn btn-secondary" id="copyUidBtn" style="padding:4px 10px;font-size:12px;">Kopiuj</button>
+        </div>
         <button class="btn btn-secondary" id="firebaseSignOutBtn">Wyloguj</button>
       `;
+      document.getElementById('copyUidBtn').addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(user.uid);
+          showToast('Skopiowano UID');
+        } catch (e) {
+          showToast('Nie udało się skopiować UID');
+        }
+      });
       document.getElementById('firebaseSignOutBtn').addEventListener('click', async () => {
         await FirebaseSync.signOutUser();
         renderFirebaseAuthBlock();
