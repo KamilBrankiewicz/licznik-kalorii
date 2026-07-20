@@ -446,6 +446,31 @@ html, body {
   color: var(--accent);
 }
 
+.metric-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.metric-tabs button {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 10px;
+  padding: 10px 2px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  min-height: 40px;
+}
+
+.metric-tabs button.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .empty-state {
   text-align: center;
   color: var(--text-muted);

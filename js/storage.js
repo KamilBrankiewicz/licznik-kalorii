@@ -8,6 +8,7 @@ const Storage = (() => {
   const DAILY_ANALYSES_KEY = 'dailyAnalyses';
   const SEEN_SHARED_RECIPES_KEY = 'seenSharedRecipeIds';
   const THEME_KEY = 'themePreference';
+  const HISTORY_METRIC_KEY = 'historyMetricPreference';
 
   const DEFAULT_SETTINGS = {
     kcalGoal: 2000,
@@ -38,6 +39,15 @@ const Storage = (() => {
 
   function saveTheme(theme) {
     localStorage.setItem(THEME_KEY, theme);
+  }
+
+  // Wybrana metryka wykresu w Historii — per-urządzenie, celowo nie wchodzi do settings/sync
+  function getHistoryMetric() {
+    return localStorage.getItem(HISTORY_METRIC_KEY) || 'kcal';
+  }
+
+  function saveHistoryMetric(metric) {
+    localStorage.setItem(HISTORY_METRIC_KEY, metric);
   }
 
   // Surowa lista zawiera także nagrobki (deleted: true) potrzebne do synchronizacji
@@ -509,6 +519,8 @@ const Storage = (() => {
     saveSettings,
     getTheme,
     saveTheme,
+    getHistoryMetric,
+    saveHistoryMetric,
     getEntries,
     getRawEntries,
     saveEntries,

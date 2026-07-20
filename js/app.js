@@ -99,6 +99,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('weightInput').addEventListener('change', () => UI.saveWeightFromInput());
 
+  document.querySelectorAll('#historyMetricTabs button').forEach((btn) => {
+    btn.addEventListener('click', () => UI.setHistoryMetric(btn.dataset.metric));
+  });
+
   // Przycisk "Z przepisu" w modalu dodawania
   document.getElementById('fromRecipeBtn').addEventListener('click', () => {
     UI.closeEntryModal();

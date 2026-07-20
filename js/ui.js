@@ -7,6 +7,16 @@ const UI = (() => {
   let toastTimeout = null;
   let authListenerRegistered = false;
   let recipeTabFilter = 'own';
+  let historyMetric = Storage.getHistoryMetric();
+
+  // judge: 'max' = przekroczenie celu jest złe (czerwono), 'min' = nieosiągnięcie celu jest złe,
+  // 'none' = wykres tylko poglądowy, bez oceniania dobre/złe
+  const HISTORY_METRICS = {
+    kcal: { label: 'Kcal', unit: 'kcal', goalKey: 'kcalGoal', judge: 'max' },
+    protein: { label: 'Białko', unit: 'g', goalKey: 'proteinGoal', judge: 'min' },
+    carbs: { label: 'Węgle', unit: 'g', goalKey: 'carbsGoal', judge: 'none' },
+    fat: { label: 'Tłuszcz', unit: 'g', goalKey: 'fatGoal', judge: 'none' }
+  };
 
   const MEALS = [
     { key: 'sniadanie', label: 'Śniadanie' },
@@ -259,11 +269,25 @@ const UI = (() => {
     return div.innerHTML;
   }
 
+  function isBadHistoryDay(summary, metric) {
+    if (!summary.kcal) return false; // dzień bez wpisów — nie oceniamy
+    if (metric.judge === 'max') return summary[metricKeyOf(metric)] > metric.goal;
+    if (metric.judge === 'min') return summary[metricKeyOf(metric)] < metric.goal;
+    return false;
+  }
+
+  function metricKeyOf(metric) {
+    return metric.goalKey.replace('Goal', '');
+  }
+
   function renderWeeklyStats() {
     const container = document.getElementById('weeklyStats');
     const settings = Storage.getSettings();
     const dayNames = ['Nd', 'Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'So'];
     const todayStr = toDateStr(new Date());
+    const metricKey = historyMetric;
+    const metric = { ...HISTORY_METRICS[metricKey], goal: settings[HISTORY_METRICS[metricKey].goalKey] };
+    const valueOf = (summary) => summary[metricKeyOf(metric)];
 
     const days = [];
     for (let i = 6; i >= 0; i--) {
@@ -279,20 +303,20 @@ const UI = (() => {
       return;
     }
 
-    const maxKcal = Math.max(settings.kcalGoal, ...days.map((d) => d.summary.kcal), 1);
-    const goalPct = Math.round((settings.kcalGoal / maxKcal) * 100);
+    const maxVal = Math.max(metric.goal, ...days.map((d) => valueOf(d.summary)), 1);
+    const goalPct = Math.round((metric.goal / maxVal) * 100);
     const avg = (key) =>
       Math.round(daysWithEntries.reduce((s, d) => s + d.summary[key], 0) / daysWithEntries.length);
-    const inGoal = daysWithEntries.filter((d) => d.summary.kcal <= settings.kcalGoal).length;
+    const inGoal = daysWithEntries.filter((d) => !isBadHistoryDay(d.summary, metric)).length;
 
     container.innerHTML = `
       <div class="summary-card">
-        <h3 class="section-title">Ostatnie 7 dni</h3>
+        <h3 class="section-title">Ostatnie 7 dni — ${metric.label}</h3>
         <div class="week-bars">
           <div class="goal-line" style="bottom:${goalPct}%"></div>
           ${days
             .map(
-              (d) => `<div class="week-bar ${d.summary.kcal > settings.kcalGoal ? 'over' : ''}" data-date="${d.date}" style="height:${Math.round((d.summary.kcal / maxKcal) * 100)}%"></div>`
+              (d) => `<div class="week-bar ${isBadHistoryDay(d.summary, metric) ? 'over' : ''}" data-date="${d.date}" style="height:${Math.round((valueOf(d.summary) / maxVal) * 100)}%"></div>`
             )
             .join('')}
         </div>
@@ -300,7 +324,7 @@ const UI = (() => {
           ${days
             .map(
               (d) => `<div class="week-label" data-date="${d.date}">
-                <div class="week-kcal">${d.summary.kcal ? Math.round(d.summary.kcal) : ''}</div>
+                <div class="week-kcal">${valueOf(d.summary) ? Math.round(valueOf(d.summary)) : ''}</div>
                 <div class="week-day ${d.date === todayStr ? 'today' : ''}">${d.label}</div>
               </div>`
             )
@@ -312,7 +336,7 @@ const UI = (() => {
           <div class="week-stat"><div class="value">${avg('carbs')} g</div><div class="label">śr. węgle</div></div>
           <div class="week-stat"><div class="value">${avg('fat')} g</div><div class="label">śr. tłuszcz</div></div>
           <div class="week-stat"><div class="value">${avg('fiber')} g</div><div class="label">śr. błonnik</div></div>
-          <div class="week-stat"><div class="value">${inGoal}/${daysWithEntries.length}</div><div class="label">dni w celu</div></div>
+          <div class="week-stat"><div class="value">${inGoal}/${daysWithEntries.length}</div><div class="label">${metric.judge === 'none' ? 'dni z wpisem' : 'dni w celu'}</div></div>
         </div>
       </div>
     `;
@@ -374,6 +398,9 @@ const UI = (() => {
   }
 
   function renderHistory() {
+    document.querySelectorAll('#historyMetricTabs button').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.metric === historyMetric);
+    });
     renderWeeklyStats();
     renderWeightStats();
     const dates = Storage.getAllDatesWithEntries();
@@ -386,24 +413,35 @@ const UI = (() => {
     }
 
     const settings = Storage.getSettings();
+    const metric = { ...HISTORY_METRICS[historyMetric], goal: settings[HISTORY_METRICS[historyMetric].goalKey] };
     dates.forEach((date) => {
       const summary = Storage.getDailySummary(date);
-      const over = summary.kcal > settings.kcalGoal;
+      const value = summary[metricKeyOf(metric)];
+      const bad = isBadHistoryDay(summary, metric);
       const item = document.createElement('div');
       item.className = 'history-item';
       item.innerHTML = `
         <div>
           <div class="date">${formatDateLabel(date)}</div>
-          <div class="hint" style="margin-top:2px;">cel ${settings.kcalGoal} kcal</div>
+          <div class="hint" style="margin-top:2px;">cel ${metric.goal} ${metric.unit}</div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;">
-          <div class="history-dot" style="background:${over ? 'var(--danger)' : 'var(--accent)'};"></div>
-          <div class="kcal">${Math.round(summary.kcal)} kcal</div>
+          <div class="history-dot" style="background:${bad ? 'var(--danger)' : 'var(--accent)'};"></div>
+          <div class="kcal">${Math.round(value)} ${metric.unit}</div>
         </div>
       `;
       item.addEventListener('click', () => goToDate(date));
       container.appendChild(item);
     });
+  }
+
+  function setHistoryMetric(metric) {
+    historyMetric = metric;
+    Storage.saveHistoryMetric(metric);
+    document.querySelectorAll('#historyMetricTabs button').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.metric === metric);
+    });
+    renderHistory();
   }
 
   function setTheme(theme) {
@@ -2259,6 +2297,7 @@ const UI = (() => {
     changeDay,
     renderDiary,
     renderHistory,
+    setHistoryMetric,
     renderSettings,
     setTheme,
     saveSettingsFromForm,

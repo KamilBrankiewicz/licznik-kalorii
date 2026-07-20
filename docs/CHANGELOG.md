@@ -15,6 +15,22 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku — niezacommitowane] 2026-07-20 — Przełącznik metryki (Kcal/Białko/Węgle/Tłuszcz) w Historii
+**Co:** nad wykresem tygodniowym w widoku Historia doszły 4 zakładki pozwalające przełączyć,
+którą wartość pokazują słupki, linia celu i lista dni: Kcal, Białko, Węgle lub Tłuszcz.
+**Dlaczego:** śledzenie samego kcal nie wystarcza — białko jest dla użytkownika ważniejszym
+celem niż limit kaloryczny, a dotychczas historia pokazywała wyłącznie kcal.
+**Pliki:** `index.html`, `css/style.css`, `js/ui.js`, `js/app.js`, `js/storage.js`, `sw.js`.
+**Uwagi:** wybrana zakładka jest **per-urządzenie**, zapisana w `localStorage` pod kluczem
+`historyMetricPreference` przez `Storage.getHistoryMetric/saveHistoryMetric` — celowo nie
+wchodzi do `settings` i nie synchronizuje się przez Firebase (analogicznie do `themePreference`).
+Kolorowanie „dobrze/źle” (czerwona kropka/słupek) zależy od kierunku celu danej metryki: dla
+Kcal przekroczenie celu jest złe, dla Białka nieosiągnięcie celu jest złe, a Węgle/Tłuszcz są
+czysto poglądowe (bez oceniania) — te dwie metryki nie mają jednoznacznego kierunku „dobrze”.
+Bump `CACHE_NAME` → `licznik-kalorii-v28`.
+
+---
+
 ## [w toku — niezacommitowane] 2026-07-19 — Reorganizacja Ustawień w akordeon + ręczny motyw jasny/ciemny
 **Co:** zakładka Ustawienia była jedną długą listą 7 sekcji od góry do dołu. Teraz: sekcja
 „Wygląd” z przełącznikiem Jasny/Ciemny/Auto na samej górze (zawsze widoczna), „Cele dzienne”

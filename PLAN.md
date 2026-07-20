@@ -6,7 +6,7 @@
 > [docs/MAINTENANCE.md](docs/MAINTENANCE.md) — checklista wdrożenia ·
 > [docs/CHANGELOG.md](docs/CHANGELOG.md) — co i kiedy się zmieniło.
 
-## Stan realizacji (2026-07-19)
+## Stan realizacji (2026-07-20)
 
 **Zrobione:**
 - ✅ Faza 1 (MVP) w całości: szkielet PWA, storage, widok dzienny, formularz ręczny, OCR etykiet (Gemini), ustawienia, nawigacja + historia
@@ -18,7 +18,7 @@
   - Ostatnio używane produkty (chipy + podpowiedzi nazw z przeliczaniem /100g)
   - Skaner kodów kreskowych: natywny `BarcodeDetector` + baza Open Food Facts, fallback ręcznego wpisania kodu — `js/barcode.js`
   - Zdjęcie posiłku → szacowanie makr całej porcji przez Gemini (dawna Faza 3)
-  - Wykres kcal z ostatnich 7 dni + średnie makr i "dni w celu" w widoku Historia
+  - Wykres z ostatnich 7 dni + średnie makr i "dni w celu" w widoku Historia, z przełącznikiem metryki Kcal/Białko/Węgle/Tłuszcz (kolorowanie dobrze/źle tylko dla Kcal i Białka — mają jednoznaczny kierunek celu)
   - Śledzenie wagi ciała: pole w dzienniku + wykres trendu 90 dni w Historii (Faza 4)
   - Kategorie posiłków (śniadanie/obiad/kolacja/przekąska) z grupowaniem w dzienniku (Faza 4)
   - Relog — ponowne dodanie wpisu na dziś jednym tapnięciem (Faza 4)
