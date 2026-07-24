@@ -806,6 +806,22 @@ const UI = (() => {
     pendingPer100g = null;
   }
 
+  // Wpisy bez zapisanego per100g (ręczne, ze zdjęcia, głosowe, porcje przepisu) nie mają
+  // znanego składu na 100g — dorabiamy go z aktualnych wartości wpisu, żeby zmiana gramatury
+  // przy edycji też przeliczała makra proporcjonalnie, tak jak dla wpisów z etykiety/kodu.
+  function derivePer100gFromEntry(entry) {
+    const grams = Number(entry.grams);
+    if (!grams || grams <= 0) return null;
+    const factor = 100 / grams;
+    return {
+      kcal: (entry.kcal || 0) * factor,
+      protein: (entry.protein || 0) * factor,
+      carbs: (entry.carbs || 0) * factor,
+      fat: (entry.fat || 0) * factor,
+      fiber: entry.fiber != null ? entry.fiber * factor : null
+    };
+  }
+
   function openEntryModal(entryId) {
     document.getElementById('entryFormError').textContent = '';
     document.getElementById('scanError').textContent = '';
@@ -826,7 +842,7 @@ const UI = (() => {
     document.getElementById('entryFiber').value = entry ? entry.fiber || '' : '';
     document.getElementById('entryTime').value = entry ? entry.time || nowTimeStr() : nowTimeStr();
     pendingSource = entry ? entry.source || 'manual' : 'manual';
-    pendingPer100g = entry ? entry.per100g || null : null;
+    pendingPer100g = entry ? (entry.per100g || derivePer100gFromEntry(entry)) : null;
     selectMeal(entry ? entry.meal || mealFromTime(entry.time) : mealFromTime(nowTimeStr()));
     renderRecentProducts(!entry);
     renderFavoriteProducts(!entry);
