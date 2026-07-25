@@ -1282,7 +1282,7 @@ const UI = (() => {
     }
 
     if (result.ingredients && result.ingredients.length > 0) {
-      recipeIngredients = result.ingredients.map((ing) => ({
+      const aiIngredients = result.ingredients.map((ing) => ({
         name: ing.name || 'Składnik',
         grams: Number(ing.grams) || 0,
         per100g: {
@@ -1293,8 +1293,17 @@ const UI = (() => {
           fiber: ing.per100g?.fiber != null ? Number(ing.per100g.fiber) : null
         }
       }));
+
+      if (recipeIngredients.length > 0) {
+        const existingNames = new Set(recipeIngredients.map((i) => i.name.trim().toLowerCase()));
+        const newOnly = aiIngredients.filter((i) => !existingNames.has(i.name.trim().toLowerCase()));
+        recipeIngredients = recipeIngredients.concat(newOnly);
+        showToast(`Dodano ${newOnly.length} nowych składników (zachowano ${recipeIngredients.length - newOnly.length} istniejących)`);
+      } else {
+        recipeIngredients = aiIngredients;
+        showToast(`Rozpoznano ${recipeIngredients.length} składników — sprawdź wartości`);
+      }
       renderRecipeIngredients();
-      showToast(`Rozpoznano ${recipeIngredients.length} składników — sprawdź wartości`);
     } else {
       errorEl.textContent = 'Nie rozpoznano składników.';
     }
@@ -1493,6 +1502,7 @@ const UI = (() => {
     document.getElementById('ingredientScanStatus').textContent = '';
     document.getElementById('ingredientScanError').textContent = '';
     ingredientPendingPer100g = null;
+    updateIngredientMacroPreview();
 
     renderIngredientFavorites();
     document.getElementById('ingredientModalOverlay').classList.add('active');
@@ -1500,6 +1510,29 @@ const UI = (() => {
 
   function closeIngredientModal() {
     document.getElementById('ingredientModalOverlay').classList.remove('active');
+  }
+
+  function updateIngredientMacroPreview() {
+    const el = document.getElementById('ingredientMacroPreview');
+    const grams = Number(document.getElementById('ingredientGrams').value);
+    const kcal = Number(document.getElementById('ingredientKcal').value);
+    const protein = Number(document.getElementById('ingredientProtein').value);
+    const carbs = Number(document.getElementById('ingredientCarbs').value);
+    const fat = Number(document.getElementById('ingredientFat').value);
+    const fiber = Number(document.getElementById('ingredientFiber').value);
+    if (!grams || grams <= 0 || (!kcal && !protein && !carbs && !fat)) {
+      el.textContent = '';
+      return;
+    }
+    const f = grams / 100;
+    const parts = [
+      `${Math.round(kcal * f)} kcal`,
+      `B: ${Math.round(protein * f * 10) / 10}g`,
+      `W: ${Math.round(carbs * f * 10) / 10}g`,
+      `T: ${Math.round(fat * f * 10) / 10}g`
+    ];
+    if (fiber) parts.push(`Bł: ${Math.round(fiber * f * 10) / 10}g`);
+    el.textContent = `= ${parts.join(' · ')}`;
   }
 
   function renderIngredientFavorites() {
@@ -1527,6 +1560,7 @@ const UI = (() => {
           document.getElementById('ingredientFiber').value = p.per100g.fiber || '';
         }
         if (p.grams) document.getElementById('ingredientGrams').value = p.grams;
+        updateIngredientMacroPreview();
       });
       container.appendChild(chip);
     });
@@ -1537,6 +1571,35 @@ const UI = (() => {
     const toggleBtn = document.getElementById('ingredientFavoriteToggleBtn');
     const collapsed = container.classList.toggle('collapsed');
     toggleBtn.setAttribute('aria-expanded', String(!collapsed));
+  }
+
+  function saveIngredientAsFavorite() {
+    const name = document.getElementById('ingredientName').value.trim();
+    const grams = Number(document.getElementById('ingredientGrams').value) || 0;
+    const kcal = Number(document.getElementById('ingredientKcal').value) || 0;
+    const protein = Number(document.getElementById('ingredientProtein').value) || 0;
+    const carbs = Number(document.getElementById('ingredientCarbs').value) || 0;
+    const fat = Number(document.getElementById('ingredientFat').value) || 0;
+    const fiberVal = document.getElementById('ingredientFiber').value;
+    const fiber = fiberVal !== '' ? Number(fiberVal) : null;
+    const errorEl = document.getElementById('ingredientFormError');
+
+    if (!name) { errorEl.textContent = 'Podaj nazwę składnika'; return; }
+    if (!kcal && !protein && !carbs && !fat) { errorEl.textContent = 'Uzupełnij wartości odżywcze'; return; }
+
+    Storage.addFavoriteProduct({
+      name,
+      grams: grams || null,
+      kcal: grams ? Math.round(kcal * grams / 100) : kcal,
+      protein: grams ? Math.round(protein * grams / 100 * 10) / 10 : protein,
+      carbs: grams ? Math.round(carbs * grams / 100 * 10) / 10 : carbs,
+      fat: grams ? Math.round(fat * grams / 100 * 10) / 10 : fat,
+      fiber: fiber != null ? (grams ? Math.round(fiber * grams / 100 * 10) / 10 : fiber) : null,
+      per100g: { kcal, protein, carbs, fat, fiber },
+      source: 'ingredient'
+    });
+    renderIngredientFavorites();
+    showToast(`Zapamiętano: ${name}`);
   }
 
   function saveIngredient() {
@@ -2358,6 +2421,8 @@ const UI = (() => {
     openIngredientBarcodeScanner,
     lookupIngredientBarcode,
     toggleIngredientFavoriteSection,
+    saveIngredientAsFavorite,
+    updateIngredientMacroPreview,
     renderRecipeIngredients,
     openPortionModal,
     closePortionModal,

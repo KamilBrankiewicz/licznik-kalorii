@@ -152,6 +152,13 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('ingredientVoiceBtn').addEventListener('click', () => UI.handleIngredientVoice());
   document.getElementById('ingredientLookupBtn').addEventListener('click', () => UI.handleIngredientLookup());
   document.getElementById('ingredientFavoriteToggleBtn').addEventListener('click', () => UI.toggleIngredientFavoriteSection());
+  document.getElementById('ingredientSaveFavoriteBtn').addEventListener('click', () => UI.saveIngredientAsFavorite());
+  document.getElementById('ingredientGrams').addEventListener('input', () => UI.updateIngredientMacroPreview());
+  document.getElementById('ingredientKcal').addEventListener('input', () => UI.updateIngredientMacroPreview());
+  document.getElementById('ingredientProtein').addEventListener('input', () => UI.updateIngredientMacroPreview());
+  document.getElementById('ingredientCarbs').addEventListener('input', () => UI.updateIngredientMacroPreview());
+  document.getElementById('ingredientFat').addEventListener('input', () => UI.updateIngredientMacroPreview());
+  document.getElementById('ingredientFiber').addEventListener('input', () => UI.updateIngredientMacroPreview());
 
   // Porcja z przepisu
   document.getElementById('cancelPortionBtn').addEventListener('click', () => UI.closePortionModal());

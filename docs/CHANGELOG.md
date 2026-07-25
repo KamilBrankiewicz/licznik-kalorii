@@ -15,6 +15,22 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku — niezacommitowane] 2026-07-25 — Poprawki przepisów: merge składników, podgląd makro, zapamiętywanie
+**Co:** (1) Analiza AI przepisu zachowuje ręcznie dodane składniki zamiast je nadpisywać —
+nowe składniki z AI są dołączane, istniejące (po nazwie) nie są duplikowane.
+(2) Pod polem gramów w modalu składnika wyświetla się podgląd przeliczonych makro na żywo
+(np. „= 15 kcal · B: 0.6g · W: 3.3g · T: 0.1g"), aktualizowany przy każdej zmianie gramów
+lub wartości per100g.
+(3) Przycisk „Zapamiętaj składnik" w modalu składnika — zapisuje składnik do ulubionych
+produktów z wartościami per100g i domyślną gramaturą, dzięki czemu przy kolejnych przepisach
+wystarczy kliknąć chip i ewentualnie dostosować gramy.
+**Dlaczego:** (1) składnik dodany z etykiety znikał po kliknięciu „Przeanalizuj przepis";
+(2) użytkownik nie widział efektu zmiany gramów do momentu zapisania; (3) brak sposobu na
+szybkie ponowne użycie składników przy nowych przepisach.
+**Pliki:** `index.html`, `js/ui.js`, `js/app.js`, `sw.js`.
+**Uwagi:** zapamiętane składniki korzystają z istniejącego systemu `favoriteProducts` — pojawiają
+się też w formularzu dodawania wpisu do dziennika. Bump `CACHE_NAME` → `licznik-kalorii-v30`.
+
 ## [w toku — niezacommitowane] 2026-07-20 — Przełącznik metryki (Kcal/Białko/Węgle/Tłuszcz) w Historii
 **Co:** nad wykresem tygodniowym w widoku Historia doszły 4 zakładki pozwalające przełączyć,
 którą wartość pokazują słupki, linia celu i lista dni: Kcal, Białko, Węgle lub Tłuszcz.
