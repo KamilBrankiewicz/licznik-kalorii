@@ -15,6 +15,21 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku — niezacommitowane] 2026-07-31 — Fix: zmiana produktu po autouzupełnieniu nie odświeżała makr
+**Co:** W modalu „Dodaj posiłek", po wybraniu produktu z listy/dropdowna, wpisanie innej
+nazwy dokładnie pasującej do innego zapisanego produktu i opuszczenie pola (blur) nie
+odświeżało kcal/makro — zostawały wartości poprzednio wybranego produktu.
+**Dlaczego:** `autofillFromName` blokowała nadpisanie zawsze, gdy pole kcal miało już
+jakąkolwiek wartość, bez sprawdzenia, czy ta wartość pochodzi z poprzedniego dopasowania
+czy została wpisana ręcznie. Reprodukowane i zweryfikowane w przeglądarce (Playwright/MCP).
+**Pliki:** `js/ui.js` (`fillFormFromProduct` zapisuje `lastAutoFilledName`; `autofillFromName`
+porównuje aktualną nazwę z `lastAutoFilledName` zamiast tylko sprawdzać czy kcal jest puste;
+`openEntryModal` resetuje `lastAutoFilledName` na `null`), `sw.js` (bump v34), `index.html` (v34).
+**Uwagi:** Ręcznie wpisane kcal (bez wcześniejszego dopasowania z listy) nadal jest chronione
+przed nadpisaniem — `lastAutoFilledName === null` traktowane jak "wartość ręczna".
+
+---
+
 ## [w toku — niezacommitowane] 2026-07-31 — Autocomplete nazwy produktu przy dodawaniu posiłku
 **Co:** Wpisywanie nazwy produktu w modalu „Dodaj posiłek" podpowiada pasujące produkty
 z historii wpisów (substring match, debounce 200 ms, max 8 wyników). Kliknięcie podpowiedzi

@@ -11,6 +11,7 @@ const UI = (() => {
   let historyCalendarMonth = new Date();
   let productCache = null;
   let autocompleteDebounce = null;
+  let lastAutoFilledName = null;
 
   // judge: 'max' = przekroczenie celu jest złe (czerwono), 'min' = nieosiągnięcie celu jest złe,
   // 'none' = wykres tylko poglądowy, bez oceniania dobre/złe
@@ -900,6 +901,7 @@ const UI = (() => {
     document.getElementById('entryFat').value = p.fat || '';
     document.getElementById('entryFiber').value = p.fiber || '';
     pendingPer100g = p.per100g || null;
+    lastAutoFilledName = (p.name || '').trim().toLowerCase();
   }
 
   // Buduje jeden "chip" z nazwą (klik = wypełnia formularz) i gwiazdką (klik = przełącza ulubione)
@@ -1047,9 +1049,11 @@ const UI = (() => {
 
   function autofillFromName() {
     hideAutocomplete();
-    if (document.getElementById('entryKcal').value) return;
     const name = document.getElementById('entryName').value.trim().toLowerCase();
     if (!name) return;
+    // Nie nadpisuje kcal wpisanego ręcznie (lastAutoFilledName===null) ani gdy nazwa nie zmieniła się
+    // od ostatniego dopasowania — ale pozwala odświeżyć makra po zmianie na inny produkt z listy
+    if (document.getElementById('entryKcal').value && (lastAutoFilledName === null || lastAutoFilledName === name)) return;
     if (!productCache) buildProductCache();
     const match = productCache.find((p) => (p.name || '').trim().toLowerCase() === name);
     if (match) fillFormFromProduct(match);
@@ -1097,6 +1101,7 @@ const UI = (() => {
     document.getElementById('voiceError').textContent = '';
     document.getElementById('voiceStatus').textContent = '';
     hideAutocomplete();
+    lastAutoFilledName = null;
 
     const entry = entryId ? Storage.getEntries(currentDate).find((e) => e.id === entryId) : null;
     editingEntryId = entry ? entryId : null;
