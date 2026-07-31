@@ -15,6 +15,29 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku — niezacommitowane] 2026-07-31 — Undo usunięcia, kopiowanie z wczoraj, szukaj w historii, kalendarz miesiąca, ekstrakcja przepisów do IIFE
+**Co:** (1) Po usunięciu wpisu z dziennika pojawia się toast z przyciskiem „Cofnij" (5 s) —
+kliknięcie przywraca wpis (tombstone z `deleted: false`).
+(2) Puste kategorie posiłków pokazują przycisk „Skopiuj z wczoraj (N)" — kopiuje wpisy
+z tej samej kategorii z poprzedniego dnia.
+(3) Pole wyszukiwania w widoku Historia — szuka wpisów po nazwie we wszystkich dniach,
+wyświetla do 50 wyników z debouncem 200 ms.
+(4) Widok miesiąca (kalendarz) w Historii — siatka dni z kolorowymi kropkami (zielona =
+w celu, czerwona = poza celem wg wybranej metryki), nawigacja miesiąc ←/→.
+(5) Logika przepisów wyekstrahowana z `ui.js` do `js/recipes.js` (osobny moduł IIFE
+`window.Recipes`), ~1000 linii mniej w `ui.js`. Cross-module: `Recipes.*` woła
+`UI.showToast()`, `UI.switchView()`, `UI.getCurrentDate()`, `UI.pushDayToCloud()`,
+`UI.renderDiary()`; lokalne kopie helperów (`escapeHtml`, `nowTimeStr`, `mealFromTime`,
+`MEALS`) by uniknąć zależności cyklicznej.
+**Dlaczego:** (1) przypadkowe usunięcie nie miało odwrotu; (2) ręczne przepisywanie
+wczorajszych posiłków było uciążliwe; (3) brak sposobu na znalezienie dawnego wpisu;
+(4) brak przeglądu miesiąca; (5) `ui.js` >2600 linii — przepisy stanowiły ~40% pliku.
+**Pliki:** `index.html`, `css/style.css`, `js/ui.js`, `js/recipes.js` (nowy),
+`js/app.js`, `sw.js`, `docs/CHANGELOG.md`.
+**Uwagi:** `recipes.js` ładowany PO `ui.js`, PRZED `app.js`. Dodany do `APP_SHELL` w `sw.js`.
+`app.js` zmienione: listenery przepisów `UI.*` → `Recipes.*`. Bump `CACHE_NAME` →
+`licznik-kalorii-v31`, wersja widoczna → v31.
+
 ## [w toku — niezacommitowane] 2026-07-25 — Poprawki przepisów: merge składników, podgląd makro, zapamiętywanie
 **Co:** (1) Analiza AI przepisu zachowuje ręcznie dodane składniki zamiast je nadpisywać —
 nowe składniki z AI są dołączane, istniejące (po nazwie) nie są duplikowane.

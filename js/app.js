@@ -58,7 +58,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('barcodeManualSearchBtn').addEventListener('click', () => {
     const code = document.getElementById('barcodeManualInput').value;
     if (window._barcodeReturnToIngredient) {
-      UI.lookupIngredientBarcode(code);
+      Recipes.lookupIngredientBarcode(code);
     } else {
       UI.lookupBarcode(code, false);
     }
@@ -66,7 +66,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('barcodeManualInput').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       if (window._barcodeReturnToIngredient) {
-        UI.lookupIngredientBarcode(e.target.value);
+        Recipes.lookupIngredientBarcode(e.target.value);
       } else {
         UI.lookupBarcode(e.target.value, false);
       }
@@ -103,79 +103,81 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.addEventListener('click', () => UI.setHistoryMetric(btn.dataset.metric));
   });
 
+  document.getElementById('historySearchInput').addEventListener('input', () => UI.searchHistory());
+
   // Przycisk "Z przepisu" w modalu dodawania
   document.getElementById('fromRecipeBtn').addEventListener('click', () => {
     UI.closeEntryModal();
-    UI.openPortionModal();
+    Recipes.openPortionModal();
   });
 
   // ── Przepisy ──
-  document.getElementById('newRecipeBtn').addEventListener('click', () => UI.openRecipeModal());
+  document.getElementById('newRecipeBtn').addEventListener('click', () => Recipes.openRecipeModal());
   document.querySelectorAll('#recipeTabs button').forEach((btn) => {
-    btn.addEventListener('click', () => UI.setRecipeTab(btn.dataset.tab));
+    btn.addEventListener('click', () => Recipes.setRecipeTab(btn.dataset.tab));
   });
-  document.getElementById('cancelRecipeBtn').addEventListener('click', () => UI.closeRecipeModal());
-  document.getElementById('saveRecipeBtn').addEventListener('click', () => UI.saveRecipe());
-  document.getElementById('recipeParseAiBtn').addEventListener('click', () => UI.parseRecipeWithAi());
-  document.getElementById('recipeVoiceBtn').addEventListener('click', () => UI.handleRecipeVoice());
-  document.getElementById('recipeVoiceSendBtn').addEventListener('click', () => UI.handleRecipeVoiceSend());
-  document.getElementById('recipeVoiceDiscardBtn').addEventListener('click', () => UI.handleRecipeVoiceDiscard());
+  document.getElementById('cancelRecipeBtn').addEventListener('click', () => Recipes.closeRecipeModal());
+  document.getElementById('saveRecipeBtn').addEventListener('click', () => Recipes.saveRecipe());
+  document.getElementById('recipeParseAiBtn').addEventListener('click', () => Recipes.parseRecipeWithAi());
+  document.getElementById('recipeVoiceBtn').addEventListener('click', () => Recipes.handleRecipeVoice());
+  document.getElementById('recipeVoiceSendBtn').addEventListener('click', () => Recipes.handleRecipeVoiceSend());
+  document.getElementById('recipeVoiceDiscardBtn').addEventListener('click', () => Recipes.handleRecipeVoiceDiscard());
   document.getElementById('recipeScreenshotBtn').addEventListener('click', () => {
     document.getElementById('recipeScreenshotFileInput').click();
   });
   document.getElementById('recipeScreenshotFileInput').addEventListener('change', (e) => {
     const file = e.target.files[0];
-    if (file) UI.handleRecipeScreenshot(file);
+    if (file) Recipes.handleRecipeScreenshot(file);
     e.target.value = '';
   });
   document.getElementById('recipeModalOverlay').addEventListener('click', (e) => {
-    if (e.target.id === 'recipeModalOverlay') UI.closeRecipeModal();
+    if (e.target.id === 'recipeModalOverlay') Recipes.closeRecipeModal();
   });
-  document.getElementById('recipeCookedWeight').addEventListener('input', () => UI.renderRecipeIngredients());
+  document.getElementById('recipeCookedWeight').addEventListener('input', () => Recipes.renderRecipeIngredients());
 
   // Składnik
-  document.getElementById('recipeAddIngredientBtn').addEventListener('click', () => UI.openIngredientModal());
-  document.getElementById('cancelIngredientBtn').addEventListener('click', () => UI.closeIngredientModal());
-  document.getElementById('saveIngredientBtn').addEventListener('click', () => UI.saveIngredient());
+  document.getElementById('recipeAddIngredientBtn').addEventListener('click', () => Recipes.openIngredientModal());
+  document.getElementById('cancelIngredientBtn').addEventListener('click', () => Recipes.closeIngredientModal());
+  document.getElementById('saveIngredientBtn').addEventListener('click', () => Recipes.saveIngredient());
   document.getElementById('ingredientModalOverlay').addEventListener('click', (e) => {
-    if (e.target.id === 'ingredientModalOverlay') UI.closeIngredientModal();
+    if (e.target.id === 'ingredientModalOverlay') Recipes.closeIngredientModal();
   });
   document.getElementById('ingredientScanLabelBtn').addEventListener('click', () => {
     document.getElementById('ingredientLabelFileInput').click();
   });
   document.getElementById('ingredientLabelFileInput').addEventListener('change', (e) => {
     const file = e.target.files[0];
-    if (file) UI.handleIngredientLabelScan(file);
+    if (file) Recipes.handleIngredientLabelScan(file);
     e.target.value = '';
   });
-  document.getElementById('ingredientScanBarcodeBtn').addEventListener('click', () => UI.openIngredientBarcodeScanner());
-  document.getElementById('ingredientVoiceBtn').addEventListener('click', () => UI.handleIngredientVoice());
-  document.getElementById('ingredientLookupBtn').addEventListener('click', () => UI.handleIngredientLookup());
-  document.getElementById('ingredientFavoriteToggleBtn').addEventListener('click', () => UI.toggleIngredientFavoriteSection());
-  document.getElementById('ingredientSaveFavoriteBtn').addEventListener('click', () => UI.saveIngredientAsFavorite());
-  document.getElementById('ingredientGrams').addEventListener('input', () => UI.updateIngredientMacroPreview());
-  document.getElementById('ingredientKcal').addEventListener('input', () => UI.updateIngredientMacroPreview());
-  document.getElementById('ingredientProtein').addEventListener('input', () => UI.updateIngredientMacroPreview());
-  document.getElementById('ingredientCarbs').addEventListener('input', () => UI.updateIngredientMacroPreview());
-  document.getElementById('ingredientFat').addEventListener('input', () => UI.updateIngredientMacroPreview());
-  document.getElementById('ingredientFiber').addEventListener('input', () => UI.updateIngredientMacroPreview());
+  document.getElementById('ingredientScanBarcodeBtn').addEventListener('click', () => Recipes.openIngredientBarcodeScanner());
+  document.getElementById('ingredientVoiceBtn').addEventListener('click', () => Recipes.handleIngredientVoice());
+  document.getElementById('ingredientLookupBtn').addEventListener('click', () => Recipes.handleIngredientLookup());
+  document.getElementById('ingredientFavoriteToggleBtn').addEventListener('click', () => Recipes.toggleIngredientFavoriteSection());
+  document.getElementById('ingredientSaveFavoriteBtn').addEventListener('click', () => Recipes.saveIngredientAsFavorite());
+  document.getElementById('ingredientGrams').addEventListener('input', () => Recipes.updateIngredientMacroPreview());
+  document.getElementById('ingredientKcal').addEventListener('input', () => Recipes.updateIngredientMacroPreview());
+  document.getElementById('ingredientProtein').addEventListener('input', () => Recipes.updateIngredientMacroPreview());
+  document.getElementById('ingredientCarbs').addEventListener('input', () => Recipes.updateIngredientMacroPreview());
+  document.getElementById('ingredientFat').addEventListener('input', () => Recipes.updateIngredientMacroPreview());
+  document.getElementById('ingredientFiber').addEventListener('input', () => Recipes.updateIngredientMacroPreview());
 
   // Porcja z przepisu
-  document.getElementById('cancelPortionBtn').addEventListener('click', () => UI.closePortionModal());
-  document.getElementById('savePortionBtn').addEventListener('click', () => UI.savePortionEntry());
+  document.getElementById('cancelPortionBtn').addEventListener('click', () => Recipes.closePortionModal());
+  document.getElementById('savePortionBtn').addEventListener('click', () => Recipes.savePortionEntry());
   document.getElementById('portionModalOverlay').addEventListener('click', (e) => {
-    if (e.target.id === 'portionModalOverlay') UI.closePortionModal();
+    if (e.target.id === 'portionModalOverlay') Recipes.closePortionModal();
   });
   document.getElementById('portionRecipeSelect').addEventListener('change', () => {
-    UI.updatePortionRecipeInfo();
-    UI.updatePortionPreview();
+    Recipes.updatePortionRecipeInfo();
+    Recipes.updatePortionPreview();
   });
-  document.getElementById('portionValue').addEventListener('input', () => UI.updatePortionPreview());
+  document.getElementById('portionValue').addEventListener('input', () => Recipes.updatePortionPreview());
   document.querySelectorAll('#portionModeSelect button').forEach((btn) => {
-    btn.addEventListener('click', () => UI.selectPortionMode(btn.dataset.mode));
+    btn.addEventListener('click', () => Recipes.selectPortionMode(btn.dataset.mode));
   });
   document.querySelectorAll('#portionMealSelect button').forEach((btn) => {
-    btn.addEventListener('click', () => UI.selectPortionMeal(btn.dataset.meal));
+    btn.addEventListener('click', () => Recipes.selectPortionMeal(btn.dataset.meal));
   });
 
   document.addEventListener('keydown', (e) => {
@@ -183,11 +185,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('barcodeOverlay').classList.contains('active')) {
       UI.closeBarcodeScanner();
     } else if (document.getElementById('ingredientModalOverlay').classList.contains('active')) {
-      UI.closeIngredientModal();
+      Recipes.closeIngredientModal();
     } else if (document.getElementById('recipeModalOverlay').classList.contains('active')) {
-      UI.closeRecipeModal();
+      Recipes.closeRecipeModal();
     } else if (document.getElementById('portionModalOverlay').classList.contains('active')) {
-      UI.closePortionModal();
+      Recipes.closePortionModal();
     } else if (document.getElementById('entryModalOverlay').classList.contains('active')) {
       UI.closeEntryModal();
     } else if (document.getElementById('goalModalOverlay').classList.contains('active')) {

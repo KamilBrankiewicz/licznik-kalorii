@@ -1183,3 +1183,144 @@ h1.page-title {
 .flag-dot.flag-warning {
   background: var(--warning);
 }
+
+/* ── Undo toast ── */
+.toast-undo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+}
+.toast-undo-btn {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,.5);
+  color: #fff;
+  padding: 4px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ── Skopiuj z wczoraj ── */
+.copy-yesterday-wrapper {
+  margin-top: 8px;
+}
+.meal-header-empty {
+  opacity: .5;
+}
+.copy-yesterday-btn {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  color: var(--accent);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: center;
+  margin-top: 4px;
+}
+
+/* ── Wyszukiwarka historii ── */
+.search-box {
+  margin-bottom: 12px;
+}
+.search-box input {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+  box-sizing: border-box;
+}
+.search-result-item {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+.search-result-item:active {
+  background: var(--surface);
+}
+.result-date {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.result-name {
+  font-weight: 600;
+  margin: 2px 0;
+}
+.result-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ── Widok miesiąca ── */
+.month-calendar {
+  margin-bottom: 16px;
+}
+.month-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.month-nav button {
+  background: none;
+  border: none;
+  font-size: 22px;
+  color: var(--text);
+  cursor: pointer;
+  padding: 4px 12px;
+}
+.month-label {
+  font-weight: 600;
+  font-size: 15px;
+}
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  text-align: center;
+}
+.cal-header {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 4px 0;
+  font-weight: 600;
+}
+.cal-day {
+  position: relative;
+  padding: 6px 0;
+  font-size: 13px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.cal-day:active {
+  background: var(--surface);
+}
+.cal-day.other-month {
+  opacity: .25;
+  pointer-events: none;
+}
+.cal-day.today {
+  font-weight: 700;
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.cal-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin: 2px auto 0;
+}
+.cal-dot.good {
+  background: var(--accent);
+}
+.cal-dot.bad {
+  background: var(--danger);
+}
