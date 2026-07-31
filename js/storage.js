@@ -188,7 +188,7 @@ const Storage = (() => {
     return dates;
   }
 
-  function getFrequentProducts(limit = 8) {
+  function buildProductIndex() {
     const byName = new Map();
     getAllDates().forEach((date) => {
       getEntries(date).forEach((e) => {
@@ -207,9 +207,15 @@ const Storage = (() => {
       });
     });
     return [...byName.values()]
-      .sort((a, b) => b.count - a.count || b.lastDate.localeCompare(a.lastDate))
-      .slice(0, limit)
-      .map((i) => i.entry);
+      .sort((a, b) => b.count - a.count || b.lastDate.localeCompare(a.lastDate));
+  }
+
+  function getFrequentProducts(limit = 8) {
+    return buildProductIndex().slice(0, limit).map((i) => i.entry);
+  }
+
+  function getUniqueProducts() {
+    return buildProductIndex().map((i) => i.entry);
   }
 
   // Surowa lista zawiera także nagrobki (deleted: true) potrzebne do synchronizacji
@@ -570,6 +576,7 @@ const Storage = (() => {
     saveDailyAnalysis,
     deleteDailyAnalysis,
     mergeDailyAnalyses,
+    getUniqueProducts,
     exportData,
     importData,
     clearAllData

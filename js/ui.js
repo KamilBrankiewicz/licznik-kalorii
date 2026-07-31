@@ -9,6 +9,8 @@ const UI = (() => {
   let authListenerRegistered = false;
   let historyMetric = Storage.getHistoryMetric();
   let historyCalendarMonth = new Date();
+  let productCache = null;
+  let autocompleteDebounce = null;
 
   // judge: 'max' = przekroczenie celu jest złe (czerwono), 'min' = nieosiągnięcie celu jest złe,
   // 'none' = wykres tylko poglądowy, bez oceniania dobre/złe
@@ -933,11 +935,9 @@ const UI = (() => {
 
   function renderRecentProducts(show) {
     const container = document.getElementById('recentProducts');
-    const datalist = document.getElementById('productSuggestions');
     const section = document.getElementById('recentSection');
     const toggleBtn = document.getElementById('recentToggleBtn');
     container.innerHTML = '';
-    datalist.innerHTML = '';
     container.classList.add('collapsed');
     toggleBtn.setAttribute('aria-expanded', 'false');
 
@@ -950,10 +950,6 @@ const UI = (() => {
         renderRecentProducts(true);
         renderFavoriteProducts(true);
       }));
-
-      const opt = document.createElement('option');
-      opt.value = p.name;
-      datalist.appendChild(opt);
     });
   }
 
@@ -991,12 +987,71 @@ const UI = (() => {
     toggleBtn.setAttribute('aria-expanded', String(!collapsed));
   }
 
-  // Po wybraniu podpowiedzi z listy nazw uzupełnia makra, jeśli pola są puste
+  function buildProductCache() {
+    productCache = Storage.getUniqueProducts();
+  }
+
+  function searchProducts() {
+    clearTimeout(autocompleteDebounce);
+    autocompleteDebounce = setTimeout(doSearchProducts, 200);
+  }
+
+  function doSearchProducts() {
+    const input = document.getElementById('entryName');
+    const dropdown = document.getElementById('nameAutocomplete');
+    const query = (input.value || '').trim().toLowerCase();
+
+    if (query.length < 2 || !productCache) {
+      dropdown.hidden = true;
+      dropdown.innerHTML = '';
+      return;
+    }
+
+    const matches = [];
+    for (const p of productCache) {
+      if ((p.name || '').toLowerCase().includes(query)) matches.push(p);
+      if (matches.length >= 8) break;
+    }
+
+    if (matches.length === 0) {
+      dropdown.hidden = true;
+      dropdown.innerHTML = '';
+      return;
+    }
+
+    dropdown.innerHTML = '';
+    matches.forEach((p) => {
+      const item = document.createElement('div');
+      item.className = 'autocomplete-item';
+      item.innerHTML = `
+        <span class="autocomplete-name">${escapeHtml(p.name)}</span>
+        <span class="autocomplete-meta">${Math.round(p.kcal || 0)} kcal${p.grams ? ' · ' + p.grams + 'g' : ''}</span>
+      `;
+      item.addEventListener('mousedown', (ev) => {
+        ev.preventDefault();
+        fillFormFromProduct(p);
+        pendingSource = p.source || 'manual';
+        dropdown.hidden = true;
+        dropdown.innerHTML = '';
+      });
+      dropdown.appendChild(item);
+    });
+    dropdown.hidden = false;
+  }
+
+  function hideAutocomplete() {
+    const dropdown = document.getElementById('nameAutocomplete');
+    dropdown.hidden = true;
+    dropdown.innerHTML = '';
+  }
+
   function autofillFromName() {
+    hideAutocomplete();
     if (document.getElementById('entryKcal').value) return;
     const name = document.getElementById('entryName').value.trim().toLowerCase();
     if (!name) return;
-    const match = Storage.getFrequentProducts(50).find((p) => (p.name || '').trim().toLowerCase() === name);
+    if (!productCache) buildProductCache();
+    const match = productCache.find((p) => (p.name || '').trim().toLowerCase() === name);
     if (match) fillFormFromProduct(match);
   }
 
@@ -1041,6 +1096,7 @@ const UI = (() => {
     document.getElementById('scanStatus').textContent = '';
     document.getElementById('voiceError').textContent = '';
     document.getElementById('voiceStatus').textContent = '';
+    hideAutocomplete();
 
     const entry = entryId ? Storage.getEntries(currentDate).find((e) => e.id === entryId) : null;
     editingEntryId = entry ? entryId : null;
@@ -1059,6 +1115,7 @@ const UI = (() => {
     selectMeal(entry ? entry.meal || mealFromTime(entry.time) : mealFromTime(nowTimeStr()));
     renderRecentProducts(!entry);
     renderFavoriteProducts(!entry);
+    buildProductCache();
 
     document.getElementById('entryModalOverlay').classList.add('active');
   }
@@ -1654,6 +1711,8 @@ const UI = (() => {
     recalcFromPer100g,
     clearPendingPer100g,
     autofillFromName,
+    searchProducts,
+    hideAutocomplete,
     showToast,
     pushDayToCloud,
     pushFavoritesToCloud,

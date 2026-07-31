@@ -15,6 +15,23 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku — niezacommitowane] 2026-07-31 — Autocomplete nazwy produktu przy dodawaniu posiłku
+**Co:** Wpisywanie nazwy produktu w modalu „Dodaj posiłek" podpowiada pasujące produkty
+z historii wpisów (substring match, debounce 200 ms, max 8 wyników). Kliknięcie podpowiedzi
+wypełnia formularz (nazwa, gramy, kcal, makro). Zastępuje natywny `<datalist>` (8 pozycji)
+custom dropdownem przeszukującym pełną historię unikalnych produktów.
+**Dlaczego:** natywny `<datalist>` ograniczał podpowiedzi do 8 najczęstszych produktów i nie
+pozwalał szukać; użytkownik musiał pamiętać dokładną nazwę lub scrollować chipy.
+**Pliki:** `js/storage.js` (nowe: `buildProductIndex`, `getUniqueProducts`), `js/ui.js`
+(`searchProducts`, `doSearchProducts`, `hideAutocomplete`, `buildProductCache`; `renderRecentProducts`
+bez datalist), `js/app.js` (eventy `input`/`blur` na `#entryName`), `index.html` (dropdown
+kontener zamiast datalist), `css/style.css` (style `.autocomplete-*`), `sw.js` (bump v32).
+**Uwagi:** Cache budowany raz przy otwarciu modala (`buildProductCache`), filtrowanie na keystroke
+operuje na tablicy w pamięci — zero dodatkowych odczytów localStorage. `mousedown` + `preventDefault`
+na itemach dropdowna zapobiega `blur` przed obsłużeniem kliknięcia.
+
+---
+
 ## [w toku — niezacommitowane] 2026-07-31 — Undo usunięcia, kopiowanie z wczoraj, szukaj w historii, kalendarz miesiąca, ekstrakcja przepisów do IIFE
 **Co:** (1) Po usunięciu wpisu z dziennika pojawia się toast z przyciskiem „Cofnij" (5 s) —
 kliknięcie przywraca wpis (tombstone z `deleted: false`).

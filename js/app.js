@@ -89,6 +89,8 @@ document.addEventListener('DOMContentLoaded', () => {
   ['entryKcal', 'entryProtein', 'entryCarbs', 'entryFat', 'entryFiber'].forEach((id) => {
     document.getElementById(id).addEventListener('input', () => UI.clearPendingPer100g());
   });
+  document.getElementById('entryName').addEventListener('input', () => UI.searchProducts());
+  document.getElementById('entryName').addEventListener('blur', () => UI.hideAutocomplete());
   document.getElementById('entryName').addEventListener('change', () => UI.autofillFromName());
   document.getElementById('recentToggleBtn').addEventListener('click', () => UI.toggleRecentSection());
   document.getElementById('favoriteToggleBtn').addEventListener('click', () => UI.toggleFavoriteSection());
