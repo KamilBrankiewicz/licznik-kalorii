@@ -1176,7 +1176,7 @@ h1.page-title {
 .section-header-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 10px;
   margin-top: 24px;
 }
