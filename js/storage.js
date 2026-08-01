@@ -129,13 +129,22 @@ const Storage = (() => {
     return w && !w.deleted ? w.kg : null;
   }
 
-  function setWeight(date, kg) {
+  function getWeightFull(date) {
+    const w = getWeights()[date];
+    if (!w || w.deleted) return null;
+    return { kg: w.kg, smm: Number(w.smm) || null, bf: Number(w.bf) || null };
+  }
+
+  function setWeight(date, kg, body) {
     const map = getWeights();
     if (kg == null) {
       if (!map[date]) return;
       map[date] = { deleted: true, updatedAt: new Date().toISOString() };
     } else {
-      map[date] = { kg, updatedAt: new Date().toISOString() };
+      const rec = { kg, updatedAt: new Date().toISOString() };
+      if (body && body.smm != null) rec.smm = body.smm;
+      if (body && body.bf != null) rec.bf = body.bf;
+      map[date] = rec;
     }
     saveWeights(map);
   }
@@ -145,7 +154,16 @@ const Storage = (() => {
     let latest = null;
     Object.entries(getWeights()).forEach(([d, w]) => {
       if (w.deleted || d > date) return;
-      if (!latest || d > latest.date) latest = { date: d, kg: w.kg };
+      if (!latest || d > latest.date) latest = { date: d, kg: w.kg, smm: Number(w.smm) || null, bf: Number(w.bf) || null };
+    });
+    return latest;
+  }
+
+  function getLatestBodyComp(date) {
+    let latest = null;
+    Object.entries(getWeights()).forEach(([d, w]) => {
+      if (w.deleted || d > date || (!w.smm && !w.bf)) return;
+      if (!latest || d > latest.date) latest = { date: d, smm: Number(w.smm) || null, bf: Number(w.bf) || null };
     });
     return latest;
   }
@@ -153,7 +171,7 @@ const Storage = (() => {
   function getWeightHistory() {
     return Object.entries(getWeights())
       .filter(([, w]) => !w.deleted)
-      .map(([date, w]) => ({ date, kg: w.kg }))
+      .map(([date, w]) => ({ date, kg: w.kg, smm: Number(w.smm) || null, bf: Number(w.bf) || null }))
       .sort((a, b) => a.date.localeCompare(b.date));
   }
 
@@ -534,8 +552,10 @@ const Storage = (() => {
     getWeights,
     saveWeights,
     getWeight,
+    getWeightFull,
     setWeight,
     getLatestWeight,
+    getLatestBodyComp,
     getWeightHistory,
     mergeWeights,
     getFrequentProducts,

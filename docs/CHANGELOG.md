@@ -15,6 +15,27 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku — niezacommitowane] 2026-08-01 — Pomiary składu ciała (InBody)
+**Co:** Kliknięcie wiersza wagi na głównej stronie rozwija panel z dwoma dodatkowymi
+polami: SMM (masa mięśni szkieletowych, kg) i PBF (% tłuszczu). Dane zapisują się
+razem z wagą. W sekcji Historia wykres wagi zyskał taby Waga/SMM/PBF — pojawiają się
+gdy istnieją dane body comp.
+**Dlaczego:** użytkownik co jakiś czas robi pomiar InBody i chce śledzić te wartości
+w tej samej aplikacji.
+**Pliki:** `js/storage.js` (rozszerzony `setWeight` o `body`, nowe `getWeightFull`,
+`getLatestBodyComp`; `getLatestWeight`/`getWeightHistory` zwracają smm/bf),
+`js/ui.js` (rozszerzony `renderDiary`/`saveWeightFromInput`, nowe `toggleBodyComp`,
+`buildWeightChart`, `setWeightChartMetric`; refaktor `renderWeightStats` z tabami),
+`js/app.js` (event listenery dla smmInput, bfInput, weightRowToggle),
+`index.html` (rozbudowany weight-row w weight-section z body-comp-panel),
+`css/style.css` (style body-comp-*, weight-metric-tabs, weight-expand-icon),
+`sw.js` (bump v36).
+**Uwagi:** model danych wstecznie zgodny — smm/bf to pola opcjonalne, odczyt przez
+`Number(w.smm) || null`. Sync działa bez zmian bo `mergeWeights` operuje na całych
+obiektach wagi.
+
+---
+
 ## [w toku — niezacommitowane] 2026-08-01 — Usunięto zbiorcze „Skopiuj z wczoraj"
 **Co:** Usunięty przycisk „Skopiuj z wczoraj (N)" pokazywany przy pustych kategoriach
 posiłków (kopiował całą kategorię z poprzedniego dnia naraz).

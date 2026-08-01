@@ -138,15 +138,18 @@ const UI = (() => {
     document.getElementById('fiberValue').textContent = `${Math.round(summary.fiber)} / ${settings.fiberGoal} g`;
     document.getElementById('fiberBarFill').style.width = pct(summary.fiber, settings.fiberGoal) + '%';
 
-    // Waga obowiązuje od pomiaru do następnego: pomiar z tego dnia jest edytowalny
-    // w polu, a przy jego braku pokazujemy ostatnią znaną wagę jako podpowiedź
     const weightInput = document.getElementById('weightInput');
     const weightHint = document.getElementById('weightLastHint');
-    const ownWeight = Storage.getWeight(currentDate);
-    if (ownWeight != null) {
-      weightInput.value = ownWeight;
+    const smmInput = document.getElementById('smmInput');
+    const bfInput = document.getElementById('bfInput');
+    const bodyCompHint = document.getElementById('bodyCompLastHint');
+    const ownFull = Storage.getWeightFull(currentDate);
+    if (ownFull) {
+      weightInput.value = ownFull.kg;
       weightInput.placeholder = '—';
       weightHint.textContent = '';
+      smmInput.value = ownFull.smm != null ? ownFull.smm : '';
+      bfInput.value = ownFull.bf != null ? ownFull.bf : '';
     } else {
       const latest = Storage.getLatestWeight(currentDate);
       weightInput.value = '';
@@ -157,6 +160,26 @@ const UI = (() => {
       } else {
         weightHint.textContent = '';
       }
+      smmInput.value = '';
+      bfInput.value = '';
+    }
+    const latestBody = Storage.getLatestBodyComp(currentDate);
+    if (latestBody && !(ownFull && (ownFull.smm || ownFull.bf))) {
+      const parts = [];
+      if (latestBody.smm) parts.push(`SMM ${latestBody.smm} kg`);
+      if (latestBody.bf) parts.push(`PBF ${latestBody.bf}%`);
+      if (parts.length) {
+        const [, m, d] = latestBody.date.split('-');
+        bodyCompHint.textContent = `ostatni pomiar ${d}.${m}: ${parts.join(' · ')}`;
+      } else {
+        bodyCompHint.textContent = '';
+      }
+      smmInput.placeholder = latestBody.smm ? String(latestBody.smm) : '—';
+      bfInput.placeholder = latestBody.bf ? String(latestBody.bf) : '—';
+    } else {
+      bodyCompHint.textContent = '';
+      smmInput.placeholder = '—';
+      bfInput.placeholder = '—';
     }
 
     const entries = Storage.getEntries(currentDate).sort((a, b) => (a.time || '').localeCompare(b.time || ''));
@@ -258,21 +281,50 @@ const UI = (() => {
 
   function saveWeightFromInput() {
     const raw = document.getElementById('weightInput').value.trim();
-    if (raw === '') {
+    const rawSmm = document.getElementById('smmInput').value.trim();
+    const rawBf = document.getElementById('bfInput').value.trim();
+    if (raw === '' && rawSmm === '' && rawBf === '') {
       Storage.setWeight(currentDate, null);
       pushWeightsToCloud();
       renderDiary();
       return;
     }
-    const kg = Number(raw.replace(',', '.'));
-    if (!Number.isFinite(kg) || kg <= 0 || kg > 500) {
+    const kg = raw !== '' ? Number(raw.replace(',', '.')) : null;
+    if (raw !== '' && (!Number.isFinite(kg) || kg <= 0 || kg > 500)) {
       showToast('Podaj poprawną wagę w kg');
       return;
     }
-    Storage.setWeight(currentDate, Math.round(kg * 10) / 10);
+    const smm = rawSmm !== '' ? Number(rawSmm.replace(',', '.')) : null;
+    if (smm != null && (!Number.isFinite(smm) || smm <= 0 || smm > 200)) {
+      showToast('Podaj poprawną masę mięśni (SMM)');
+      return;
+    }
+    const bf = rawBf !== '' ? Number(rawBf.replace(',', '.')) : null;
+    if (bf != null && (!Number.isFinite(bf) || bf <= 0 || bf > 100)) {
+      showToast('Podaj poprawny % tłuszczu (PBF)');
+      return;
+    }
+    const existingFull = Storage.getWeightFull(currentDate);
+    const finalKg = kg != null ? Math.round(kg * 10) / 10 : (existingFull ? existingFull.kg : null);
+    if (finalKg == null) {
+      showToast('Podaj wagę');
+      return;
+    }
+    const body = {};
+    if (smm != null) body.smm = Math.round(smm * 10) / 10;
+    if (bf != null) body.bf = Math.round(bf * 10) / 10;
+    Storage.setWeight(currentDate, finalKg, body);
     pushWeightsToCloud();
     renderDiary();
     showToast('Zapisano wagę');
+  }
+
+  function toggleBodyComp() {
+    const section = document.querySelector('.weight-section');
+    const panel = document.getElementById('bodyCompPanel');
+    const expanded = !panel.hidden;
+    panel.hidden = expanded;
+    section.classList.toggle('expanded', !expanded);
   }
 
   function pushWeightsToCloud() {
@@ -382,6 +434,52 @@ const UI = (() => {
     });
   }
 
+  let weightChartMetric = 'kg';
+
+  function buildWeightChart(points, key, unit, pad) {
+    const vals = points.map((p) => p[key]).filter((v) => v != null);
+    if (vals.length === 0) return null;
+    const filtered = points.filter((p) => p[key] != null);
+    const first = filtered[0];
+    const last = filtered[filtered.length - 1];
+    const min = Math.min(...vals);
+    const max = Math.max(...vals);
+    const delta = Math.round((last[key] - first[key]) * 10) / 10;
+    const deltaLabel = delta > 0 ? `+${delta}` : `${delta}`;
+
+    const W = 300, H = 80, PAD = 6;
+    const yMin = min - pad, yMax = max + pad;
+    const dayMs = 86400000;
+    const t0 = new Date(first.date + 'T00:00:00').getTime();
+    const t1 = new Date(last.date + 'T00:00:00').getTime();
+    const span = Math.max(t1 - t0, dayMs);
+    const xy = (p) => {
+      const x = PAD + ((new Date(p.date + 'T00:00:00').getTime() - t0) / span) * (W - 2 * PAD);
+      const y = PAD + (1 - (p[key] - yMin) / (yMax - yMin)) * (H - 2 * PAD);
+      return [Math.round(x * 10) / 10, Math.round(y * 10) / 10];
+    };
+    const coords = filtered.map(xy);
+    const polyline = coords.map((c) => c.join(',')).join(' ');
+    const lastDot = coords[coords.length - 1];
+
+    return {
+      svg: `<svg class="weight-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
+        ${filtered.length > 1 ? `<polyline points="${polyline}" fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
+        <circle cx="${lastDot[0]}" cy="${lastDot[1]}" r="3" fill="var(--accent)"/>
+      </svg>`,
+      stats: `
+        <div class="week-stat"><div class="value">${last[key]} ${unit}</div><div class="label">aktualna</div></div>
+        <div class="week-stat"><div class="value">${deltaLabel} ${unit}</div><div class="label">zmiana</div></div>
+        <div class="week-stat"><div class="value">${min} ${unit}</div><div class="label">min</div></div>
+        <div class="week-stat"><div class="value">${max} ${unit}</div><div class="label">max</div></div>`
+    };
+  }
+
+  function setWeightChartMetric(metric) {
+    weightChartMetric = metric;
+    renderWeightStats();
+  }
+
   function renderWeightStats() {
     const container = document.getElementById('weightStats');
     const cutoff = toDateStr(new Date(Date.now() - 89 * 86400000));
@@ -392,45 +490,40 @@ const UI = (() => {
       return;
     }
 
-    const first = points[0];
-    const last = points[points.length - 1];
-    const kgs = points.map((p) => p.kg);
-    const min = Math.min(...kgs);
-    const max = Math.max(...kgs);
-    const delta = Math.round((last.kg - first.kg) * 10) / 10;
-    const deltaLabel = delta > 0 ? `+${delta}` : `${delta}`;
+    const hasBody = points.some((p) => p.smm || p.bf);
+    const configs = { kg: { unit: 'kg', pad: 0.5 }, smm: { unit: 'kg', pad: 0.3 }, bf: { unit: '%', pad: 0.5 } };
+    const labels = { kg: 'Waga', smm: 'SMM', bf: 'PBF' };
+    const cfg = configs[weightChartMetric];
+    const chart = buildWeightChart(points, weightChartMetric, cfg.unit, cfg.pad);
 
-    // Wykres: oś X wg realnego odstępu dni, oś Y rozciągnięta między min i max (±0,5 kg zapasu)
-    const W = 300, H = 80, PAD = 6;
-    const yMin = min - 0.5, yMax = max + 0.5;
-    const dayMs = 86400000;
-    const t0 = new Date(first.date + 'T00:00:00').getTime();
-    const t1 = new Date(last.date + 'T00:00:00').getTime();
-    const span = Math.max(t1 - t0, dayMs);
-    const xy = (p) => {
-      const x = PAD + ((new Date(p.date + 'T00:00:00').getTime() - t0) / span) * (W - 2 * PAD);
-      const y = PAD + (1 - (p.kg - yMin) / (yMax - yMin)) * (H - 2 * PAD);
-      return [Math.round(x * 10) / 10, Math.round(y * 10) / 10];
-    };
-    const coords = points.map(xy);
-    const polyline = coords.map((c) => c.join(',')).join(' ');
-    const lastDot = coords[coords.length - 1];
+    if (!chart) {
+      if (weightChartMetric !== 'kg') {
+        weightChartMetric = 'kg';
+        renderWeightStats();
+        return;
+      }
+      container.innerHTML = '';
+      return;
+    }
+
+    const tabs = hasBody
+      ? `<div class="weight-metric-tabs">${Object.keys(labels).map((k) =>
+          `<button type="button" data-wmetric="${k}" class="${k === weightChartMetric ? 'active' : ''}">${labels[k]}</button>`
+        ).join('')}</div>`
+      : '';
 
     container.innerHTML = `
       <div class="summary-card">
-        <h3 class="section-title">Waga — ostatnie 90 dni</h3>
-        <svg class="weight-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
-          ${points.length > 1 ? `<polyline points="${polyline}" fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
-          <circle cx="${lastDot[0]}" cy="${lastDot[1]}" r="3" fill="var(--accent)"/>
-        </svg>
-        <div class="week-stats weight-stats-row">
-          <div class="week-stat"><div class="value">${last.kg} kg</div><div class="label">aktualna</div></div>
-          <div class="week-stat"><div class="value">${deltaLabel} kg</div><div class="label">zmiana</div></div>
-          <div class="week-stat"><div class="value">${min} kg</div><div class="label">min</div></div>
-          <div class="week-stat"><div class="value">${max} kg</div><div class="label">max</div></div>
-        </div>
+        <h3 class="section-title">${labels[weightChartMetric]} — ostatnie 90 dni</h3>
+        ${tabs}
+        ${chart.svg}
+        <div class="week-stats weight-stats-row">${chart.stats}</div>
       </div>
     `;
+
+    container.querySelectorAll('[data-wmetric]').forEach((btn) => {
+      btn.addEventListener('click', () => setWeightChartMetric(btn.dataset.wmetric));
+    });
   }
 
   function renderHistory() {
@@ -1653,6 +1746,7 @@ const UI = (() => {
     toggleRecentSection,
     toggleFavoriteSection,
     saveWeightFromInput,
+    toggleBodyComp,
     handleLabelScan,
     handleScreenshotScan,
     handleMealPhoto,

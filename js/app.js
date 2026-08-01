@@ -100,6 +100,12 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   document.getElementById('weightInput').addEventListener('change', () => UI.saveWeightFromInput());
+  document.getElementById('smmInput').addEventListener('change', () => UI.saveWeightFromInput());
+  document.getElementById('bfInput').addEventListener('change', () => UI.saveWeightFromInput());
+  document.getElementById('weightRowToggle').addEventListener('click', (e) => {
+    if (e.target.tagName === 'INPUT') return;
+    UI.toggleBodyComp();
+  });
 
   document.querySelectorAll('#historyMetricTabs button').forEach((btn) => {
     btn.addEventListener('click', () => UI.setHistoryMetric(btn.dataset.metric));
