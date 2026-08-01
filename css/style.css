@@ -1203,27 +1203,6 @@ h1.page-title {
   flex-shrink: 0;
 }
 
-/* ── Skopiuj z wczoraj ── */
-.copy-yesterday-wrapper {
-  margin-top: 8px;
-}
-.meal-header-empty {
-  opacity: .5;
-}
-.copy-yesterday-btn {
-  display: block;
-  width: 100%;
-  padding: 10px;
-  background: var(--surface);
-  border: 1px dashed var(--border);
-  border-radius: 10px;
-  color: var(--accent);
-  font-size: 13px;
-  cursor: pointer;
-  text-align: center;
-  margin-top: 4px;
-}
-
 /* ── Wyszukiwarka historii ── */
 .autocomplete-dropdown {
   position: absolute;

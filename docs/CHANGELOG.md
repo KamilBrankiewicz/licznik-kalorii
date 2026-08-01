@@ -15,6 +15,22 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku — niezacommitowane] 2026-08-01 — Usunięto zbiorcze „Skopiuj z wczoraj"
+**Co:** Usunięty przycisk „Skopiuj z wczoraj (N)" pokazywany przy pustych kategoriach
+posiłków (kopiował całą kategorię z poprzedniego dnia naraz).
+**Dlaczego:** funkcja okazała się zbędna — przycisk „⟳" (relog, `Dodaj ponownie dziś`)
+na każdej karcie wpisu, dostępny również przy przeglądaniu poprzednich dni, już pozwala
+dodać pojedynczy wpis ponownie na dziś. Zbiorcze kopiowanie całej kategorii było
+funkcją nadmiarową („za dużo" względem potrzeby).
+**Pliki:** `js/ui.js` (usunięte `copyMealsFromYesterday` i blok renderujący przycisk
+w `renderDiary`, wraz z nieużywanymi już `yesterdayStr`/`yesterdayEntries`),
+`css/style.css` (usunięte `.copy-yesterday-wrapper`, `.meal-header-empty`,
+`.copy-yesterday-btn`), `sw.js` (bump v35), `index.html` (v35).
+**Uwagi:** Funkcja „⟳" (relog pojedynczego wpisu) nie zmieniła się — to ona teraz w pełni
+pokrywa przypadek użycia.
+
+---
+
 ## [w toku — niezacommitowane] 2026-07-31 — Fix: zmiana produktu po autouzupełnieniu nie odświeżała makr
 **Co:** W modalu „Dodaj posiłek", po wybraniu produktu z listy/dropdowna, wpisanie innej
 nazwy dokładnie pasującej do innego zapisanego produktu i opuszczenie pola (blur) nie

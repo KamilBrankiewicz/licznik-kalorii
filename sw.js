@@ -1,4 +1,4 @@
-const CACHE_NAME = 'licznik-kalorii-v34';
+const CACHE_NAME = 'licznik-kalorii-v35';
 const APP_SHELL = [
   './',
   './index.html',

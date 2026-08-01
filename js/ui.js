@@ -163,8 +163,6 @@ const UI = (() => {
     const list = document.getElementById('entriesList');
     list.innerHTML = '';
 
-    const yesterdayStr = toDateStr(new Date(new Date(currentDate + 'T00:00:00').getTime() - 86400000));
-    const yesterdayEntries = Storage.getEntries(yesterdayStr);
     const filledMeals = new Set();
 
     if (entries.length === 0) {
@@ -233,27 +231,6 @@ const UI = (() => {
       });
     }
 
-    // "Skopiuj z wczoraj" dla pustych kategorii posiłków
-    MEALS.forEach((meal) => {
-      if (filledMeals.has(meal.key)) return;
-      const yesterdayMealEntries = yesterdayEntries.filter((e) => (e.meal || mealFromTime(e.time)) === meal.key);
-      if (yesterdayMealEntries.length === 0) return;
-
-      const wrapper = document.createElement('div');
-      wrapper.className = 'copy-yesterday-wrapper';
-      const header = document.createElement('div');
-      header.className = 'meal-header meal-header-empty';
-      header.innerHTML = `<span>${meal.label}</span>`;
-      wrapper.appendChild(header);
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'copy-yesterday-btn';
-      btn.textContent = `Skopiuj z wczoraj (${yesterdayMealEntries.length})`;
-      btn.addEventListener('click', () => copyMealsFromYesterday(meal.key, yesterdayStr));
-      wrapper.appendChild(btn);
-      list.appendChild(wrapper);
-    });
-
     renderDailyAnalysesSection();
   }
 
@@ -277,29 +254,6 @@ const UI = (() => {
     pushDayToCloud(today);
     if (currentDate === today) renderDiary();
     showToast(currentDate === today ? 'Dodano ponownie' : 'Dodano ponownie — dziś');
-  }
-
-  function copyMealsFromYesterday(mealKey, yesterdayStr) {
-    const yesterdayEntries = Storage.getEntries(yesterdayStr).filter((e) => (e.meal || mealFromTime(e.time)) === mealKey);
-    if (yesterdayEntries.length === 0) return;
-    yesterdayEntries.forEach((entry) => {
-      Storage.addEntry(currentDate, {
-        name: entry.name,
-        grams: entry.grams || null,
-        kcal: entry.kcal,
-        protein: entry.protein || 0,
-        carbs: entry.carbs || 0,
-        fat: entry.fat || 0,
-        fiber: entry.fiber || 0,
-        time: entry.time || nowTimeStr(),
-        meal: mealKey,
-        source: entry.source || 'manual',
-        per100g: entry.per100g || null
-      });
-    });
-    pushDayToCloud(currentDate);
-    renderDiary();
-    showToast(`Skopiowano ${yesterdayEntries.length} z wczoraj`);
   }
 
   function saveWeightFromInput() {
