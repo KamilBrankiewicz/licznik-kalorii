@@ -15,6 +15,21 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku — niezacommitowane] 2026-08-01 — Fix: panel body-comp nie zwijał się
+**Co:** Panel SMM/PBF pod wierszem wagi był zawsze widoczny mimo atrybutu `hidden` —
+klasa `.body-comp-panel` ustawiała `display: flex` o tej samej specyficzności co domyślne
+`[hidden] { display: none }` przeglądarki, więc reguła autora wygrywała i `hidden` nie
+robił nic. Dodatkowo cały wiersz wagi (`.weight-row`) nie miał `cursor: pointer`, co
+utrudniało trafienie w małą strzałkę — teraz cały wiersz jest oczywiście klikalny.
+**Dlaczego:** użytkownik zgłosił, że kliknięcie strzałki nic nie robi i chciał, żeby
+całý wiersz otwierał szczegóły.
+**Pliki:** `css/style.css` (`.body-comp-panel[hidden] { display: none }`, `cursor: pointer`
+na `.weight-row`), `sw.js` (bump v37), `index.html` (v37).
+**Uwagi:** `js/app.js`/`UI.toggleBodyComp` już obsługiwały klik na całym wierszu (poza
+polami input) — brakowało tylko poprawki CSS.
+
+---
+
 ## [w toku — niezacommitowane] 2026-08-01 — Pomiary składu ciała (InBody)
 **Co:** Kliknięcie wiersza wagi na głównej stronie rozwija panel z dwoma dodatkowymi
 polami: SMM (masa mięśni szkieletowych, kg) i PBF (% tłuszczu). Dane zapisują się
