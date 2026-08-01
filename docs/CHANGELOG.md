@@ -15,6 +15,16 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku — niezacommitowane] 2026-08-01 — Nie powtarzaj wartości SMM/PBF w podpisie
+**Co:** Podpis pod panelem body-comp (`bodyCompLastHint`) pokazywał pełne „SMM X kg ·
+PBF Y%" mimo że te same liczby są już widoczne jako placeholder w polach input tuż nad
+nim. Teraz podpis pokazuje tylko datę ostatniego pomiaru, tak jak analogiczny hint przy
+samej wadze (`weightLastHint`).
+**Dlaczego:** użytkownik zauważył powielenie tych samych wartości w dwóch miejscach.
+**Pliki:** `js/ui.js` (`renderDiary`), `sw.js` (bump v38), `index.html` (v38).
+
+---
+
 ## [w toku — niezacommitowane] 2026-08-01 — Fix: panel body-comp nie zwijał się
 **Co:** Panel SMM/PBF pod wierszem wagi był zawsze widoczny mimo atrybutu `hidden` —
 klasa `.body-comp-panel` ustawiała `display: flex` o tej samej specyficzności co domyślne

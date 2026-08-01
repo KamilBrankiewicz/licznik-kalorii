@@ -165,15 +165,8 @@ const UI = (() => {
     }
     const latestBody = Storage.getLatestBodyComp(currentDate);
     if (latestBody && !(ownFull && (ownFull.smm || ownFull.bf))) {
-      const parts = [];
-      if (latestBody.smm) parts.push(`SMM ${latestBody.smm} kg`);
-      if (latestBody.bf) parts.push(`PBF ${latestBody.bf}%`);
-      if (parts.length) {
-        const [, m, d] = latestBody.date.split('-');
-        bodyCompHint.textContent = `ostatni pomiar ${d}.${m}: ${parts.join(' · ')}`;
-      } else {
-        bodyCompHint.textContent = '';
-      }
+      const [, m, d] = latestBody.date.split('-');
+      bodyCompHint.textContent = `· ostatni pomiar ${d}.${m}`;
       smmInput.placeholder = latestBody.smm ? String(latestBody.smm) : '—';
       bfInput.placeholder = latestBody.bf ? String(latestBody.bf) : '—';
     } else {
