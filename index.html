@@ -95,11 +95,12 @@
       <button id="suppNextDay" aria-label="Następny dzień">›</button>
     </div>
     <div id="supplementsSection"></div>
-    <div class="supp-manage-section" id="supplementsManageSection">
-      <h3 class="section-title" style="margin-top:24px;">Zarządzaj suplementami</h3>
+    <div id="adhocSupplementsSection"></div>
+    <details class="supp-collapsible" id="supplementsManageSection">
+      <summary class="supp-collapsible-header">Zarządzaj suplementami</summary>
       <div id="supplementsList"></div>
       <button class="btn btn-secondary" id="newSupplementBtn" style="margin-top:10px;">+ Nowy suplement</button>
-    </div>
+    </details>
   </section>
 
   <!-- WIDOK: HISTORIA -->
@@ -136,7 +137,7 @@
   <section id="view-ustawienia" class="view">
     <div style="display:flex; align-items:baseline; justify-content:space-between; gap:8px;">
       <h1 class="page-title" style="margin-bottom:0;">Ustawienia</h1>
-      <span class="hint" style="white-space:nowrap;">v45</span>
+      <span class="hint" style="white-space:nowrap;">v51</span>
     </div>
 
     <h3 class="section-title" style="margin-top:16px;">Wygląd</h3>
@@ -597,43 +598,46 @@
         <label>Nazwa</label>
         <input type="text" id="suppName" placeholder="np. Witamina D3">
       </div>
+      <div class="form-group">
+        <label>Nazwa wyświetlana (opcjonalnie, dla prywatności)</label>
+        <input type="text" id="suppDisplayName" placeholder="np. D3">
+      </div>
 
-      <div class="form-row-2">
-        <div class="form-group">
-          <label>Dawka (opcjonalnie)</label>
-          <input type="text" id="suppDose" placeholder="np. 2000 IU">
-        </div>
-        <div class="form-group">
-          <label>Pora dnia</label>
-          <select id="suppTiming">
-            <option value="morning">Rano</option>
-            <option value="noon">Południe</option>
-            <option value="evening">Wieczorem</option>
-            <option value="any">Dowolna pora</option>
-          </select>
+      <div class="form-group">
+        <label>Dawka (opcjonalnie)</label>
+        <input type="text" id="suppDose" placeholder="np. 2000 IU">
+      </div>
+
+      <div class="form-group">
+        <label>Pora dnia</label>
+        <div class="meal-select" id="suppTimingSelect">
+          <button type="button" data-timing="morning">Rano</button>
+          <button type="button" data-timing="noon">Południe</button>
+          <button type="button" data-timing="evening">Wieczorem</button>
+          <button type="button" data-timing="any">Dowolna</button>
         </div>
       </div>
 
       <div class="form-group">
         <label>Harmonogram</label>
-        <select id="suppScheduleType">
-          <option value="daily">Codziennie</option>
-          <option value="weekdays">Wybrane dni tygodnia</option>
-          <option value="everyN">Co N dni</option>
-          <option value="cycle">Cykl (np. 5 dni / 2 przerwy)</option>
-        </select>
+        <div class="supp-schedule-select" id="suppScheduleType">
+          <button type="button" data-schedule="daily">Codziennie</button>
+          <button type="button" data-schedule="weekdays">Dni tygodnia</button>
+          <button type="button" data-schedule="everyN">Co N dni</button>
+          <button type="button" data-schedule="cycle">Cykl</button>
+        </div>
       </div>
 
       <div class="form-group" id="suppScheduleDaysRow" hidden>
         <label>Dni tygodnia</label>
-        <div class="btn-row">
-          <label><input type="checkbox" data-dow="1"> Pn</label>
-          <label><input type="checkbox" data-dow="2"> Wt</label>
-          <label><input type="checkbox" data-dow="3"> Śr</label>
-          <label><input type="checkbox" data-dow="4"> Cz</label>
-          <label><input type="checkbox" data-dow="5"> Pt</label>
-          <label><input type="checkbox" data-dow="6"> So</label>
-          <label><input type="checkbox" data-dow="0"> Nd</label>
+        <div class="dow-grid">
+          <label class="dow-cell" data-dow="1"><span class="dow-label">Pn</span><input type="checkbox" data-dow="1"><span class="dow-toggle"></span></label>
+          <label class="dow-cell" data-dow="2"><span class="dow-label">Wt</span><input type="checkbox" data-dow="2"><span class="dow-toggle"></span></label>
+          <label class="dow-cell" data-dow="3"><span class="dow-label">Śr</span><input type="checkbox" data-dow="3"><span class="dow-toggle"></span></label>
+          <label class="dow-cell" data-dow="4"><span class="dow-label">Cz</span><input type="checkbox" data-dow="4"><span class="dow-toggle"></span></label>
+          <label class="dow-cell" data-dow="5"><span class="dow-label">Pt</span><input type="checkbox" data-dow="5"><span class="dow-toggle"></span></label>
+          <label class="dow-cell" data-dow="6"><span class="dow-label">So</span><input type="checkbox" data-dow="6"><span class="dow-toggle"></span></label>
+          <label class="dow-cell" data-dow="0"><span class="dow-label">Nd</span><input type="checkbox" data-dow="0"><span class="dow-toggle"></span></label>
         </div>
       </div>
 
@@ -655,13 +659,17 @@
 
       <div class="form-row-2">
         <div class="form-group">
+          <label>Razy dziennie</label>
+          <input type="number" id="suppTimesPerDay" inputmode="numeric" min="1" value="1" placeholder="1">
+        </div>
+        <div class="form-group">
           <label>Zapas (opcjonalnie)</label>
           <input type="number" id="suppStock" inputmode="numeric" placeholder="liczba sztuk">
         </div>
-        <div class="form-group">
-          <label>&nbsp;</label>
-          <label class="hint"><input type="checkbox" id="suppActive" checked> Aktywny</label>
-        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="hint"><input type="checkbox" id="suppActive" checked> Aktywny</label>
       </div>
 
       <div class="form-group">

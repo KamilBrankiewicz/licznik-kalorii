@@ -15,20 +15,48 @@ Format wpisu — nowe na górze:
 
 ---
 
-## [w toku — niezacommitowane] 2026-08-03 — Suplementy: nowy wygląd, zarządzanie w dzienniku, wielokrotne dawki
-**Co:** Nawigacja dni w widoku suplementów wygląda identycznie jak w dzienniku (‹ Dziś ›).
-Zarządzanie suplementami (lista z Edytuj/Usuń i „+ Nowy suplement") przeniesione z Ustawień
-na dół widoku suplementów. Nowy przycisk „+" przy każdym suplemencie pozwala zwiększać liczbę
-dawek w danym dniu (np. 2000 IU rano + 4000 IU wieczorem = ×3 kliknięcia). Kliknięcie wiersza
-resetuje licznik do zera.
-**Dlaczego:** nawigacja dni była brzydka (inne strzałki niż dziennik). Zarządzanie suplementami
-w ustawieniach było nieporęczne — użytkownik musi przełączać zakładki żeby dodać nowy suplement.
-Brak możliwości wzięcia kilku dawek tego samego suplementu w jednym dniu (np. Witamina D3
-2000 IU vs 6000 IU).
-**Pliki:** `index.html`, `css/style.css`, `js/ui.js`, `js/storage.js`, `sw.js` (bump v45).
-**Uwagi:** Model danych supplementLog wstecznie zgodny — stare wpisy bez `count` traktowane jako
-count=1. W ustawieniach akordeon „Suplementy i leki" teraz wyświetla informację kierującą do
-zakładki Suplementy.
+## [w toku — niezacommitowane] 2026-08-03 — Suplementy: picker dni tygodnia, sekcja leków doraźnych
+**Co:**
+- Picker dni tygodnia w formularzu suplementu przerobiony z prostych checkboxów na pełną
+  siatkę 7 kolumn (Pn–Nd) z nazwą dnia na górze i okrągłym togglem pod spodem. Wypełnia
+  cały wiersz, dużo czytelniejszy niż poprzednia wersja.
+- Dodawanie leków doraźnych (Apap, Gripex itp.) wydzielone do osobnej sekcji „Leki doraźne"
+  na dole widoku suplementów. Zamiast prostego `prompt()` jest pole tekstowe z przyciskiem
+  „Dodaj". Po dodaniu leku pojawia się chip do szybkiego ponownego użycia — jedno tapnięcie
+  i lek jest zapisany. Chipy można usuwać (×).
+**Dlaczego:** Picker dni był mało czytelny. Dodawanie leków doraźnych przez `prompt()` było
+  nieintuicyjne i nie zapamiętywało wcześniej używanych nazw.
+**Pliki:** `index.html`, `css/style.css`, `js/ui.js`, `js/storage.js`, `sw.js`
+**Uwagi:** Szybkie elementy doraźne przechowywane w `localStorage` pod kluczem `adhocQuickItems`.
+
+## [w toku — niezacommitowane] 2026-08-03 — Suplementy: redesign UI, prywatność, log dawek, zwijane sekcje
+**Co:** Kompletny redesign widoku suplementów:
+- Karty w stylu posiłków (awatar z inicjałem, tło karty) zamiast prostej checklisty.
+- Nowe pole „Nazwa wyświetlana" (opcjonalne) — w całym UI widoczna jest nazwa wyświetlana,
+  prawdziwa nazwa pozostaje w danych i formularzu edycji. Cel: prywatność przy podglądaniu ekranu.
+- Pole „Razy dziennie" — docelowa liczba dawek (np. 3 dla antybiotyku). Widok pokazuje
+  postęp (1/3, 2/3, 3/3), nie blokuje dalszego klikania (4/3 OK). Awatar z obramowaniem
+  gdy częściowo ukończone, zielony gdy ukończone.
+- Sekcja „Log dawek" — każda dawka z godziną, posortowana chronologicznie. Kliknięcie wpisu
+  pozwala edytować godzinę, „×" usuwa pojedynczą dawkę (aktualizuje licznik i zapas).
+- „Log dawek" i „Zarządzaj suplementami" jako zwijalne sekcje (`<details>`).
+- Nawigacja dni i „+" do wielokrotnych dawek z poprzedniego commitu.
+- „Pora dnia" i „Harmonogram" w formularzu suplementu zamienione z natywnych `<select>`
+  na stylowane grupy przycisków (button-grid), spójne z resztą UI.
+- Harmonogram rozszerzalny: Codziennie / Dni tygodnia / Co N dni / Cykl — dodanie nowej
+  opcji to jeden `<button>` w HTML i obsługa widoczności w `updateSuppScheduleRowsVisibility`.
+- Pola „Dni brania" / „Dni przerwy" widoczne tylko przy wybranym „Cykl", „Dni tygodnia"
+  pokazuje checkboxy dni, „Co N dni" — pole liczbowe.
+**Dlaczego:** stara checklista wyglądała ubogo na tle reszty UI. Nazwy leków widoczne na ekranie
+to problem prywatności. Brak informacji o godzinach dawek. Sekcje zarządzania i logu zajmowały
+dużo miejsca — zwijanie porządkuje widok. Natywne `<select>` wyglądały niespójnie z resztą
+formularzy w aplikacji.
+**Pliki:** `index.html`, `css/style.css`, `js/ui.js`, `js/storage.js`, `js/app.js`, `sw.js` (bump v50).
+**Uwagi:** Nowe pole `displayName` w definicji suplementu (opcjonalne, wstecznie zgodne — gdy
+brak, wyświetlana jest `name`). `timesPerDay` (domyślnie 1). supplementLog: `{ times: [...] }`
+zamiast `{ count, time }` — wstecznie zgodny. Nowe funkcje Storage: `getSupplementDoseTimes`,
+`updateSupplementDoseTime`, `removeSupplementDose`. CSS: `.form-row-2[hidden] { display: none; }`
+potrzebne, bo `display: grid` na `.form-row-2` nadpisywał atrybut `hidden`.
 
 ---
 

@@ -275,7 +275,19 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('suppModalOverlay').addEventListener('click', (e) => {
     if (e.target.id === 'suppModalOverlay') UI.closeSupplementModal();
   });
-  document.getElementById('suppScheduleType').addEventListener('change', () => UI.updateSuppScheduleRowsVisibility());
+  document.getElementById('suppScheduleType').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-schedule]');
+    if (!btn) return;
+    document.querySelectorAll('#suppScheduleType button').forEach((b) => b.classList.remove('active'));
+    btn.classList.add('active');
+    UI.updateSuppScheduleRowsVisibility();
+  });
+  document.getElementById('suppTimingSelect').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-timing]');
+    if (!btn) return;
+    document.querySelectorAll('#suppTimingSelect button').forEach((b) => b.classList.remove('active'));
+    btn.classList.add('active');
+  });
 
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch((err) => {

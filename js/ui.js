@@ -1593,7 +1593,7 @@ const UI = (() => {
 
     container.innerHTML = list.map((s) => `
       <div class="goal-item">
-        <span class="goal-item-name">${escapeHtml(s.name)}${s.active === false ? ' <span class="hint">(pauza)</span>' : ''} — ${SUPP_SCHEDULE_LABELS[s.scheduleType || 'daily']}</span>
+        <span class="goal-item-name">${escapeHtml(suppLabel(s))}${s.active === false ? ' <span class="hint">(pauza)</span>' : ''} — ${SUPP_SCHEDULE_LABELS[s.scheduleType || 'daily']}</span>
         <div class="goal-item-actions">
           <button class="btn btn-secondary" data-action="edit" data-id="${s.id}" style="font-size:12px;padding:8px 12px;width:auto;">Edytuj</button>
           <button class="btn btn-danger" data-action="delete" data-id="${s.id}" style="font-size:12px;padding:8px;width:auto;">×</button>
@@ -1617,8 +1617,13 @@ const UI = (() => {
     });
   }
 
+  function getSuppScheduleType() {
+    const active = document.querySelector('#suppScheduleType button.active');
+    return active ? active.dataset.schedule : 'daily';
+  }
+
   function updateSuppScheduleRowsVisibility() {
-    const type = document.getElementById('suppScheduleType').value;
+    const type = getSuppScheduleType();
     document.getElementById('suppScheduleDaysRow').hidden = type !== 'weekdays';
     document.getElementById('suppScheduleNRow').hidden = type !== 'everyN';
     document.getElementById('suppCycleRow').hidden = type !== 'cycle';
@@ -1629,10 +1634,17 @@ const UI = (() => {
     const supp = editingSuppId ? Storage.getSupplements().find((s) => s.id === editingSuppId) : null;
     document.getElementById('suppModalTitle').textContent = supp ? 'Edytuj suplement' : 'Nowy suplement';
     document.getElementById('suppName').value = supp ? supp.name : '';
+    document.getElementById('suppDisplayName').value = supp ? (supp.displayName || '') : '';
     document.getElementById('suppDose').value = supp ? (supp.dose || '') : '';
     document.getElementById('suppNotes').value = supp ? (supp.notes || '') : '';
-    document.getElementById('suppTiming').value = supp ? (supp.timing || 'any') : 'morning';
-    document.getElementById('suppScheduleType').value = supp ? (supp.scheduleType || 'daily') : 'daily';
+    const timingVal = supp ? (supp.timing || 'any') : 'morning';
+    document.querySelectorAll('#suppTimingSelect button').forEach((b) => {
+      b.classList.toggle('active', b.dataset.timing === timingVal);
+    });
+    const schedVal = supp ? (supp.scheduleType || 'daily') : 'daily';
+    document.querySelectorAll('#suppScheduleType button').forEach((b) => {
+      b.classList.toggle('active', b.dataset.schedule === schedVal);
+    });
     const days = supp && Array.isArray(supp.scheduleDays) ? supp.scheduleDays : [];
     document.querySelectorAll('#suppScheduleDaysRow input[data-dow]').forEach((cb) => {
       cb.checked = days.includes(Number(cb.dataset.dow));
@@ -1640,6 +1652,7 @@ const UI = (() => {
     document.getElementById('suppScheduleN').value = supp && supp.scheduleN != null ? supp.scheduleN : '';
     document.getElementById('suppCycleOn').value = supp && supp.cycleOn != null ? supp.cycleOn : '';
     document.getElementById('suppCycleOff').value = supp && supp.cycleOff != null ? supp.cycleOff : '';
+    document.getElementById('suppTimesPerDay').value = supp && supp.timesPerDay > 1 ? supp.timesPerDay : 1;
     document.getElementById('suppStock').value = supp && supp.stock != null ? supp.stock : '';
     document.getElementById('suppActive').checked = supp ? supp.active !== false : true;
     document.getElementById('suppFormError').textContent = '';
@@ -1656,14 +1669,16 @@ const UI = (() => {
     const errorEl = document.getElementById('suppFormError');
     if (!name) { errorEl.textContent = 'Podaj nazwę'; return; }
 
-    const scheduleType = document.getElementById('suppScheduleType').value;
+    const scheduleType = getSuppScheduleType();
     const data = {
       name,
+      displayName: document.getElementById('suppDisplayName').value.trim(),
       dose: document.getElementById('suppDose').value.trim(),
       notes: document.getElementById('suppNotes').value.trim(),
-      timing: document.getElementById('suppTiming').value,
+      timing: (document.querySelector('#suppTimingSelect button.active') || {}).dataset?.timing || 'any',
       scheduleType,
       active: document.getElementById('suppActive').checked,
+      timesPerDay: Math.max(1, Number(document.getElementById('suppTimesPerDay').value) || 1),
       stock: document.getElementById('suppStock').value === '' ? null : Number(document.getElementById('suppStock').value)
     };
 
@@ -1794,6 +1809,10 @@ const UI = (() => {
     renderSupplementsList();
   }
 
+  function suppLabel(s) {
+    return s.displayName || s.name;
+  }
+
   function renderSupplementsSection() {
     const container = document.getElementById('supplementsSection');
     if (!container) return;
@@ -1808,38 +1827,75 @@ const UI = (() => {
       itemsHtml += `<div class="supp-group-label">${TIMING_LABELS[timing]}</div>`;
       itemsHtml += group.map((s) => {
         const count = Storage.getSupplementTakenCount(currentDate, s.id);
-        const taken = count > 0;
-        const countLabel = count > 1 ? `<span class="supp-count">×${count}</span>` : '';
+        const target = Number(s.timesPerDay) || 1;
+        const taken = count >= target;
+        const partial = count > 0 && !taken;
+        const countLabel = target > 1 ? `<span class="supp-count">${count}/${target}</span>` : (count > 1 ? `<span class="supp-count">×${count}</span>` : '');
+        const initial = suppLabel(s).charAt(0).toUpperCase();
         const stockHtml = s.stock != null
-          ? `<span class="supp-stock${s.stock <= 7 ? ' supp-stock-low' : ''}">zapas: ${s.stock}</span>`
+          ? `<span class="supp-card-stock${s.stock <= 7 ? ' supp-stock-low' : ''}">zapas: ${s.stock}</span>`
           : '';
         return `
-          <div class="supp-item${taken ? ' taken' : ''}" data-supp-id="${s.id}">
-            <span class="supp-check">${taken ? '✓' : ''}</span>
-            <span class="supp-name">${escapeHtml(s.name)}${s.dose ? ` <span class="supp-dose">${escapeHtml(s.dose)}</span>` : ''}${countLabel}</span>
-            ${stockHtml}
+          <div class="supp-card${taken ? ' taken' : ''}${partial ? ' partial' : ''}" data-supp-id="${s.id}">
+            <div class="supp-card-avatar">${escapeHtml(initial)}</div>
+            <div class="supp-card-info">
+              <div class="supp-card-title">${escapeHtml(suppLabel(s))}${s.dose ? ` <span class="supp-dose">${escapeHtml(s.dose)}</span>` : ''}${countLabel}</div>
+              ${stockHtml}
+            </div>
             <button class="supp-plus-btn" data-action="increment" data-id="${s.id}" aria-label="Dodaj dawkę">+</button>
           </div>`;
       }).join('');
     });
 
     const adhocHtml = adhoc.map((r) => `
-      <div class="supp-item taken adhoc" data-log-key="${r.key}">
-        <span class="supp-check">✓</span>
-        <span class="supp-name">${escapeHtml(r.name)}${r.time ? ` <span class="supp-dose">${r.time}</span>` : ''}</span>
+      <div class="supp-card taken adhoc" data-log-key="${r.key}">
+        <div class="supp-card-avatar">+</div>
+        <div class="supp-card-info">
+          <div class="supp-card-title">${escapeHtml(r.name)}${r.time ? ` <span class="supp-dose">${r.time}</span>` : ''}</div>
+        </div>
         <button class="entry-delete" data-action="delete-adhoc" aria-label="Usuń">×</button>
       </div>`).join('');
+
+    const allSupps = Storage.getSupplements();
+    let doseLogHtml = '';
+    const doseEntries = [];
+    due.forEach((s) => {
+      const times = Storage.getSupplementDoseTimes(currentDate, s.id);
+      times.forEach((t, i) => doseEntries.push({ supp: s, time: t, index: i }));
+    });
+    adhoc.forEach((r) => doseEntries.push({ adhocKey: r.key, name: r.name, time: r.time || '' }));
+    doseEntries.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+
+    if (doseEntries.length > 0) {
+      doseLogHtml = `<details class="supp-collapsible">
+        <summary class="supp-collapsible-header">Log dawek <span class="supp-collapsible-count">${doseEntries.length}</span></summary>
+        ${doseEntries.map((d) => {
+          if (d.adhocKey) {
+            return `<div class="supp-log-entry adhoc" data-log-key="${d.adhocKey}">
+              <span class="supp-log-time">${escapeHtml(d.time) || '—'}</span>
+              <span class="supp-log-name">${escapeHtml(d.name)}</span>
+              <button class="entry-delete" data-action="delete-adhoc-log" aria-label="Usuń">×</button>
+            </div>`;
+          }
+          return `<div class="supp-log-entry" data-supp-id="${d.supp.id}" data-dose-index="${d.index}">
+            <span class="supp-log-time">${escapeHtml(d.time) || '—'}</span>
+            <span class="supp-log-name">${escapeHtml(suppLabel(d.supp))}${d.supp.dose ? ` <span class="supp-dose">${escapeHtml(d.supp.dose)}</span>` : ''}</span>
+            <button class="entry-delete" data-action="delete-dose" data-supp-id="${d.supp.id}" data-dose-index="${d.index}" aria-label="Usuń">×</button>
+          </div>`;
+        }).join('')}
+      </details>`;
+    }
 
     container.innerHTML = `
       <div class="section-header-row">
         <h3 class="section-title">Suplementy i leki</h3>
-        <button class="btn btn-secondary" id="adhocSuppBtn" style="width:auto;padding:8px 14px;font-size:12px;">+ Doraźnie</button>
       </div>
       ${itemsHtml || '<div class="hint">Brak zaplanowanych na ten dzień.</div>'}
       ${adhocHtml}
+      ${doseLogHtml}
     `;
 
-    container.querySelectorAll('.supp-item[data-supp-id]').forEach((el) => {
+    container.querySelectorAll('.supp-card[data-supp-id]').forEach((el) => {
       el.addEventListener('click', (e) => {
         if (e.target.closest('[data-action="increment"]')) return;
         toggleSupplementCheck(el.dataset.suppId);
@@ -1854,22 +1910,76 @@ const UI = (() => {
     container.querySelectorAll('[data-action="delete-adhoc"]').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        Storage.deleteSupplementLogEntry(btn.closest('.supp-item').dataset.logKey);
+        Storage.deleteSupplementLogEntry(btn.closest('.supp-card').dataset.logKey);
         pushSupplementLogToCloud();
         renderSupplementsSection();
       });
     });
-    const adhocBtn = document.getElementById('adhocSuppBtn');
-    if (adhocBtn) adhocBtn.addEventListener('click', () => openAdhocSuppPrompt());
+    container.querySelectorAll('.supp-log-entry[data-supp-id]').forEach((el) => {
+      el.addEventListener('click', (e) => {
+        if (e.target.closest('.entry-delete')) return;
+        const suppId = el.dataset.suppId;
+        const idx = Number(el.dataset.doseIndex);
+        const supp = allSupps.find((s) => s.id === suppId);
+        const times = Storage.getSupplementDoseTimes(currentDate, suppId);
+        const currentTime = times[idx] || '';
+        const newTime = prompt(`Godzina dawki — ${supp ? supp.name : ''}:`, currentTime);
+        if (newTime === null) return;
+        Storage.updateSupplementDoseTime(currentDate, suppId, idx, newTime.trim());
+        pushSupplementLogToCloud();
+        renderSupplementsSection();
+      });
+    });
+    container.querySelectorAll('[data-action="delete-dose"]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const suppId = btn.dataset.suppId;
+        const idx = Number(btn.dataset.doseIndex);
+        const supp = allSupps.find((s) => s.id === suppId);
+        Storage.removeSupplementDose(currentDate, suppId, idx);
+        if (supp && supp.stock != null) {
+          Storage.updateSupplement(suppId, { stock: supp.stock + 1 });
+          pushSupplementsToCloud();
+        }
+        pushSupplementLogToCloud();
+        renderSupplementsSection();
+      });
+    });
+    container.querySelectorAll('[data-action="delete-adhoc-log"]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        Storage.deleteSupplementLogEntry(btn.closest('.supp-log-entry').dataset.logKey);
+        pushSupplementLogToCloud();
+        renderSupplementsSection();
+      });
+    });
+    renderAdhocSupplementsSection();
   }
 
   function toggleSupplementCheck(suppId) {
-    const taken = Storage.toggleSupplementTaken(currentDate, suppId, nowTimeStr());
     const supp = Storage.getSupplements().find((s) => s.id === suppId);
-    if (supp && supp.stock != null) {
-      const newStock = Math.max(0, supp.stock + (taken ? -1 : 1));
-      Storage.updateSupplement(suppId, { stock: newStock });
-      pushSupplementsToCloud();
+    const target = (supp && Number(supp.timesPerDay)) || 1;
+    const count = Storage.getSupplementTakenCount(currentDate, suppId);
+
+    if (count >= target) {
+      Storage.toggleSupplementTaken(currentDate, suppId, nowTimeStr());
+      if (supp && supp.stock != null) {
+        const newStock = supp.stock + count;
+        Storage.updateSupplement(suppId, { stock: newStock });
+        pushSupplementsToCloud();
+      }
+    } else if (count === 0) {
+      Storage.toggleSupplementTaken(currentDate, suppId, nowTimeStr());
+      if (supp && supp.stock != null) {
+        Storage.updateSupplement(suppId, { stock: Math.max(0, supp.stock - 1) });
+        pushSupplementsToCloud();
+      }
+    } else {
+      Storage.incrementSupplementDose(currentDate, suppId, nowTimeStr());
+      if (supp && supp.stock != null) {
+        Storage.updateSupplement(suppId, { stock: Math.max(0, supp.stock - 1) });
+        pushSupplementsToCloud();
+      }
     }
     pushSupplementLogToCloud();
     renderSupplementsSection();
@@ -1887,14 +1997,67 @@ const UI = (() => {
     renderSupplementsSection();
   }
 
-  // Wpis doraźny — celowo prosty prompt(), bez nowego modalu
-  function openAdhocSuppPrompt() {
-    const name = prompt('Nazwa leku / suplementu (np. Ibuprofen 200 mg):');
-    if (!name || !name.trim()) return;
-    Storage.addAdhocSupplementLog(currentDate, name.trim(), nowTimeStr());
-    pushSupplementLogToCloud();
-    renderSupplementsSection();
-    showToast('Zapisano');
+  function renderAdhocSupplementsSection() {
+    const container = document.getElementById('adhocSupplementsSection');
+    if (!container) return;
+
+    const quickItems = Storage.getAdhocQuickItems();
+    quickItems.sort((a, b) => (b.usedAt || '').localeCompare(a.usedAt || ''));
+
+    const chipsHtml = quickItems.map((item) => `
+      <button class="adhoc-chip" data-adhoc-name="${escapeHtml(item.name)}">
+        ${escapeHtml(item.name)}
+        <span class="adhoc-chip-delete" data-action="remove-quick" data-name="${escapeHtml(item.name)}" aria-label="Usuń z szybkich">×</span>
+      </button>
+    `).join('');
+
+    container.innerHTML = `
+      <div class="adhoc-section">
+        <h3 class="section-title">Leki doraźne</h3>
+        <div class="adhoc-input-row">
+          <input type="text" id="adhocNameInput" placeholder="np. Ibuprofen 200 mg">
+          <button class="btn btn-primary" id="adhocAddBtn">Dodaj</button>
+        </div>
+        ${quickItems.length ? `<div class="adhoc-chips">${chipsHtml}</div>` : '<div class="hint" style="margin-top:8px;">Dodane leki pojawią się tu jako szybkie przyciski.</div>'}
+      </div>
+    `;
+
+    const input = document.getElementById('adhocNameInput');
+    const addBtn = document.getElementById('adhocAddBtn');
+
+    function addAdhocFromInput() {
+      const name = input.value.trim();
+      if (!name) return;
+      Storage.addAdhocSupplementLog(currentDate, name, nowTimeStr());
+      pushSupplementLogToCloud();
+      input.value = '';
+      renderSupplementsSection();
+      showToast('Zapisano');
+    }
+
+    addBtn.addEventListener('click', addAdhocFromInput);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); addAdhocFromInput(); }
+    });
+
+    container.querySelectorAll('.adhoc-chip').forEach((chip) => {
+      chip.addEventListener('click', (e) => {
+        if (e.target.closest('[data-action="remove-quick"]')) return;
+        const name = chip.dataset.adhocName;
+        Storage.addAdhocSupplementLog(currentDate, name, nowTimeStr());
+        pushSupplementLogToCloud();
+        renderSupplementsSection();
+        showToast(`${name} — zapisano`);
+      });
+    });
+
+    container.querySelectorAll('[data-action="remove-quick"]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        Storage.removeAdhocQuickItem(btn.dataset.name);
+        renderAdhocSupplementsSection();
+      });
+    });
   }
 
   function openGoalPickerModal() {

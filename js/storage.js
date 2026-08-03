@@ -578,10 +578,21 @@ const Storage = (() => {
       .map(([key, r]) => ({ key, ...r }));
   }
 
+  function getSupplementTimes(rec) {
+    if (!rec || rec.deleted || !rec.taken) return [];
+    if (Array.isArray(rec.times)) return rec.times;
+    const count = Number(rec.count) || 1;
+    return Array.from({ length: count }, () => rec.time || '');
+  }
+
   function getSupplementTakenCount(date, suppId) {
     const rec = getRawSupplementLog()[supplementLogKey(date, suppId)];
-    if (!rec || rec.deleted) return 0;
-    return rec.taken ? (Number(rec.count) || 1) : 0;
+    return getSupplementTimes(rec).length;
+  }
+
+  function getSupplementDoseTimes(date, suppId) {
+    const rec = getRawSupplementLog()[supplementLogKey(date, suppId)];
+    return getSupplementTimes(rec);
   }
 
   function isSupplementTaken(date, suppId) {
@@ -592,10 +603,10 @@ const Storage = (() => {
     const map = getRawSupplementLog();
     const key = supplementLogKey(date, suppId);
     const now = new Date().toISOString();
-    const wasTaken = !!map[key] && !map[key].deleted && map[key].taken === true;
+    const wasTaken = getSupplementTimes(map[key]).length > 0;
     map[key] = wasTaken
       ? { date, suppId, deleted: true, updatedAt: now }
-      : { date, suppId, taken: true, count: 1, time: time || '', updatedAt: now };
+      : { date, suppId, taken: true, times: [time || ''], updatedAt: now };
     saveRawSupplementLog(map);
     return !wasTaken;
   }
@@ -604,11 +615,36 @@ const Storage = (() => {
     const map = getRawSupplementLog();
     const key = supplementLogKey(date, suppId);
     const now = new Date().toISOString();
-    const existing = map[key];
-    const currentCount = (existing && !existing.deleted && existing.taken) ? (Number(existing.count) || 1) : 0;
-    map[key] = { date, suppId, taken: true, count: currentCount + 1, time: time || '', updatedAt: now };
+    const times = getSupplementTimes(map[key]);
+    times.push(time || '');
+    map[key] = { date, suppId, taken: true, times, updatedAt: now };
     saveRawSupplementLog(map);
-    return currentCount + 1;
+    return times.length;
+  }
+
+  function updateSupplementDoseTime(date, suppId, index, newTime) {
+    const map = getRawSupplementLog();
+    const key = supplementLogKey(date, suppId);
+    const times = getSupplementTimes(map[key]);
+    if (index < 0 || index >= times.length) return;
+    times[index] = newTime;
+    map[key] = { ...map[key], times, updatedAt: new Date().toISOString() };
+    saveRawSupplementLog(map);
+  }
+
+  function removeSupplementDose(date, suppId, index) {
+    const map = getRawSupplementLog();
+    const key = supplementLogKey(date, suppId);
+    const times = getSupplementTimes(map[key]);
+    if (index < 0 || index >= times.length) return 0;
+    times.splice(index, 1);
+    if (times.length === 0) {
+      map[key] = { date, suppId, deleted: true, updatedAt: new Date().toISOString() };
+    } else {
+      map[key] = { ...map[key], times, updatedAt: new Date().toISOString() };
+    }
+    saveRawSupplementLog(map);
+    return times.length;
   }
 
   function addAdhocSupplementLog(date, name, time) {
@@ -618,6 +654,34 @@ const Storage = (() => {
       date, adhoc: true, name, time: time || '', updatedAt: new Date().toISOString()
     };
     saveRawSupplementLog(map);
+    addAdhocQuickItem(name);
+  }
+
+  function getAdhocQuickItems() {
+    try { return JSON.parse(localStorage.getItem('adhocQuickItems')) || []; }
+    catch { return []; }
+  }
+
+  function saveAdhocQuickItems(items) {
+    localStorage.setItem('adhocQuickItems', JSON.stringify(items));
+  }
+
+  function addAdhocQuickItem(name) {
+    const items = getAdhocQuickItems();
+    const normalized = name.trim();
+    if (!normalized) return;
+    const existing = items.findIndex((i) => i.name.toLowerCase() === normalized.toLowerCase());
+    if (existing !== -1) {
+      items[existing].usedAt = new Date().toISOString();
+    } else {
+      items.push({ name: normalized, usedAt: new Date().toISOString() });
+    }
+    saveAdhocQuickItems(items);
+  }
+
+  function removeAdhocQuickItem(name) {
+    const items = getAdhocQuickItems().filter((i) => i.name.toLowerCase() !== name.toLowerCase());
+    saveAdhocQuickItems(items);
   }
 
   function deleteSupplementLogEntry(key) {
@@ -792,9 +856,15 @@ const Storage = (() => {
     getSupplementLogForDate,
     isSupplementTaken,
     getSupplementTakenCount,
+    getSupplementDoseTimes,
     toggleSupplementTaken,
     incrementSupplementDose,
+    updateSupplementDoseTime,
+    removeSupplementDose,
     addAdhocSupplementLog,
+    getAdhocQuickItems,
+    addAdhocQuickItem,
+    removeAdhocQuickItem,
     deleteSupplementLogEntry,
     mergeSupplementLog,
     getUniqueProducts,
