@@ -96,22 +96,23 @@ const UI = (() => {
       sessionStorage.setItem('supplementsUnlocked', '1');
     }
     if (navigator.vibrate) navigator.vibrate(50);
+    updateSupplementsNavVisibility();
 
     if (wasUnlocked) {
-      renderDiary();
+      switchView('dziennik');
       updateSupplementsSettingsVisibility();
+      showToast('Moduł suplementów ukryty');
       return;
     }
 
-    // Przy odblokowaniu od razu pokaż, gdzie dodać suplement — inaczej sekcja
-    // w Ustawieniach jest zwiniętą, niewidoczną częścią długiej listy
-    switchView('ustawienia');
-    const acc = document.getElementById('supplementsAccordion');
-    if (acc) {
-      acc.open = true;
-      acc.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
+    switchView('suplementy');
+    updateSupplementsSettingsVisibility();
     showToast('Moduł suplementów odblokowany');
+  }
+
+  function updateSupplementsNavVisibility() {
+    const btn = document.getElementById('navSupplementy');
+    if (btn) btn.hidden = !supplementsUnlocked();
   }
 
   function switchView(viewName) {
@@ -123,13 +124,19 @@ const UI = (() => {
     if (viewName === 'historia') renderHistory();
     if (viewName === 'ustawienia') renderSettings();
     if (viewName === 'przepisy') Recipes.renderRecipeList();
+    if (viewName === 'suplementy') renderSupplementsView();
   }
 
   function changeDay(delta) {
     const d = new Date(currentDate + 'T00:00:00');
     d.setDate(d.getDate() + delta);
     currentDate = toDateStr(d);
-    renderDiary();
+    const activeView = document.querySelector('.view.active');
+    if (activeView && activeView.id === 'view-suplementy') {
+      renderSupplementsView();
+    } else {
+      renderDiary();
+    }
   }
 
   function goToDate(dateStr) {
@@ -280,7 +287,6 @@ const UI = (() => {
     }
 
     renderDailyAnalysesSection();
-    renderSupplementsSection();
   }
 
   // Relog: kopiuje wpis na dziś z bieżącą godziną (kategoria wg godziny)
@@ -1783,13 +1789,14 @@ const UI = (() => {
   const TIMING_LABELS = { morning: 'Rano', noon: 'Południe', evening: 'Wieczorem', any: 'Dowolna pora' };
   const TIMING_ORDER = ['morning', 'noon', 'evening', 'any'];
 
+  function renderSupplementsView() {
+    document.getElementById('suppDateLabel').textContent = formatDateLabel(currentDate);
+    renderSupplementsSection();
+  }
+
   function renderSupplementsSection() {
     const container = document.getElementById('supplementsSection');
     if (!container) return;
-    if (!supplementsUnlocked()) {
-      container.innerHTML = '';
-      return;
-    }
 
     const due = Storage.getSupplements().filter((s) => Storage.isSupplementDueOn(s, currentDate));
     const adhoc = Storage.getSupplementLogForDate(currentDate).filter((r) => r.adhoc);
@@ -2042,6 +2049,7 @@ const UI = (() => {
     openGoalPickerModal,
     closeGoalPickerModal,
     toggleSupplementsUnlocked,
+    updateSupplementsNavVisibility,
     openSupplementModal,
     closeSupplementModal,
     saveSupplementFromForm,

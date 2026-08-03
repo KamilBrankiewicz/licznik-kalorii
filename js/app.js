@@ -1,5 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
   UI.renderDiary();
+  UI.updateSupplementsNavVisibility();
 
   // Potrójne tapnięcie daty (w ciągu 800 ms) odsłania/chowa moduł suplementów.
   // Okno celowo szersze niż typowe 300-400ms — na dotyku zdarzenie click bywa
@@ -24,6 +25,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('prevDay').addEventListener('click', () => UI.changeDay(-1));
   document.getElementById('nextDay').addEventListener('click', () => UI.changeDay(1));
+  document.getElementById('suppPrevDay').addEventListener('click', () => UI.changeDay(-1));
+  document.getElementById('suppNextDay').addEventListener('click', () => UI.changeDay(1));
 
   document.getElementById('fabAdd').addEventListener('click', () => UI.openEntryModal());
   document.getElementById('cancelEntryBtn').addEventListener('click', () => UI.closeEntryModal());

@@ -85,6 +85,15 @@
     <div class="entries-list" id="entriesList"></div>
 
     <div id="dailyAnalysesSection"></div>
+  </section>
+
+  <!-- WIDOK: SUPLEMENTY (ukryty, odblokowany potrójnym tapnięciem daty) -->
+  <section id="view-suplementy" class="view">
+    <div class="day-header">
+      <button class="day-nav" id="suppPrevDay">◀</button>
+      <span class="day-label" id="suppDateLabel"></span>
+      <button class="day-nav" id="suppNextDay">▶</button>
+    </div>
     <div id="supplementsSection"></div>
   </section>
 
@@ -122,7 +131,7 @@
   <section id="view-ustawienia" class="view">
     <div style="display:flex; align-items:baseline; justify-content:space-between; gap:8px;">
       <h1 class="page-title" style="margin-bottom:0;">Ustawienia</h1>
-      <span class="hint" style="white-space:nowrap;">v43</span>
+      <span class="hint" style="white-space:nowrap;">v44</span>
     </div>
 
     <h3 class="section-title" style="margin-top:16px;">Wygląd</h3>
@@ -264,6 +273,7 @@
   <!-- NAWIGACJA -->
   <nav class="bottom-nav">
     <button class="nav-btn active" data-view="dziennik">Dziennik</button>
+    <button class="nav-btn" data-view="suplementy" id="navSupplementy" hidden>Suplementy</button>
     <button class="nav-btn" data-view="przepisy">Przepisy</button>
     <button class="nav-btn" data-view="historia">Historia</button>
     <button class="nav-btn" data-view="ustawienia">Ustawienia</button>
