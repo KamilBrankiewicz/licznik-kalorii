@@ -784,7 +784,6 @@ const UI = (() => {
     renderFirebaseAuthBlock();
     renderGoalsList();
     updateSupplementsSettingsVisibility();
-    renderSupplementsList();
   }
 
   function renderFirebaseAuthBlock() {
@@ -1792,6 +1791,7 @@ const UI = (() => {
   function renderSupplementsView() {
     document.getElementById('suppDateLabel').textContent = formatDateLabel(currentDate);
     renderSupplementsSection();
+    renderSupplementsList();
   }
 
   function renderSupplementsSection() {
@@ -1807,15 +1807,18 @@ const UI = (() => {
       if (group.length === 0) return;
       itemsHtml += `<div class="supp-group-label">${TIMING_LABELS[timing]}</div>`;
       itemsHtml += group.map((s) => {
-        const taken = Storage.isSupplementTaken(currentDate, s.id);
+        const count = Storage.getSupplementTakenCount(currentDate, s.id);
+        const taken = count > 0;
+        const countLabel = count > 1 ? `<span class="supp-count">×${count}</span>` : '';
         const stockHtml = s.stock != null
           ? `<span class="supp-stock${s.stock <= 7 ? ' supp-stock-low' : ''}">zapas: ${s.stock}</span>`
           : '';
         return `
           <div class="supp-item${taken ? ' taken' : ''}" data-supp-id="${s.id}">
             <span class="supp-check">${taken ? '✓' : ''}</span>
-            <span class="supp-name">${escapeHtml(s.name)}${s.dose ? ` <span class="supp-dose">${escapeHtml(s.dose)}</span>` : ''}</span>
+            <span class="supp-name">${escapeHtml(s.name)}${s.dose ? ` <span class="supp-dose">${escapeHtml(s.dose)}</span>` : ''}${countLabel}</span>
             ${stockHtml}
+            <button class="supp-plus-btn" data-action="increment" data-id="${s.id}" aria-label="Dodaj dawkę">+</button>
           </div>`;
       }).join('');
     });
@@ -1837,7 +1840,16 @@ const UI = (() => {
     `;
 
     container.querySelectorAll('.supp-item[data-supp-id]').forEach((el) => {
-      el.addEventListener('click', () => toggleSupplementCheck(el.dataset.suppId));
+      el.addEventListener('click', (e) => {
+        if (e.target.closest('[data-action="increment"]')) return;
+        toggleSupplementCheck(el.dataset.suppId);
+      });
+    });
+    container.querySelectorAll('[data-action="increment"]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        incrementSupplementDose(btn.dataset.id);
+      });
     });
     container.querySelectorAll('[data-action="delete-adhoc"]').forEach((btn) => {
       btn.addEventListener('click', (e) => {
@@ -1856,6 +1868,18 @@ const UI = (() => {
     const supp = Storage.getSupplements().find((s) => s.id === suppId);
     if (supp && supp.stock != null) {
       const newStock = Math.max(0, supp.stock + (taken ? -1 : 1));
+      Storage.updateSupplement(suppId, { stock: newStock });
+      pushSupplementsToCloud();
+    }
+    pushSupplementLogToCloud();
+    renderSupplementsSection();
+  }
+
+  function incrementSupplementDose(suppId) {
+    Storage.incrementSupplementDose(currentDate, suppId, nowTimeStr());
+    const supp = Storage.getSupplements().find((s) => s.id === suppId);
+    if (supp && supp.stock != null) {
+      const newStock = Math.max(0, supp.stock - 1);
       Storage.updateSupplement(suppId, { stock: newStock });
       pushSupplementsToCloud();
     }

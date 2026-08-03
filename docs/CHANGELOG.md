@@ -15,6 +15,23 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku — niezacommitowane] 2026-08-03 — Suplementy: nowy wygląd, zarządzanie w dzienniku, wielokrotne dawki
+**Co:** Nawigacja dni w widoku suplementów wygląda identycznie jak w dzienniku (‹ Dziś ›).
+Zarządzanie suplementami (lista z Edytuj/Usuń i „+ Nowy suplement") przeniesione z Ustawień
+na dół widoku suplementów. Nowy przycisk „+" przy każdym suplemencie pozwala zwiększać liczbę
+dawek w danym dniu (np. 2000 IU rano + 4000 IU wieczorem = ×3 kliknięcia). Kliknięcie wiersza
+resetuje licznik do zera.
+**Dlaczego:** nawigacja dni była brzydka (inne strzałki niż dziennik). Zarządzanie suplementami
+w ustawieniach było nieporęczne — użytkownik musi przełączać zakładki żeby dodać nowy suplement.
+Brak możliwości wzięcia kilku dawek tego samego suplementu w jednym dniu (np. Witamina D3
+2000 IU vs 6000 IU).
+**Pliki:** `index.html`, `css/style.css`, `js/ui.js`, `js/storage.js`, `sw.js` (bump v45).
+**Uwagi:** Model danych supplementLog wstecznie zgodny — stare wpisy bez `count` traktowane jako
+count=1. W ustawieniach akordeon „Suplementy i leki" teraz wyświetla informację kierującą do
+zakładki Suplementy.
+
+---
+
 ## [w toku — niezacommitowane] 2026-08-03 — Odblokowanie od razu prowadzi do "+ Nowy suplement"
 **Co:** Po odblokowaniu gestem `toggleSupplementsUnlocked` przełącza teraz widok na Ustawienia,
 rozwija akordeon „Suplementy i leki” (`acc.open = true`), przewija go w widok

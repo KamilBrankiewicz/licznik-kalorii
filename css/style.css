@@ -1286,9 +1286,17 @@ h1.page-title {
 .supp-item.taken .supp-check { opacity: 1; }
 .supp-item.taken .supp-name { opacity: .55; text-decoration: line-through; }
 .supp-dose { font-size: 12px; opacity: .6; }
-.supp-stock { margin-left: auto; font-size: 11px; opacity: .5; }
+.supp-stock { font-size: 11px; opacity: .5; }
 .supp-stock-low { color: #e05555; opacity: 1; }
-.supp-name { min-width: 0; }
+.supp-name { min-width: 0; flex: 1; }
+.supp-count { font-size: 12px; font-weight: 700; opacity: .7; margin-left: 4px; }
+.supp-plus-btn {
+  width: 32px; height: 32px; border-radius: 50%; border: none;
+  background: var(--accent); color: #fff; font-size: 18px; font-weight: 700;
+  cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  margin-left: auto;
+}
+.supp-plus-btn:active { transform: scale(.9); }
 
 /* ── Undo toast ── */
 .toast-undo {

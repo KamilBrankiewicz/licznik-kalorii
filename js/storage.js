@@ -578,12 +578,16 @@ const Storage = (() => {
       .map(([key, r]) => ({ key, ...r }));
   }
 
-  function isSupplementTaken(date, suppId) {
+  function getSupplementTakenCount(date, suppId) {
     const rec = getRawSupplementLog()[supplementLogKey(date, suppId)];
-    return !!rec && !rec.deleted && rec.taken === true;
+    if (!rec || rec.deleted) return 0;
+    return rec.taken ? (Number(rec.count) || 1) : 0;
   }
 
-  // Przełącza odhaczenie; zwraca nowy stan (true = wzięte)
+  function isSupplementTaken(date, suppId) {
+    return getSupplementTakenCount(date, suppId) > 0;
+  }
+
   function toggleSupplementTaken(date, suppId, time) {
     const map = getRawSupplementLog();
     const key = supplementLogKey(date, suppId);
@@ -591,9 +595,20 @@ const Storage = (() => {
     const wasTaken = !!map[key] && !map[key].deleted && map[key].taken === true;
     map[key] = wasTaken
       ? { date, suppId, deleted: true, updatedAt: now }
-      : { date, suppId, taken: true, time: time || '', updatedAt: now };
+      : { date, suppId, taken: true, count: 1, time: time || '', updatedAt: now };
     saveRawSupplementLog(map);
     return !wasTaken;
+  }
+
+  function incrementSupplementDose(date, suppId, time) {
+    const map = getRawSupplementLog();
+    const key = supplementLogKey(date, suppId);
+    const now = new Date().toISOString();
+    const existing = map[key];
+    const currentCount = (existing && !existing.deleted && existing.taken) ? (Number(existing.count) || 1) : 0;
+    map[key] = { date, suppId, taken: true, count: currentCount + 1, time: time || '', updatedAt: now };
+    saveRawSupplementLog(map);
+    return currentCount + 1;
   }
 
   function addAdhocSupplementLog(date, name, time) {
@@ -776,7 +791,9 @@ const Storage = (() => {
     saveRawSupplementLog,
     getSupplementLogForDate,
     isSupplementTaken,
+    getSupplementTakenCount,
     toggleSupplementTaken,
+    incrementSupplementDose,
     addAdhocSupplementLog,
     deleteSupplementLogEntry,
     mergeSupplementLog,
