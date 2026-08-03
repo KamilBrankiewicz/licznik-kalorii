@@ -1,7 +1,9 @@
 document.addEventListener('DOMContentLoaded', () => {
   UI.renderDiary();
 
-  // Potrójne tapnięcie daty (w ciągu 600 ms) odsłania/chowa moduł suplementów
+  // Potrójne tapnięcie daty (w ciągu 800 ms) odsłania/chowa moduł suplementów.
+  // Okno celowo szersze niż typowe 300-400ms — na dotyku zdarzenie click bywa
+  // opóźnione, więc trzeba dać zapas (patrz też touch-action: manipulation w CSS).
   let suppTapCount = 0;
   let suppTapTimer = null;
   const dateLabelEl = document.getElementById('currentDateLabel');
@@ -13,7 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
       UI.toggleSupplementsUnlocked();
       return;
     }
-    suppTapTimer = setTimeout(() => { suppTapCount = 0; }, 600);
+    suppTapTimer = setTimeout(() => { suppTapCount = 0; }, 800);
   });
 
   document.querySelectorAll('.nav-btn').forEach((btn) => {

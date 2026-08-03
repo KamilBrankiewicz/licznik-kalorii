@@ -15,7 +15,24 @@ Format wpisu — nowe na górze:
 
 ---
 
-## [w toku — niezacommitowane] 2026-08-03 — Suplementy: potrójne tapnięcie zamiast długiego przytrzymania
+## [w toku — niezacommitowane] 2026-08-03 — Triple-tap: touch-action:manipulation + szersze okno
+**Co:** Po wdrożeniu potrójnego tapnięcia (patrz wpis niżej) użytkownik zgłosił, że nadal nic
+się nie dzieje na telefonie. Dodano `touch-action: manipulation` na nagłówku daty i poszerzono
+okno wykrywania z 600 ms do 800 ms.
+**Dlaczego:** bez `touch-action: manipulation` przeglądarka na dotyku czeka ok. 300 ms po każdym
+tapnięciu, żeby rozstrzygnąć, czy to nie jest podwójne tapnięcie do przybliżenia (natywny gest
+zoom) — to opóźnienie kumuluje się i łatwo przekracza wąskie okno 600 ms, a w gorszym razie jedno
+z tapnięć zostaje "zjedzone" przez gest zoomu zamiast wygenerować `click`. `touch-action:
+manipulation` wyłącza zoom podwójnym tapnięciem na tym elemencie i usuwa opóźnienie.
+**Pliki:** `css/style.css` (`touch-action: manipulation` na `.date-header h2`), `js/app.js`
+(okno 600ms → 800ms), `sw.js` (bump v42), `index.html` (v42).
+**Uwagi:** nie dało się w pełni zweryfikować rzeczywistego opóźnienia dotyku w środowisku
+testowym (desktopowa przeglądarka nie odtwarza tego zachowania) — to standardowa, dobrze
+udokumentowana poprawka na ten problem, ale wymaga potwierdzenia na telefonie użytkownika.
+
+---
+
+## [7ddc205] 2026-08-03 — Suplementy: potrójne tapnięcie zamiast długiego przytrzymania
 **Co:** Gest odsłaniający moduł suplementów zmieniony z długiego przytrzymania (1,5 s) na
 potrójne tapnięcie nagłówka z datą (3 kliknięcia w ciągu 600 ms).
 **Dlaczego:** użytkownik zgłosił, że długie przytrzymanie na telefonie nic nie robiło —
@@ -24,7 +41,8 @@ zaznaczaniem tekstu/scrollem na dotyku). Potrójne tapnięcie liczy zwykłe zdar
 które przeglądarka gwarantowanie wysyła przy kolejnych tapnięciach — prostsze i pewniejsze.
 **Pliki:** `js/app.js` (licznik tapnięć zamiast `setTimeout` na `pointerdown`),
 `css/style.css` (komentarz), `sw.js` (bump v41), `index.html` (v41).
-**Uwagi:** pojedyncze i podwójne tapnięcie nie robią nic — sprawdzone w przeglądarce.
+**Uwagi:** pojedyncze i podwójne tapnięcie nie robią nic — sprawdzone w przeglądarce. Okazało
+się to niewystarczające na prawdziwym telefonie — patrz wpis wyżej.
 
 ---
 
