@@ -89,14 +89,29 @@ const UI = (() => {
   }
 
   function toggleSupplementsUnlocked() {
-    if (supplementsUnlocked()) {
+    const wasUnlocked = supplementsUnlocked();
+    if (wasUnlocked) {
       sessionStorage.removeItem('supplementsUnlocked');
     } else {
       sessionStorage.setItem('supplementsUnlocked', '1');
     }
     if (navigator.vibrate) navigator.vibrate(50);
-    renderDiary();
-    updateSupplementsSettingsVisibility();
+
+    if (wasUnlocked) {
+      renderDiary();
+      updateSupplementsSettingsVisibility();
+      return;
+    }
+
+    // Przy odblokowaniu od razu pokaż, gdzie dodać suplement — inaczej sekcja
+    // w Ustawieniach jest zwiniętą, niewidoczną częścią długiej listy
+    switchView('ustawienia');
+    const acc = document.getElementById('supplementsAccordion');
+    if (acc) {
+      acc.open = true;
+      acc.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    showToast('Moduł suplementów odblokowany');
   }
 
   function switchView(viewName) {

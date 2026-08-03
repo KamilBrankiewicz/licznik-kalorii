@@ -15,6 +15,21 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku — niezacommitowane] 2026-08-03 — Odblokowanie od razu prowadzi do "+ Nowy suplement"
+**Co:** Po odblokowaniu gestem `toggleSupplementsUnlocked` przełącza teraz widok na Ustawienia,
+rozwija akordeon „Suplementy i leki” (`acc.open = true`), przewija go w widok
+(`scrollIntoView`) i pokazuje toast „Moduł suplementów odblokowany”. Zablokowanie (drugie
+odblokowanie) działa jak wcześniej — tylko chowa checklistę/akordeon bez zmiany widoku.
+**Dlaczego:** użytkownik odblokował moduł, ale nie widział, gdzie dodać definicję suplementu —
+sekcja zarządzania to zwinięty akordeon w długiej liście Ustawień, bez żadnego sygnału po
+odblokowaniu. Sama checklista w dzienniku daje tylko „+ Doraźnie” (wpis jednorazowy), nie
+tworzenie harmonogramu.
+**Pliki:** `js/ui.js` (`toggleSupplementsUnlocked`), `sw.js` (bump v43), `index.html` (v43).
+**Uwagi:** zachowanie przy blokowaniu (drugi gest) celowo zostało bez zmian — nie ma potrzeby
+nawigować nigdzie, użytkownik i tak zwykle jest wtedy na Dzienniku (tam żyje gest).
+
+---
+
 ## [w toku — niezacommitowane] 2026-08-03 — Triple-tap: touch-action:manipulation + szersze okno
 **Co:** Po wdrożeniu potrójnego tapnięcia (patrz wpis niżej) użytkownik zgłosił, że nadal nic
 się nie dzieje na telefonie. Dodano `touch-action: manipulation` na nagłówku daty i poszerzono
