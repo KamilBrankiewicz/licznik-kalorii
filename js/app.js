@@ -1,15 +1,19 @@
 document.addEventListener('DOMContentLoaded', () => {
   UI.renderDiary();
 
-  // Długie przytrzymanie daty (1,5 s) odsłania/chowa moduł suplementów
-  let suppPressTimer = null;
+  // Potrójne tapnięcie daty (w ciągu 600 ms) odsłania/chowa moduł suplementów
+  let suppTapCount = 0;
+  let suppTapTimer = null;
   const dateLabelEl = document.getElementById('currentDateLabel');
-  dateLabelEl.addEventListener('contextmenu', (e) => e.preventDefault());
-  dateLabelEl.addEventListener('pointerdown', () => {
-    suppPressTimer = setTimeout(() => UI.toggleSupplementsUnlocked(), 1500);
-  });
-  ['pointerup', 'pointerleave', 'pointercancel', 'pointermove'].forEach((ev) => {
-    dateLabelEl.addEventListener(ev, () => clearTimeout(suppPressTimer));
+  dateLabelEl.addEventListener('click', () => {
+    suppTapCount++;
+    clearTimeout(suppTapTimer);
+    if (suppTapCount >= 3) {
+      suppTapCount = 0;
+      UI.toggleSupplementsUnlocked();
+      return;
+    }
+    suppTapTimer = setTimeout(() => { suppTapCount = 0; }, 600);
   });
 
   document.querySelectorAll('.nav-btn').forEach((btn) => {

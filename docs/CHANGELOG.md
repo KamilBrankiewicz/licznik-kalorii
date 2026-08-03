@@ -15,27 +15,43 @@ Format wpisu — nowe na górze:
 
 ---
 
-## [w toku — niezacommitowane] 2026-08-03 — Ukryty moduł suplementów i leków
+## [w toku — niezacommitowane] 2026-08-03 — Suplementy: potrójne tapnięcie zamiast długiego przytrzymania
+**Co:** Gest odsłaniający moduł suplementów zmieniony z długiego przytrzymania (1,5 s) na
+potrójne tapnięcie nagłówka z datą (3 kliknięcia w ciągu 600 ms).
+**Dlaczego:** użytkownik zgłosił, że długie przytrzymanie na telefonie nic nie robiło —
+`pointerdown`/`pointerup` w praktyce zawodziły (prawdopodobnie konflikt z natywnym
+zaznaczaniem tekstu/scrollem na dotyku). Potrójne tapnięcie liczy zwykłe zdarzenia `click`,
+które przeglądarka gwarantowanie wysyła przy kolejnych tapnięciach — prostsze i pewniejsze.
+**Pliki:** `js/app.js` (licznik tapnięć zamiast `setTimeout` na `pointerdown`),
+`css/style.css` (komentarz), `sw.js` (bump v41), `index.html` (v41).
+**Uwagi:** pojedyncze i podwójne tapnięcie nie robią nic — sprawdzone w przeglądarce.
+
+---
+
+## [8cd62c5] 2026-08-03 — Ukryty moduł suplementów i leków
 **Co:** Nowy, domyślnie ukryty moduł do śledzenia suplementów/leków: definicje z dowolnym
 harmonogramem (codziennie / wybrane dni tygodnia / co N dni / cykl brania-przerwy),
 dzienna checklista z odhaczaniem w widoku dziennika (grupowana wg pory dnia, ze śledzeniem
 zapasu), wpisy doraźne (lek wzięty bez wcześniejszej definicji) oraz zarządzanie listą
-w Ustawieniach. Sekcja jest niewidoczna w DOM, dopóki użytkownik nie przytrzyma 1,5 s
-nagłówka z datą w widoku dziennika — stan odblokowania żyje w `sessionStorage` i znika po
-przeładowaniu strony.
+w Ustawieniach. Sekcja jest niewidoczna w DOM, dopóki użytkownik nie odsłoni jej gestem na
+nagłówku z datą w widoku dziennika (pierwotnie długie przytrzymanie, patrz wpis wyżej) —
+stan odblokowania żyje w `sessionStorage`, więc znika dopiero przy zamknięciu karty/aplikacji
+(przetrwa zwykłe przeładowanie strony — świadomie zaakceptowane, patrz Uwagi).
 **Dlaczego:** dane o lekach/suplementach są bardziej wrażliwe niż licznik kalorii; ukrycie
 za gestem sprawia, że nie są widoczne przy zwykłym korzystaniu z aplikacji ani przy
 przelotnym spojrzeniu na ekran przez kogoś innego.
 **Pliki:** `js/storage.js` (CRUD + harmonogram + dziennik przyjęć + eksport/import),
 `js/firebase-sync.js` (push/pull `supplements`/`supplementLog`), `js/ui.js` (gest
 odblokowania, checklista w dzienniku, zarządzanie listą w Ustawieniach), `js/app.js`
-(long-press na `#currentDateLabel`, podpięcia formularza), `index.html` (kontener
+(gest na `#currentDateLabel`, podpięcia formularza), `index.html` (kontener
 checklisty, akordeon i modal w Ustawieniach), `css/style.css` (`.supp-*`, blokada
 zaznaczania nagłówka daty), `sw.js` (bump v40).
 **Uwagi:** ukrycie jest wyłącznie wizualne (świadoma decyzja, bez szyfrowania) — dane
 i tak trafiają do eksportu JSON i do Firestore jak każda inna kolekcja. Zakres celowo
 nie obejmuje powiadomień, doliczania kcal, statystyk compliance ani skanu etykiety —
-patrz `docs/PLAN-MODUL-SUPLEMENTY.md`, sekcja „Poza zakresem".
+patrz `docs/PLAN-MODUL-SUPLEMENTY.md`, sekcja „Poza zakresem". `sessionStorage` NIE czyści
+się przy przeładowaniu strony (tylko przy zamknięciu karty) — plan pierwotnie zakładał
+inaczej, ale to świadomie zaakceptowana rozbieżność.
 
 ---
 

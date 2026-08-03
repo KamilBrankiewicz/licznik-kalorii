@@ -97,7 +97,7 @@ html, body {
   text-align: center;
 }
 
-/* Gest długiego przytrzymania na dacie — bez menu kontekstowego i zaznaczania */
+/* Potrójne tapnięcie na dacie odsłania moduł suplementów — bez zaznaczania tekstu */
 .date-header h2 {
   user-select: none;
   -webkit-user-select: none;

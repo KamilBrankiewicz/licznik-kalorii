@@ -212,10 +212,12 @@ Payload:
 - **Raport odżywczy (analiza dnia względem własnych celów):** przycisk "+ Nowa analiza" pod listą wpisów w widoku dnia otwiera wybór zapisanego "celu analizy" i wysyła do Gemini listę posiłków tego dnia (nazwa, gramatura, pora, godzina, kcal/B/W/T/błonnik) razem z treścią celu i globalnym "Profilem zdrowotnym" z Ustawień. Cele to własne system prompty (nazwa + treść), zarządzane w Ustawieniach → "Cele analizy dnia" (`Storage.getGoals/addGoal/updateGoal/deleteGoal`, kolekcja `analysisGoals` z nagrobkami). Appka dokleja do każdego promptu użytkownika stały, generyczny fragment wymuszający jeden kształt odpowiedzi JSON (`meals[].flag` good/neutral/warning, `daily_summary`, `data_gaps`...) — dzięki temu jeden renderer (`renderAnalysisBody` w `js/ui.js`) obsługuje dowolny cel bez zmian w kodzie. Wynik zapisuje się per dzień+cel (`Storage.saveDailyAnalysis`, kolekcja `dailyAnalyses`, klucz `"YYYY-MM-DD__goalId"`, nadpisuje poprzedni przy ponownym uruchomieniu) i jest widoczny jako rozwijana karta z kolorowym oznaczeniem. Sync obu kolekcji przez Firestore (`meta/goals`, `meta/dailyAnalyses`). Moduł: `Ocr.analyzeDayAgainstGoal` w `js/ocr.js`.
 
 ## Faza 6 — moduł suplementów i leków (2026-08-03)
-- **Ukryty domyślnie:** długie przytrzymanie (1,5 s) nagłówka z datą w widoku dziennika
-  odsłania/chowa cały moduł. Stan odblokowania żyje w `sessionStorage` — znika po
-  przeładowaniu strony, nie synchronizuje się między urządzeniami i nie trafia do eksportu.
-  Przy zablokowanym module w DOM nie renderuje się żaden ślad (ani puste sekcje).
+- **Ukryty domyślnie:** potrójne tapnięcie (3 kliknięcia w ciągu 600 ms) nagłówka z datą
+  w widoku dziennika odsłania/chowa cały moduł (pierwotnie długie przytrzymanie 1,5 s —
+  zamienione, bo na telefonie zawodziło). Stan odblokowania żyje w `sessionStorage` — znika
+  dopiero przy zamknięciu karty/aplikacji (przetrwa zwykłe przeładowanie strony), nie
+  synchronizuje się między urządzeniami i nie trafia do eksportu. Przy zablokowanym module
+  w DOM nie renderuje się żaden ślad (ani puste sekcje).
 - **Definicje** (`Storage.getSupplements/addSupplement/updateSupplement/deleteSupplement`,
   kolekcja `supplements` z nagrobkami): nazwa, dawka, pora dnia, notatki, zapas opcjonalny,
   flaga aktywny/pauza. Cztery typy harmonogramu (`Storage.isSupplementDueOn`): codziennie,
