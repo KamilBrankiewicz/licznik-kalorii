@@ -82,6 +82,23 @@ const UI = (() => {
     undoTimeout = setTimeout(() => { toast.classList.remove('show'); toast.className = 'toast'; }, 5000);
   }
 
+  // Widoczność modułu suplementów — celowo sessionStorage: znika po zamknięciu karty,
+  // nie synchronizuje się i nie trafia do eksportu
+  function supplementsUnlocked() {
+    return sessionStorage.getItem('supplementsUnlocked') === '1';
+  }
+
+  function toggleSupplementsUnlocked() {
+    if (supplementsUnlocked()) {
+      sessionStorage.removeItem('supplementsUnlocked');
+    } else {
+      sessionStorage.setItem('supplementsUnlocked', '1');
+    }
+    if (navigator.vibrate) navigator.vibrate(50);
+    renderDiary();
+    updateSupplementsSettingsVisibility();
+  }
+
   function switchView(viewName) {
     document.querySelectorAll('.view').forEach((v) => v.classList.remove('active'));
     document.getElementById(`view-${viewName}`).classList.add('active');
@@ -248,6 +265,7 @@ const UI = (() => {
     }
 
     renderDailyAnalysesSection();
+    renderSupplementsSection();
   }
 
   // Relog: kopiuje wpis na dziś z bieżącą godziną (kategoria wg godziny)
@@ -341,6 +359,18 @@ const UI = (() => {
   function pushDailyAnalysesToCloud() {
     if (window.FirebaseSync && FirebaseSync.isSignedIn()) {
       FirebaseSync.pushDailyAnalyses(Storage.getRawDailyAnalyses()).catch(() => showToast('Błąd synchronizacji raportów'));
+    }
+  }
+
+  function pushSupplementsToCloud() {
+    if (window.FirebaseSync && FirebaseSync.isSignedIn()) {
+      FirebaseSync.pushSupplements(Storage.getRawSupplements()).catch(() => showToast('Błąd synchronizacji suplementów'));
+    }
+  }
+
+  function pushSupplementLogToCloud() {
+    if (window.FirebaseSync && FirebaseSync.isSignedIn()) {
+      FirebaseSync.pushSupplementLog(Storage.getRawSupplementLog()).catch(() => showToast('Błąd synchronizacji suplementów'));
     }
   }
 
@@ -732,6 +762,8 @@ const UI = (() => {
     document.getElementById('settingsToast').textContent = '';
     renderFirebaseAuthBlock();
     renderGoalsList();
+    updateSupplementsSettingsVisibility();
+    renderSupplementsList();
   }
 
   function renderFirebaseAuthBlock() {
@@ -877,6 +909,16 @@ const UI = (() => {
       const mergedAnalyses = Storage.mergeDailyAnalyses(remoteAnalyses, Storage.getRawDailyAnalyses());
       Storage.saveRawDailyAnalyses(mergedAnalyses);
       await FirebaseSync.pushDailyAnalyses(mergedAnalyses);
+
+      const remoteSupplements = await FirebaseSync.pullSupplements();
+      const mergedSupplements = Storage.mergeSupplements(remoteSupplements, Storage.getRawSupplements());
+      Storage.saveSupplements(mergedSupplements);
+      await FirebaseSync.pushSupplements(mergedSupplements);
+
+      const remoteSuppLog = await FirebaseSync.pullSupplementLog();
+      const mergedSuppLog = Storage.mergeSupplementLog(remoteSuppLog, Storage.getRawSupplementLog());
+      Storage.saveRawSupplementLog(mergedSuppLog);
+      await FirebaseSync.pushSupplementLog(mergedSuppLog);
 
       const remoteSettings = await FirebaseSync.pullSettings();
       const localSettings = Storage.getSettings();
@@ -1436,6 +1478,7 @@ const UI = (() => {
   // ── Cele analizy dnia ──
 
   let editingGoalId = null;
+  let editingSuppId = null;
 
   function renderGoalsList() {
     const container = document.getElementById('goalsList');
@@ -1502,6 +1545,135 @@ const UI = (() => {
     closeGoalModal();
     renderGoalsList();
     showToast(editingGoalId ? 'Zapisano zmiany' : 'Cel zapisany');
+  }
+
+  // ── Suplementy i leki — zarządzanie listą w Ustawieniach ──
+
+  function updateSupplementsSettingsVisibility() {
+    const acc = document.getElementById('supplementsAccordion');
+    if (acc) acc.hidden = !supplementsUnlocked();
+  }
+
+  const SUPP_SCHEDULE_LABELS = {
+    daily: 'Codziennie',
+    weekdays: 'Wybrane dni',
+    everyN: 'Co N dni',
+    cycle: 'Cykl'
+  };
+
+  function renderSupplementsList() {
+    const container = document.getElementById('supplementsList');
+    if (!container) return;
+    const list = Storage.getSupplements();
+
+    if (list.length === 0) {
+      container.innerHTML = '<div class="hint">Brak zapisanych suplementów.</div>';
+      return;
+    }
+
+    container.innerHTML = list.map((s) => `
+      <div class="goal-item">
+        <span class="goal-item-name">${escapeHtml(s.name)}${s.active === false ? ' <span class="hint">(pauza)</span>' : ''} — ${SUPP_SCHEDULE_LABELS[s.scheduleType || 'daily']}</span>
+        <div class="goal-item-actions">
+          <button class="btn btn-secondary" data-action="edit" data-id="${s.id}" style="font-size:12px;padding:8px 12px;width:auto;">Edytuj</button>
+          <button class="btn btn-danger" data-action="delete" data-id="${s.id}" style="font-size:12px;padding:8px;width:auto;">×</button>
+        </div>
+      </div>
+    `).join('');
+
+    container.querySelectorAll('[data-action="edit"]').forEach((btn) => {
+      btn.addEventListener('click', () => openSupplementModal(btn.dataset.id));
+    });
+    container.querySelectorAll('[data-action="delete"]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (confirm('Usunąć? Historia przyjęć pozostanie.')) {
+          Storage.deleteSupplement(btn.dataset.id);
+          pushSupplementsToCloud();
+          renderSupplementsList();
+          renderSupplementsSection();
+          showToast('Usunięto suplement');
+        }
+      });
+    });
+  }
+
+  function updateSuppScheduleRowsVisibility() {
+    const type = document.getElementById('suppScheduleType').value;
+    document.getElementById('suppScheduleDaysRow').hidden = type !== 'weekdays';
+    document.getElementById('suppScheduleNRow').hidden = type !== 'everyN';
+    document.getElementById('suppCycleRow').hidden = type !== 'cycle';
+  }
+
+  function openSupplementModal(suppId) {
+    editingSuppId = suppId || null;
+    const supp = editingSuppId ? Storage.getSupplements().find((s) => s.id === editingSuppId) : null;
+    document.getElementById('suppModalTitle').textContent = supp ? 'Edytuj suplement' : 'Nowy suplement';
+    document.getElementById('suppName').value = supp ? supp.name : '';
+    document.getElementById('suppDose').value = supp ? (supp.dose || '') : '';
+    document.getElementById('suppNotes').value = supp ? (supp.notes || '') : '';
+    document.getElementById('suppTiming').value = supp ? (supp.timing || 'any') : 'morning';
+    document.getElementById('suppScheduleType').value = supp ? (supp.scheduleType || 'daily') : 'daily';
+    const days = supp && Array.isArray(supp.scheduleDays) ? supp.scheduleDays : [];
+    document.querySelectorAll('#suppScheduleDaysRow input[data-dow]').forEach((cb) => {
+      cb.checked = days.includes(Number(cb.dataset.dow));
+    });
+    document.getElementById('suppScheduleN').value = supp && supp.scheduleN != null ? supp.scheduleN : '';
+    document.getElementById('suppCycleOn').value = supp && supp.cycleOn != null ? supp.cycleOn : '';
+    document.getElementById('suppCycleOff').value = supp && supp.cycleOff != null ? supp.cycleOff : '';
+    document.getElementById('suppStock').value = supp && supp.stock != null ? supp.stock : '';
+    document.getElementById('suppActive').checked = supp ? supp.active !== false : true;
+    document.getElementById('suppFormError').textContent = '';
+    updateSuppScheduleRowsVisibility();
+    document.getElementById('suppModalOverlay').classList.add('active');
+  }
+
+  function closeSupplementModal() {
+    document.getElementById('suppModalOverlay').classList.remove('active');
+  }
+
+  function saveSupplementFromForm() {
+    const name = document.getElementById('suppName').value.trim();
+    const errorEl = document.getElementById('suppFormError');
+    if (!name) { errorEl.textContent = 'Podaj nazwę'; return; }
+
+    const scheduleType = document.getElementById('suppScheduleType').value;
+    const data = {
+      name,
+      dose: document.getElementById('suppDose').value.trim(),
+      notes: document.getElementById('suppNotes').value.trim(),
+      timing: document.getElementById('suppTiming').value,
+      scheduleType,
+      active: document.getElementById('suppActive').checked,
+      stock: document.getElementById('suppStock').value === '' ? null : Number(document.getElementById('suppStock').value)
+    };
+
+    if (scheduleType === 'weekdays') {
+      const days = [...document.querySelectorAll('#suppScheduleDaysRow input[data-dow]:checked')].map((cb) => Number(cb.dataset.dow));
+      if (days.length === 0) { errorEl.textContent = 'Wybierz przynajmniej jeden dzień tygodnia'; return; }
+      data.scheduleDays = days;
+    } else if (scheduleType === 'everyN') {
+      const n = Number(document.getElementById('suppScheduleN').value);
+      if (!n || n < 2) { errorEl.textContent = 'Podaj liczbę dni (minimum 2)'; return; }
+      data.scheduleN = n;
+    } else if (scheduleType === 'cycle') {
+      const on = Number(document.getElementById('suppCycleOn').value);
+      const off = Number(document.getElementById('suppCycleOff').value);
+      if (!on || on < 1) { errorEl.textContent = 'Podaj liczbę dni brania (minimum 1)'; return; }
+      if (off === '' || off < 0 || Number.isNaN(off)) { errorEl.textContent = 'Podaj liczbę dni przerwy (minimum 0)'; return; }
+      data.cycleOn = on;
+      data.cycleOff = off;
+    }
+
+    if (editingSuppId) {
+      Storage.updateSupplement(editingSuppId, data);
+    } else {
+      Storage.addSupplement(data);
+    }
+    pushSupplementsToCloud();
+    closeSupplementModal();
+    renderSupplementsList();
+    renderSupplementsSection();
+    showToast(editingSuppId ? 'Zapisano zmiany' : 'Suplement zapisany');
   }
 
   // ── Raport odżywczy (wyniki analizy dnia względem zapisanych celów) ──
@@ -1591,6 +1763,92 @@ const UI = (() => {
         }
       });
     });
+  }
+
+  const TIMING_LABELS = { morning: 'Rano', noon: 'Południe', evening: 'Wieczorem', any: 'Dowolna pora' };
+  const TIMING_ORDER = ['morning', 'noon', 'evening', 'any'];
+
+  function renderSupplementsSection() {
+    const container = document.getElementById('supplementsSection');
+    if (!container) return;
+    if (!supplementsUnlocked()) {
+      container.innerHTML = '';
+      return;
+    }
+
+    const due = Storage.getSupplements().filter((s) => Storage.isSupplementDueOn(s, currentDate));
+    const adhoc = Storage.getSupplementLogForDate(currentDate).filter((r) => r.adhoc);
+
+    let itemsHtml = '';
+    TIMING_ORDER.forEach((timing) => {
+      const group = due.filter((s) => (s.timing || 'any') === timing);
+      if (group.length === 0) return;
+      itemsHtml += `<div class="supp-group-label">${TIMING_LABELS[timing]}</div>`;
+      itemsHtml += group.map((s) => {
+        const taken = Storage.isSupplementTaken(currentDate, s.id);
+        const stockHtml = s.stock != null
+          ? `<span class="supp-stock${s.stock <= 7 ? ' supp-stock-low' : ''}">zapas: ${s.stock}</span>`
+          : '';
+        return `
+          <div class="supp-item${taken ? ' taken' : ''}" data-supp-id="${s.id}">
+            <span class="supp-check">${taken ? '✓' : ''}</span>
+            <span class="supp-name">${escapeHtml(s.name)}${s.dose ? ` <span class="supp-dose">${escapeHtml(s.dose)}</span>` : ''}</span>
+            ${stockHtml}
+          </div>`;
+      }).join('');
+    });
+
+    const adhocHtml = adhoc.map((r) => `
+      <div class="supp-item taken adhoc" data-log-key="${r.key}">
+        <span class="supp-check">✓</span>
+        <span class="supp-name">${escapeHtml(r.name)}${r.time ? ` <span class="supp-dose">${r.time}</span>` : ''}</span>
+        <button class="entry-delete" data-action="delete-adhoc" aria-label="Usuń">×</button>
+      </div>`).join('');
+
+    container.innerHTML = `
+      <div class="section-header-row">
+        <h3 class="section-title">Suplementy i leki</h3>
+        <button class="btn btn-secondary" id="adhocSuppBtn" style="width:auto;padding:8px 14px;font-size:12px;">+ Doraźnie</button>
+      </div>
+      ${itemsHtml || '<div class="hint">Brak zaplanowanych na ten dzień.</div>'}
+      ${adhocHtml}
+    `;
+
+    container.querySelectorAll('.supp-item[data-supp-id]').forEach((el) => {
+      el.addEventListener('click', () => toggleSupplementCheck(el.dataset.suppId));
+    });
+    container.querySelectorAll('[data-action="delete-adhoc"]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        Storage.deleteSupplementLogEntry(btn.closest('.supp-item').dataset.logKey);
+        pushSupplementLogToCloud();
+        renderSupplementsSection();
+      });
+    });
+    const adhocBtn = document.getElementById('adhocSuppBtn');
+    if (adhocBtn) adhocBtn.addEventListener('click', () => openAdhocSuppPrompt());
+  }
+
+  function toggleSupplementCheck(suppId) {
+    const taken = Storage.toggleSupplementTaken(currentDate, suppId, nowTimeStr());
+    const supp = Storage.getSupplements().find((s) => s.id === suppId);
+    if (supp && supp.stock != null) {
+      const newStock = Math.max(0, supp.stock + (taken ? -1 : 1));
+      Storage.updateSupplement(suppId, { stock: newStock });
+      pushSupplementsToCloud();
+    }
+    pushSupplementLogToCloud();
+    renderSupplementsSection();
+  }
+
+  // Wpis doraźny — celowo prosty prompt(), bez nowego modalu
+  function openAdhocSuppPrompt() {
+    const name = prompt('Nazwa leku / suplementu (np. Ibuprofen 200 mg):');
+    if (!name || !name.trim()) return;
+    Storage.addAdhocSupplementLog(currentDate, name.trim(), nowTimeStr());
+    pushSupplementLogToCloud();
+    renderSupplementsSection();
+    showToast('Zapisano');
   }
 
   function openGoalPickerModal() {
@@ -1768,6 +2026,11 @@ const UI = (() => {
     saveGoalFromForm,
     openGoalPickerModal,
     closeGoalPickerModal,
+    toggleSupplementsUnlocked,
+    openSupplementModal,
+    closeSupplementModal,
+    saveSupplementFromForm,
+    updateSuppScheduleRowsVisibility,
     getCurrentDate: () => currentDate
   };
 })();

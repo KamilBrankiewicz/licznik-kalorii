@@ -51,6 +51,8 @@ index.html  →  app.js  →  ui.js  →  storage.js  →  localStorage
 | `weights` | `{ [date]: WeightRec }` | pomiary wagi ciała |
 | `favoriteProducts` | `Product[]` | przypięte produkty, z nagrobkami |
 | `recipes` | `Recipe[]` | przepisy z listą składników, z nagrobkami |
+| `supplements` | `Supplement[]` | definicje suplementów/leków, z nagrobkami |
+| `supplementLog` | `{ [YYYY-MM-DD__id]: LogRec }` | dziennik przyjęć (planowych i doraźnych), z nagrobkami |
 
 ```javascript
 Entry = {
@@ -85,6 +87,8 @@ users/{uid}/meta/settings       → Settings
 users/{uid}/meta/weights        → { map: {...} }
 users/{uid}/meta/favorites      → { list: [...] }
 users/{uid}/meta/recipes        → { list: [...] }
+users/{uid}/meta/supplements    → { list: [...] }
+users/{uid}/meta/supplementLog  → { map: {...} }
 
 sharedRecipes/{recipientUid}/inbox/{itemId} → kopia Recipe + { sharedBy: uid, sharedAt }
 ```

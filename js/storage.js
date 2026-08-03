@@ -6,6 +6,8 @@ const Storage = (() => {
   const RECIPES_KEY = 'recipes';
   const GOALS_KEY = 'analysisGoals';
   const DAILY_ANALYSES_KEY = 'dailyAnalyses';
+  const SUPPLEMENTS_KEY = 'supplements';
+  const SUPPLEMENT_LOG_KEY = 'supplementLog';
   const SEEN_SHARED_RECIPES_KEY = 'seenSharedRecipeIds';
   const THEME_KEY = 'themePreference';
   const HISTORY_METRIC_KEY = 'historyMetricPreference';
@@ -421,6 +423,92 @@ const Storage = (() => {
     return [...byId.values()];
   }
 
+  // ── Suplementy i leki — definicje; nagrobki + merge jak przy celach ──
+
+  function getRawSupplements() {
+    const raw = localStorage.getItem(SUPPLEMENTS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  }
+
+  function getSupplements() {
+    return getRawSupplements().filter((s) => !s.deleted);
+  }
+
+  function saveSupplements(list) {
+    localStorage.setItem(SUPPLEMENTS_KEY, JSON.stringify(list));
+  }
+
+  function addSupplement(supp) {
+    const list = getRawSupplements();
+    const newSupp = {
+      active: true,
+      anchorDate: new Date().toISOString().slice(0, 10),
+      ...supp,
+      id: crypto.randomUUID(),
+      updatedAt: new Date().toISOString()
+    };
+    list.push(newSupp);
+    saveSupplements(list);
+    return newSupp;
+  }
+
+  function updateSupplement(id, data) {
+    const list = getRawSupplements();
+    const idx = list.findIndex((s) => s.id === id);
+    if (idx === -1) return null;
+    list[idx] = { ...list[idx], ...data, updatedAt: new Date().toISOString() };
+    saveSupplements(list);
+    return list[idx];
+  }
+
+  function deleteSupplement(id) {
+    const list = getRawSupplements().map((s) =>
+      s.id === id ? { id: s.id, deleted: true, updatedAt: new Date().toISOString() } : s
+    );
+    saveSupplements(list);
+  }
+
+  function mergeSupplements(listA, listB) {
+    const byId = new Map();
+    [...listA, ...listB].forEach((s) => {
+      const prev = byId.get(s.id);
+      if (!prev || (s.updatedAt || '') > (prev.updatedAt || '')) byId.set(s.id, s);
+    });
+    return [...byId.values()];
+  }
+
+  // Różnica pełnych dni między datami YYYY-MM-DD (UTC, odporne na zmianę czasu)
+  function daysBetween(dateA, dateB) {
+    const [ya, ma, da] = dateA.split('-').map(Number);
+    const [yb, mb, db] = dateB.split('-').map(Number);
+    return Math.round((Date.UTC(yb, mb - 1, db) - Date.UTC(ya, ma - 1, da)) / 86400000);
+  }
+
+  // Czy wg harmonogramu suplement ma być wzięty w dniu `date` (YYYY-MM-DD)
+  function isSupplementDueOn(supp, date) {
+    if (supp.deleted || supp.active === false) return false;
+    const type = supp.scheduleType || 'daily';
+    if (type === 'daily') return true;
+    if (type === 'weekdays') {
+      const [y, m, d] = date.split('-').map(Number);
+      const dow = new Date(y, m - 1, d).getDay();
+      return Array.isArray(supp.scheduleDays) && supp.scheduleDays.includes(dow);
+    }
+    const anchor = supp.anchorDate || date;
+    const diff = daysBetween(anchor, date);
+    if (diff < 0) return false;
+    if (type === 'everyN') {
+      const n = Number(supp.scheduleN) || 1;
+      return diff % n === 0;
+    }
+    if (type === 'cycle') {
+      const on = Number(supp.cycleOn) || 1;
+      const off = Number(supp.cycleOff) || 0;
+      return diff % (on + off) < on;
+    }
+    return true;
+  }
+
   // ── Zapisane raporty analizy dnia — mapa { "YYYY-MM-DD__goalId": {...} },
   // usunięcia jako nagrobki, ten sam mechanizm merge co przy wadze/ulubionych ──
 
@@ -467,6 +555,72 @@ const Storage = (() => {
     return merged;
   }
 
+  // ── Dziennik przyjęć suplementów — mapa { "YYYY-MM-DD__id": {...} },
+  // nagrobki + merge jak przy raportach analizy dnia ──
+
+  function supplementLogKey(date, id) {
+    return `${date}__${id}`;
+  }
+
+  function getRawSupplementLog() {
+    const raw = localStorage.getItem(SUPPLEMENT_LOG_KEY);
+    return raw ? JSON.parse(raw) : {};
+  }
+
+  function saveRawSupplementLog(map) {
+    localStorage.setItem(SUPPLEMENT_LOG_KEY, JSON.stringify(map));
+  }
+
+  // Wpisy z danego dnia (bez nagrobków)
+  function getSupplementLogForDate(date) {
+    return Object.entries(getRawSupplementLog())
+      .filter(([, r]) => r.date === date && !r.deleted)
+      .map(([key, r]) => ({ key, ...r }));
+  }
+
+  function isSupplementTaken(date, suppId) {
+    const rec = getRawSupplementLog()[supplementLogKey(date, suppId)];
+    return !!rec && !rec.deleted && rec.taken === true;
+  }
+
+  // Przełącza odhaczenie; zwraca nowy stan (true = wzięte)
+  function toggleSupplementTaken(date, suppId, time) {
+    const map = getRawSupplementLog();
+    const key = supplementLogKey(date, suppId);
+    const now = new Date().toISOString();
+    const wasTaken = !!map[key] && !map[key].deleted && map[key].taken === true;
+    map[key] = wasTaken
+      ? { date, suppId, deleted: true, updatedAt: now }
+      : { date, suppId, taken: true, time: time || '', updatedAt: now };
+    saveRawSupplementLog(map);
+    return !wasTaken;
+  }
+
+  function addAdhocSupplementLog(date, name, time) {
+    const map = getRawSupplementLog();
+    const id = crypto.randomUUID();
+    map[supplementLogKey(date, id)] = {
+      date, adhoc: true, name, time: time || '', updatedAt: new Date().toISOString()
+    };
+    saveRawSupplementLog(map);
+  }
+
+  function deleteSupplementLogEntry(key) {
+    const map = getRawSupplementLog();
+    if (!map[key]) return;
+    map[key] = { date: map[key].date, deleted: true, updatedAt: new Date().toISOString() };
+    saveRawSupplementLog(map);
+  }
+
+  function mergeSupplementLog(mapA, mapB) {
+    const merged = { ...mapA };
+    Object.entries(mapB).forEach(([key, r]) => {
+      const prev = merged[key];
+      if (!prev || (r.updatedAt || '') > (prev.updatedAt || '')) merged[key] = r;
+    });
+    return merged;
+  }
+
   function exportData() {
     const entries = {};
     getAllDates().forEach((date) => {
@@ -480,7 +634,9 @@ const Storage = (() => {
       favoriteProducts: getRawFavoriteProducts(),
       recipes: getRawRecipes(),
       analysisGoals: getRawGoals(),
-      dailyAnalyses: getRawDailyAnalyses()
+      dailyAnalyses: getRawDailyAnalyses(),
+      supplements: getRawSupplements(),
+      supplementLog: getRawSupplementLog()
     };
   }
 
@@ -517,6 +673,16 @@ const Storage = (() => {
         mode === 'replace' ? data.dailyAnalyses : mergeDailyAnalyses(getRawDailyAnalyses(), data.dailyAnalyses)
       );
     }
+    if (data.supplements) {
+      saveSupplements(
+        mode === 'replace' ? data.supplements : mergeSupplements(getRawSupplements(), data.supplements)
+      );
+    }
+    if (data.supplementLog) {
+      saveRawSupplementLog(
+        mode === 'replace' ? data.supplementLog : mergeSupplementLog(getRawSupplementLog(), data.supplementLog)
+      );
+    }
   }
 
   function clearAllData() {
@@ -530,6 +696,8 @@ const Storage = (() => {
         key === RECIPES_KEY ||
         key === GOALS_KEY ||
         key === DAILY_ANALYSES_KEY ||
+        key === SUPPLEMENTS_KEY ||
+        key === SUPPLEMENT_LOG_KEY ||
         key.startsWith(ENTRY_PREFIX)
       ) {
         keysToRemove.push(key);
@@ -596,6 +764,22 @@ const Storage = (() => {
     saveDailyAnalysis,
     deleteDailyAnalysis,
     mergeDailyAnalyses,
+    getSupplements,
+    getRawSupplements,
+    saveSupplements,
+    addSupplement,
+    updateSupplement,
+    deleteSupplement,
+    mergeSupplements,
+    isSupplementDueOn,
+    getRawSupplementLog,
+    saveRawSupplementLog,
+    getSupplementLogForDate,
+    isSupplementTaken,
+    toggleSupplementTaken,
+    addAdhocSupplementLog,
+    deleteSupplementLogEntry,
+    mergeSupplementLog,
     getUniqueProducts,
     exportData,
     importData,

@@ -1,6 +1,17 @@
 document.addEventListener('DOMContentLoaded', () => {
   UI.renderDiary();
 
+  // Długie przytrzymanie daty (1,5 s) odsłania/chowa moduł suplementów
+  let suppPressTimer = null;
+  const dateLabelEl = document.getElementById('currentDateLabel');
+  dateLabelEl.addEventListener('contextmenu', (e) => e.preventDefault());
+  dateLabelEl.addEventListener('pointerdown', () => {
+    suppPressTimer = setTimeout(() => UI.toggleSupplementsUnlocked(), 1500);
+  });
+  ['pointerup', 'pointerleave', 'pointercancel', 'pointermove'].forEach((ev) => {
+    dateLabelEl.addEventListener(ev, () => clearTimeout(suppPressTimer));
+  });
+
   document.querySelectorAll('.nav-btn').forEach((btn) => {
     btn.addEventListener('click', () => UI.switchView(btn.dataset.view));
   });
@@ -204,6 +215,8 @@ document.addEventListener('DOMContentLoaded', () => {
       UI.closeGoalModal();
     } else if (document.getElementById('analysisGoalPickerOverlay').classList.contains('active')) {
       UI.closeGoalPickerModal();
+    } else if (document.getElementById('suppModalOverlay').classList.contains('active')) {
+      UI.closeSupplementModal();
     }
   });
 
@@ -245,6 +258,15 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('analysisGoalPickerOverlay').addEventListener('click', (e) => {
     if (e.target.id === 'analysisGoalPickerOverlay') UI.closeGoalPickerModal();
   });
+
+  // ── Suplementy i leki (Ustawienia) ──
+  document.getElementById('newSupplementBtn').addEventListener('click', () => UI.openSupplementModal());
+  document.getElementById('cancelSuppBtn').addEventListener('click', () => UI.closeSupplementModal());
+  document.getElementById('saveSuppBtn').addEventListener('click', () => UI.saveSupplementFromForm());
+  document.getElementById('suppModalOverlay').addEventListener('click', (e) => {
+    if (e.target.id === 'suppModalOverlay') UI.closeSupplementModal();
+  });
+  document.getElementById('suppScheduleType').addEventListener('change', () => UI.updateSuppScheduleRowsVisibility());
 
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch((err) => {

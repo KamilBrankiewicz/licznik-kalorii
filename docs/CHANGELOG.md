@@ -15,6 +15,30 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku — niezacommitowane] 2026-08-03 — Ukryty moduł suplementów i leków
+**Co:** Nowy, domyślnie ukryty moduł do śledzenia suplementów/leków: definicje z dowolnym
+harmonogramem (codziennie / wybrane dni tygodnia / co N dni / cykl brania-przerwy),
+dzienna checklista z odhaczaniem w widoku dziennika (grupowana wg pory dnia, ze śledzeniem
+zapasu), wpisy doraźne (lek wzięty bez wcześniejszej definicji) oraz zarządzanie listą
+w Ustawieniach. Sekcja jest niewidoczna w DOM, dopóki użytkownik nie przytrzyma 1,5 s
+nagłówka z datą w widoku dziennika — stan odblokowania żyje w `sessionStorage` i znika po
+przeładowaniu strony.
+**Dlaczego:** dane o lekach/suplementach są bardziej wrażliwe niż licznik kalorii; ukrycie
+za gestem sprawia, że nie są widoczne przy zwykłym korzystaniu z aplikacji ani przy
+przelotnym spojrzeniu na ekran przez kogoś innego.
+**Pliki:** `js/storage.js` (CRUD + harmonogram + dziennik przyjęć + eksport/import),
+`js/firebase-sync.js` (push/pull `supplements`/`supplementLog`), `js/ui.js` (gest
+odblokowania, checklista w dzienniku, zarządzanie listą w Ustawieniach), `js/app.js`
+(long-press na `#currentDateLabel`, podpięcia formularza), `index.html` (kontener
+checklisty, akordeon i modal w Ustawieniach), `css/style.css` (`.supp-*`, blokada
+zaznaczania nagłówka daty), `sw.js` (bump v40).
+**Uwagi:** ukrycie jest wyłącznie wizualne (świadoma decyzja, bez szyfrowania) — dane
+i tak trafiają do eksportu JSON i do Firestore jak każda inna kolekcja. Zakres celowo
+nie obejmuje powiadomień, doliczania kcal, statystyk compliance ani skanu etykiety —
+patrz `docs/PLAN-MODUL-SUPLEMENTY.md`, sekcja „Poza zakresem".
+
+---
+
 ## [w toku — niezacommitowane] 2026-08-01 — Nie powtarzaj wartości SMM/PBF w podpisie
 **Co:** Podpis pod panelem body-comp (`bodyCompLastHint`) pokazywał pełne „SMM X kg ·
 PBF Y%" mimo że te same liczby są już widoczne jako placeholder w polach input tuż nad

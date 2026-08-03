@@ -85,6 +85,7 @@
     <div class="entries-list" id="entriesList"></div>
 
     <div id="dailyAnalysesSection"></div>
+    <div id="supplementsSection"></div>
   </section>
 
   <!-- WIDOK: HISTORIA -->
@@ -121,7 +122,7 @@
   <section id="view-ustawienia" class="view">
     <div style="display:flex; align-items:baseline; justify-content:space-between; gap:8px;">
       <h1 class="page-title" style="margin-bottom:0;">Ustawienia</h1>
-      <span class="hint" style="white-space:nowrap;">v38</span>
+      <span class="hint" style="white-space:nowrap;">v40</span>
     </div>
 
     <h3 class="section-title" style="margin-top:16px;">Wygląd</h3>
@@ -198,6 +199,14 @@
         </div>
         <div id="goalsList"></div>
         <button class="btn btn-secondary" id="newGoalBtn" style="margin-top:10px;">+ Nowy cel</button>
+      </div>
+    </details>
+
+    <details class="settings-accordion" id="supplementsAccordion" hidden>
+      <summary>Suplementy i leki</summary>
+      <div class="settings-accordion-body">
+        <div id="supplementsList"></div>
+        <button class="btn btn-secondary" id="newSupplementBtn" style="margin-top:10px;">+ Nowy suplement</button>
       </div>
     </details>
 
@@ -561,6 +570,96 @@
       <div class="btn-row">
         <button class="btn btn-secondary" id="cancelGoalBtn">Anuluj</button>
         <button class="btn btn-primary" id="saveGoalBtn">Zapisz cel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: EDYCJA SUPLEMENTU / LEKU -->
+  <div class="modal-overlay" id="suppModalOverlay">
+    <div class="modal-sheet">
+      <h3 id="suppModalTitle">Nowy suplement</h3>
+
+      <div class="form-group">
+        <label>Nazwa</label>
+        <input type="text" id="suppName" placeholder="np. Witamina D3">
+      </div>
+
+      <div class="form-row-2">
+        <div class="form-group">
+          <label>Dawka (opcjonalnie)</label>
+          <input type="text" id="suppDose" placeholder="np. 2000 IU">
+        </div>
+        <div class="form-group">
+          <label>Pora dnia</label>
+          <select id="suppTiming">
+            <option value="morning">Rano</option>
+            <option value="noon">Południe</option>
+            <option value="evening">Wieczorem</option>
+            <option value="any">Dowolna pora</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Harmonogram</label>
+        <select id="suppScheduleType">
+          <option value="daily">Codziennie</option>
+          <option value="weekdays">Wybrane dni tygodnia</option>
+          <option value="everyN">Co N dni</option>
+          <option value="cycle">Cykl (np. 5 dni / 2 przerwy)</option>
+        </select>
+      </div>
+
+      <div class="form-group" id="suppScheduleDaysRow" hidden>
+        <label>Dni tygodnia</label>
+        <div class="btn-row">
+          <label><input type="checkbox" data-dow="1"> Pn</label>
+          <label><input type="checkbox" data-dow="2"> Wt</label>
+          <label><input type="checkbox" data-dow="3"> Śr</label>
+          <label><input type="checkbox" data-dow="4"> Cz</label>
+          <label><input type="checkbox" data-dow="5"> Pt</label>
+          <label><input type="checkbox" data-dow="6"> So</label>
+          <label><input type="checkbox" data-dow="0"> Nd</label>
+        </div>
+      </div>
+
+      <div class="form-group" id="suppScheduleNRow" hidden>
+        <label>Co ile dni</label>
+        <input type="number" id="suppScheduleN" inputmode="numeric" min="2" placeholder="np. 2">
+      </div>
+
+      <div class="form-row-2" id="suppCycleRow" hidden>
+        <div class="form-group">
+          <label>Dni brania</label>
+          <input type="number" id="suppCycleOn" inputmode="numeric" min="1" placeholder="np. 5">
+        </div>
+        <div class="form-group">
+          <label>Dni przerwy</label>
+          <input type="number" id="suppCycleOff" inputmode="numeric" min="0" placeholder="np. 2">
+        </div>
+      </div>
+
+      <div class="form-row-2">
+        <div class="form-group">
+          <label>Zapas (opcjonalnie)</label>
+          <input type="number" id="suppStock" inputmode="numeric" placeholder="liczba sztuk">
+        </div>
+        <div class="form-group">
+          <label>&nbsp;</label>
+          <label class="hint"><input type="checkbox" id="suppActive" checked> Aktywny</label>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Notatki (opcjonalnie)</label>
+        <input type="text" id="suppNotes" placeholder="np. z tłuszczem">
+      </div>
+
+      <div id="suppFormError" class="error-msg"></div>
+
+      <div class="btn-row">
+        <button class="btn btn-secondary" id="cancelSuppBtn">Anuluj</button>
+        <button class="btn btn-primary" id="saveSuppBtn">Zapisz</button>
       </div>
     </div>
   </div>
