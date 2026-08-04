@@ -199,13 +199,17 @@ async function pushSharedSupplement(recipientUid, supplement) {
     cycleOn, cycleOff, timesPerDay, type, form, servingSize, packageSize, brand,
     ingredients, instructions, warnings
   } = supplement;
-  await setDoc(doc(db, 'sharedSupplements', recipientUid, 'inbox', shareId), {
+  const payload = {
     name, displayName, dose, notes, timing, scheduleType, scheduleDays, scheduleN,
     cycleOn, cycleOff, timesPerDay, type, form, servingSize, packageSize, brand,
     ingredients, instructions, warnings,
     sharedBy: currentUser.uid,
     sharedAt: new Date().toISOString()
+  };
+  Object.keys(payload).forEach((key) => {
+    if (payload[key] === undefined) delete payload[key];
   });
+  await setDoc(doc(db, 'sharedSupplements', recipientUid, 'inbox', shareId), payload);
 }
 
 async function pullSharedSupplements() {
