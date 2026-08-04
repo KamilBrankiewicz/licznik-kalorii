@@ -121,6 +121,8 @@ const UI = (() => {
     document.querySelectorAll('.nav-btn').forEach((b) => {
       b.classList.toggle('active', b.dataset.view === viewName);
     });
+    const fabAdd = document.getElementById('fabAdd');
+    if (fabAdd) fabAdd.hidden = viewName === 'suplementy';
     if (viewName === 'historia') renderHistory();
     if (viewName === 'ustawienia') renderSettings();
     if (viewName === 'przepisy') Recipes.renderRecipeList();
