@@ -147,6 +147,8 @@ users/{uid}/meta/dietAnalyses   → { map: {...} }
 users/{uid}/meta/adhocQuickItems → { list: [...] }
 
 sharedRecipes/{recipientUid}/inbox/{itemId} → kopia Recipe + { sharedBy: uid, sharedAt }
+sharedSupplements/{recipientUid}/inbox/{itemId} → kopia pól definicji Supplement (bez
+  active/stockBaseline/stockBaselineDate/anchorDate) + { sharedBy: uid, sharedAt }
 ```
 
 **Sharding logu suplementów:** `supplementLog` rośnie bez końca (nagrobki się nie
@@ -247,18 +249,26 @@ Nie są to braki do „naprawienia" — to decyzje projektowe:
 - brak paginacji historii (skala jednego użytkownika),
 - nagrobki nigdy nie są usuwane.
 
-**Wyjątek od zasady nagrobków — `sharedRecipes`:** ta kolekcja to jednorazowa skrzynka
-odbiorcza (przepis wysłany drugiemu, niezależnemu kontu — patrz `CHANGELOG.md`, wpis
-„Udostępnianie przepisów partnerowi"), nie stan replikowany między urządzeniami jednego
-użytkownika. Dokument jest usuwany z Firestore od razu po imporcie; nie ma dla niej
-`merge*` ani nagrobków, bo nie ma czego scalać — importowany przepis staje się zwykłym,
-niezależnym wpisem w kolekcji `recipes` odbiorcy (własne `id`/`updatedAt`, dalej żyje wg
-normalnych zasad tej kolekcji). Ochronę przed podwójnym importem (gdyby usunięcie ze
-skrzynki się nie powiodło) daje czysto lokalny, niesynchronizowany `seenSharedRecipeIds`
-w `storage.js`. Reguły bezpieczeństwa Firestore dla tej kolekcji trzeba dopisać ręcznie
-w konsoli Firebase (repo nie zawiera pliku `.rules`):
+**Wyjątek od zasady nagrobków — `sharedRecipes` i `sharedSupplements`:** te kolekcje to
+jednorazowe skrzynki odbiorcze (przepis albo suplement/lek wysłany drugiemu, niezależnemu
+kontu — patrz `CHANGELOG.md`, wpisy „Udostępnianie przepisów partnerowi" i „Udostępnianie
+suplementów/leków partnerowi"), nie stan replikowany między urządzeniami jednego
+użytkownika. Dokument jest usuwany z Firestore od razu po imporcie; nie ma dla nich
+`merge*` ani nagrobków, bo nie ma czego scalać — importowana pozycja staje się zwykłym,
+niezależnym wpisem w kolekcji `recipes`/`supplements` odbiorcy (własne `id`/`updatedAt`,
+dalej żyje wg normalnych zasad tej kolekcji; suplement dodatkowo dostaje świeże
+`active: true` i `anchorDate` dnia importu — harmonogram i zapas partner ustawia sam).
+Ochronę przed podwójnym importem (gdyby usunięcie ze skrzynki się nie powiodło) daje czysto
+lokalny, niesynchronizowany `seenSharedRecipeIds`/`seenSharedSupplementIds` w `storage.js`.
+Reguły bezpieczeństwa Firestore dla tych kolekcji trzeba dopisać ręcznie w konsoli Firebase
+(repo nie zawiera pliku `.rules`):
 ```
 match /sharedRecipes/{recipientUid}/inbox/{itemId} {
+  allow create: if request.auth != null && request.auth.uid == request.resource.data.sharedBy;
+  allow read, delete: if request.auth != null &&
+    (request.auth.uid == recipientUid || request.auth.uid == resource.data.sharedBy);
+}
+match /sharedSupplements/{recipientUid}/inbox/{itemId} {
   allow create: if request.auth != null && request.auth.uid == request.resource.data.sharedBy;
   allow read, delete: if request.auth != null &&
     (request.auth.uid == recipientUid || request.auth.uid == resource.data.sharedBy);

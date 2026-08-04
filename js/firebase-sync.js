@@ -190,6 +190,37 @@ async function pullSupplements() {
   return snap.exists() ? snap.data().list || [] : [];
 }
 
+async function pushSharedSupplement(recipientUid, supplement) {
+  if (!currentUser) return;
+  const { doc, setDoc } = firestoreMod;
+  const shareId = crypto.randomUUID();
+  const {
+    name, displayName, dose, notes, timing, scheduleType, scheduleDays, scheduleN,
+    cycleOn, cycleOff, timesPerDay, type, form, servingSize, packageSize, brand,
+    ingredients, instructions, warnings
+  } = supplement;
+  await setDoc(doc(db, 'sharedSupplements', recipientUid, 'inbox', shareId), {
+    name, displayName, dose, notes, timing, scheduleType, scheduleDays, scheduleN,
+    cycleOn, cycleOff, timesPerDay, type, form, servingSize, packageSize, brand,
+    ingredients, instructions, warnings,
+    sharedBy: currentUser.uid,
+    sharedAt: new Date().toISOString()
+  });
+}
+
+async function pullSharedSupplements() {
+  if (!currentUser) return [];
+  const { collection, getDocs } = firestoreMod;
+  const snapshot = await getDocs(collection(db, 'sharedSupplements', currentUser.uid, 'inbox'));
+  return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+async function deleteSharedSupplement(id) {
+  if (!currentUser) return;
+  const { doc, deleteDoc } = firestoreMod;
+  await deleteDoc(doc(db, 'sharedSupplements', currentUser.uid, 'inbox', id));
+}
+
 // Push wybranych miesięcy: months = ['2026-08', ...]; map = pełna lokalna mapa logu
 async function pushSupplementLogMonths(map, months) {
   if (!currentUser) return;
@@ -298,6 +329,9 @@ const FirebaseSync = {
   pushSharedRecipe,
   pullSharedRecipes,
   deleteSharedRecipe,
+  pushSharedSupplement,
+  pullSharedSupplements,
+  deleteSharedSupplement,
   parseFirebaseConfig
 };
 

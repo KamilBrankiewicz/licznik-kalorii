@@ -15,6 +15,24 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku — niezacommitowane] 2026-08-04 — Udostępnianie suplementów/leków partnerowi
+**Co:** Przycisk „Udostępnij" przy każdym suplemencie/leku na liście definicji. Wysyła kopię
+  definicji (bez zapasu/harmonogramu aktywności — `active`/`stockBaseline` partner ustawia
+  sam) na skrzynkę odbiorczą partnera; przy najbliższym syncu partnera pozycja trafia do jego
+  listy suplementów jako nowy, niezależny rekord (`shared: true`, własne `id`/`updatedAt`).
+**Dlaczego:** analogiczny mechanizm do „Udostępnianie przepisów partnerowi" niżej — dwie
+  niezależne osoby na dwóch kontach, które chcą przekazać sobie gotowy suplement/lek bez
+  ręcznego przepisywania składu i dawkowania.
+**Pliki:** `js/firebase-sync.js`, `js/storage.js`, `js/ui.js`, `sw.js`, `index.html`,
+  `docs/ARCHITECTURE.md`.
+**Uwagi:** wzorowane 1:1 na `sharedRecipes` — jednorazowa skrzynka `sharedSupplements/{uid}/inbox`
+  poza drzewem `users/{uid}`, bez nagrobków i `merge*` (nie ma czego scalać), z tym samym
+  lokalnym guardem przed podwójnym importem (`seenSharedSupplementIds`, analogicznie do
+  `seenSharedRecipeIds`). Reguły bezpieczeństwa Firestore dla `sharedSupplements` trzeba
+  dopisać ręcznie w konsoli Firebase — patrz `ARCHITECTURE.md` sekcja 7.
+
+---
+
 ## [w toku — niezacommitowane] 2026-08-04 — Dodawanie suplementów/leków ze zdjęcia etykiety i po nazwie (AI)
 **Co:** Dwa nowe sposoby wypełniania formularza suplementu/leku: „📷 Ze zdjęcia etykiety"
   (Gemini analizuje zdjęcie opakowania) i „🔍 Znajdź po nazwie" (Gemini z groundingiem

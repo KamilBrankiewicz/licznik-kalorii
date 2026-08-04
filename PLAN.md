@@ -42,6 +42,10 @@
     groundingiem Google Search), formularz rozszerzony o typ/formę/opakowanie/markę/skład/
     zalecenia/ostrzeżenia, skład wykorzystywany w analizie AI suplementów —
     `docs/PLAN-SUPLEMENTY-AI-DODAWANIE.md`
+  - Udostępnianie suplementów/leków partnerowi — przycisk „Udostępnij” przy definicji na
+    liście suplementów, ten sam mechanizm skrzynki odbiorczej co przy przepisach
+    (`sharedSupplements` w Firestore, partner UID z Ustawień), odebrana pozycja trafia do
+    listy suplementów partnera jako nowy, niezależny rekord
 
 **Pozostało (świadomie odłożone):**
 - Wielojęzyczność — raczej bez sensu przy aplikacji dla jednego użytkownika

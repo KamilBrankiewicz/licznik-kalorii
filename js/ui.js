@@ -981,6 +981,42 @@ const UI = (() => {
       await FirebaseSync.pushSupplementLogMonths(mergedSuppLog, allSuppLogMonths);
       await FirebaseSync.clearLegacySupplementLog();
 
+      const incomingSharedSupps = await FirebaseSync.pullSharedSupplements();
+      const seenSharedSupps = new Set(Storage.getSeenSharedSupplementIds());
+      let importedSharedSuppCount = 0;
+      for (const item of incomingSharedSupps) {
+        if (!seenSharedSupps.has(item.id)) {
+          Storage.addSupplement({
+            name: item.name,
+            displayName: item.displayName,
+            dose: item.dose,
+            notes: item.notes,
+            timing: item.timing,
+            scheduleType: item.scheduleType,
+            scheduleDays: item.scheduleDays,
+            scheduleN: item.scheduleN,
+            cycleOn: item.cycleOn,
+            cycleOff: item.cycleOff,
+            timesPerDay: item.timesPerDay,
+            type: item.type,
+            form: item.form,
+            servingSize: item.servingSize,
+            packageSize: item.packageSize,
+            brand: item.brand,
+            ingredients: item.ingredients,
+            instructions: item.instructions,
+            warnings: item.warnings,
+            shared: true
+          });
+          Storage.addSeenSharedSupplementId(item.id);
+          importedSharedSuppCount++;
+        }
+        await FirebaseSync.deleteSharedSupplement(item.id).catch(() => {});
+      }
+      if (importedSharedSuppCount > 0) {
+        pushSupplementsToCloud();
+      }
+
       const remoteSuppAnalyses = await FirebaseSync.pullSupplementAnalyses();
       const mergedSuppAnalyses = Storage.mergeSupplementAnalyses(remoteSuppAnalyses, Storage.getRawSupplementAnalyses());
       Storage.saveRawSupplementAnalyses(mergedSuppAnalyses);
@@ -1008,6 +1044,11 @@ const UI = (() => {
       if (importedSharedCount > 0) {
         Recipes.renderRecipeList();
         showToast(importedSharedCount === 1 ? 'Otrzymano przepis od partnera' : `Otrzymano ${importedSharedCount} przepisy od partnera`);
+      }
+      if (importedSharedSuppCount > 0) {
+        renderSupplementsList();
+        renderSupplementsSection();
+        showToast(importedSharedSuppCount === 1 ? 'Otrzymano suplement od partnera' : `Otrzymano ${importedSharedSuppCount} suplementy od partnera`);
       }
       statusEl.textContent = 'Zsynchronizowano ✓';
     } catch (e) {
@@ -1719,6 +1760,7 @@ const UI = (() => {
         <span class="goal-item-name">${escapeHtml(suppLabel(s))}${s.type === 'medication' ? '<span class="supp-type-badge">lek</span>' : ''}${s.active === false ? ' <span class="hint">(pauza)</span>' : ''} — ${SUPP_SCHEDULE_LABELS[s.scheduleType || 'daily']}${s.brand ? ` · ${escapeHtml(s.brand)}` : ''}</span>
         <div class="goal-item-actions">
           <button class="btn btn-secondary" data-action="edit" data-id="${s.id}" style="font-size:12px;padding:8px 12px;width:auto;">Edytuj</button>
+          <button class="btn btn-secondary" data-action="share" data-id="${s.id}" style="font-size:12px;padding:8px 12px;width:auto;">Udostępnij</button>
           <button class="btn btn-danger" data-action="delete" data-id="${s.id}" style="font-size:12px;padding:8px;width:auto;">×</button>
         </div>
       </div>
@@ -1726,6 +1768,9 @@ const UI = (() => {
 
     container.querySelectorAll('[data-action="edit"]').forEach((btn) => {
       btn.addEventListener('click', () => openSupplementModal(btn.dataset.id));
+    });
+    container.querySelectorAll('[data-action="share"]').forEach((btn) => {
+      btn.addEventListener('click', () => shareSupplementWithPartner(btn.dataset.id));
     });
     container.querySelectorAll('[data-action="delete"]').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -1738,6 +1783,26 @@ const UI = (() => {
         }
       });
     });
+  }
+
+  async function shareSupplementWithPartner(id) {
+    if (!window.FirebaseSync || !FirebaseSync.isSignedIn()) {
+      showToast('Zaloguj się przez Google w Ustawieniach, aby udostępniać suplementy');
+      return;
+    }
+    const partnerUid = (Storage.getSettings().partnerUid || '').trim();
+    if (!partnerUid) {
+      showToast('Ustaw UID partnera w Ustawieniach, aby udostępniać suplementy');
+      return;
+    }
+    const supp = Storage.getSupplements().find((s) => s.id === id);
+    if (!supp) return;
+    try {
+      await FirebaseSync.pushSharedSupplement(partnerUid, supp);
+      showToast('Udostępniono suplement partnerowi');
+    } catch (e) {
+      showToast('Błąd udostępniania suplementu');
+    }
   }
 
   function getSuppScheduleType() {

@@ -13,6 +13,7 @@ const Storage = (() => {
   const SUPP_STATIC_CACHE_KEY = 'suppAnalysisStaticCache';
   const ADHOC_QUICK_KEY = 'adhocQuickItems';
   const SEEN_SHARED_RECIPES_KEY = 'seenSharedRecipeIds';
+  const SEEN_SHARED_SUPPLEMENTS_KEY = 'seenSharedSupplementIds';
   const THEME_KEY = 'themePreference';
   const HISTORY_METRIC_KEY = 'historyMetricPreference';
 
@@ -479,6 +480,20 @@ const Storage = (() => {
       if (!prev || (s.updatedAt || '') > (prev.updatedAt || '')) byId.set(s.id, s);
     });
     return [...byId.values()];
+  }
+
+  // Lokalny guard przed duplikatem importu udostępnionego suplementu — jak przy przepisach
+  function getSeenSharedSupplementIds() {
+    const raw = localStorage.getItem(SEEN_SHARED_SUPPLEMENTS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  }
+
+  function addSeenSharedSupplementId(id) {
+    const ids = getSeenSharedSupplementIds();
+    if (!ids.includes(id)) {
+      ids.push(id);
+      localStorage.setItem(SEEN_SHARED_SUPPLEMENTS_KEY, JSON.stringify(ids));
+    }
   }
 
   // Różnica pełnych dni między datami YYYY-MM-DD (UTC, odporne na zmianę czasu)
@@ -1040,6 +1055,8 @@ const Storage = (() => {
     mergeRecipes,
     getSeenSharedRecipeIds,
     addSeenSharedRecipeId,
+    getSeenSharedSupplementIds,
+    addSeenSharedSupplementId,
     getGoals,
     getRawGoals,
     saveGoals,
