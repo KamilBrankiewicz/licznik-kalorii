@@ -395,6 +395,12 @@ const UI = (() => {
     }
   }
 
+  function pushSupplementAnalysesToCloud() {
+    if (window.FirebaseSync && FirebaseSync.isSignedIn()) {
+      FirebaseSync.pushSupplementAnalyses(Storage.getRawSupplementAnalyses()).catch(() => showToast('Błąd synchronizacji analiz suplementów'));
+    }
+  }
+
   function escapeHtml(str) {
     const div = document.createElement('div');
     div.textContent = str || '';
@@ -939,6 +945,11 @@ const UI = (() => {
       const mergedSuppLog = Storage.mergeSupplementLog(remoteSuppLog, Storage.getRawSupplementLog());
       Storage.saveRawSupplementLog(mergedSuppLog);
       await FirebaseSync.pushSupplementLog(mergedSuppLog);
+
+      const remoteSuppAnalyses = await FirebaseSync.pullSupplementAnalyses();
+      const mergedSuppAnalyses = Storage.mergeSupplementAnalyses(remoteSuppAnalyses, Storage.getRawSupplementAnalyses());
+      Storage.saveRawSupplementAnalyses(mergedSuppAnalyses);
+      await FirebaseSync.pushSupplementAnalyses(mergedSuppAnalyses);
 
       const remoteSettings = await FirebaseSync.pullSettings();
       const localSettings = Storage.getSettings();
@@ -1807,6 +1818,7 @@ const UI = (() => {
     document.getElementById('suppDateLabel').textContent = formatDateLabel(currentDate);
     renderSupplementsSection();
     renderSupplementsList();
+    renderSupplementAnalysesSection();
   }
 
   function suppLabel(s) {
@@ -2056,6 +2068,339 @@ const UI = (() => {
         e.stopPropagation();
         Storage.removeAdhocQuickItem(btn.dataset.name);
         renderAdhocSupplementsSection();
+      });
+    });
+  }
+
+  // ── Analiza AI suplementów (view-suplementy) ──
+
+  const SUPP_ANALYSIS_SCOPES = { day: 'Dzień', week: 'Tydzień', month: 'Miesiąc' };
+
+  function suppListForPrompt() {
+    return Storage.getSupplements().filter((s) => s.active !== false).map((s) => ({
+      nazwa: suppLabel(s), dawka: s.dose || null, notatki: s.notes || null,
+      pora: s.timing || 'any', dawek_dziennie: s.timesPerDay || 1
+    }));
+  }
+
+  function shiftDateStr(dateStr, deltaDays) {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    dt.setUTCDate(dt.getUTCDate() + deltaDays);
+    return dt.toISOString().slice(0, 10);
+  }
+
+  function dateRangeEnding(endDate, days) {
+    const arr = [];
+    for (let i = days - 1; i >= 0; i--) arr.push(shiftDateStr(endDate, -i));
+    return arr;
+  }
+
+  function groupAdhocCounts(dates) {
+    const counts = {};
+    dates.forEach((date) => {
+      Storage.getSupplementLogForDate(date).filter((r) => r.adhoc).forEach((r) => {
+        const name = (r.name || '').trim();
+        if (!name) return;
+        const key = name.toLowerCase();
+        counts[key] = counts[key] || { nazwa: name, ile_razy: 0 };
+        counts[key].ile_razy++;
+      });
+    });
+    return Object.values(counts);
+  }
+
+  function mealsForSuppPrompt(date) {
+    return Storage.getEntries(date)
+      .sort((a, b) => (a.time || '').localeCompare(b.time || ''))
+      .map((e) => ({
+        nazwa: e.name, godzina: e.time || null,
+        kcal: Math.round(Number(e.kcal) || 0),
+        bialko_g: Number(e.protein) || 0,
+        wegle_g: Number(e.carbs) || 0,
+        tluszcz_g: Number(e.fat) || 0
+      }));
+  }
+
+  // Zwraca { scope, startDate, endDate, periodData, pusty }; daty licz zawsze względem currentDate
+  function buildSuppAnalysisPayload(scope) {
+    const endDate = currentDate;
+    const dorazne30 = groupAdhocCounts(dateRangeEnding(endDate, 30));
+
+    if (scope === 'day') {
+      const due = Storage.getSupplements().filter((s) => Storage.isSupplementDueOn(s, endDate));
+      const dawki = due
+        .map((s) => ({ nazwa: suppLabel(s), godziny: Storage.getSupplementDoseTimes(endDate, s.id) }))
+        .filter((d) => d.godziny.length > 0);
+      const dorazne = Storage.getSupplementLogForDate(endDate).filter((r) => r.adhoc)
+        .map((r) => ({ nazwa: r.name, godzina: r.time || null }));
+      const posilki = mealsForSuppPrompt(endDate);
+      return {
+        scope, startDate: endDate, endDate,
+        periodData: { dawki, dorazne, posilki, dorazne_30_dni: dorazne30 },
+        pusty: due.length === 0 && dorazne.length === 0 && posilki.length === 0
+      };
+    }
+
+    const days = scope === 'week' ? 7 : 30;
+    const startDate = shiftDateStr(endDate, -(days - 1));
+    const range = dateRangeEnding(endDate, days);
+
+    const suplementy = Storage.getSupplements().map((s) => {
+      const dueDates = range.filter((d) => Storage.isSupplementDueOn(s, d));
+      if (dueDates.length === 0) return null;
+      const takenDates = dueDates.filter((d) => Storage.getSupplementTakenCount(d, s.id) > 0);
+      const item = { nazwa: suppLabel(s), dni_planowych: dueDates.length, dni_wzietych: takenDates.length };
+      if (scope === 'week') {
+        const allTimes = dueDates.flatMap((d) => Storage.getSupplementDoseTimes(d, s.id)).filter(Boolean);
+        item.typowe_godziny = [...new Set(allTimes)].sort();
+      } else {
+        let maxGap = 0, curGap = 0;
+        dueDates.forEach((d) => {
+          if (Storage.getSupplementTakenCount(d, s.id) > 0) curGap = 0;
+          else { curGap++; maxGap = Math.max(maxGap, curGap); }
+        });
+        item.najdluzsza_przerwa_dni = maxGap;
+      }
+      return item;
+    }).filter(Boolean);
+
+    const dorazneRange = range.flatMap((d) =>
+      Storage.getSupplementLogForDate(d).filter((r) => r.adhoc)
+        .map((r) => ({ nazwa: r.name, data: d, godzina: r.time || null }))
+    );
+
+    if (scope === 'week') {
+      const entriesDays = range.map((d) => Storage.getEntries(d)).filter((e) => e.length > 0);
+      const n = entriesDays.length || 1;
+      const sum = entriesDays.reduce((acc, dayEntries) => {
+        dayEntries.forEach((e) => {
+          acc.kcal += Number(e.kcal) || 0;
+          acc.protein += Number(e.protein) || 0;
+          acc.carbs += Number(e.carbs) || 0;
+          acc.fat += Number(e.fat) || 0;
+        });
+        return acc;
+      }, { kcal: 0, protein: 0, carbs: 0, fat: 0 });
+      const typowePory = [...new Set(entriesDays.flatMap((d) => d.map((e) => e.time).filter(Boolean)))].sort();
+      return {
+        scope, startDate, endDate,
+        periodData: {
+          suplementy,
+          dorazne: dorazneRange,
+          posilki_srednio: {
+            kcal: Math.round(sum.kcal / n), bialko_g: Math.round(sum.protein / n),
+            wegle_g: Math.round(sum.carbs / n), tluszcz_g: Math.round(sum.fat / n),
+            typowe_pory: typowePory
+          },
+          dorazne_30_dni: dorazne30
+        },
+        pusty: suplementy.length === 0 && dorazneRange.length === 0 && entriesDays.length === 0
+      };
+    }
+
+    const doraznezliczone = groupAdhocCounts(range);
+    return {
+      scope, startDate, endDate,
+      periodData: { suplementy, dorazne_zliczone: doraznezliczone, dorazne_30_dni: dorazne30 },
+      pusty: suplementy.length === 0 && doraznezliczone.length === 0
+    };
+  }
+
+  async function runSupplementAnalysis(scope) {
+    const apiKey = Storage.getSettings().geminiApiKey;
+    const statusEl = document.getElementById('suppAnalysisStatus');
+    const errorEl = document.getElementById('suppAnalysisError');
+    if (errorEl) errorEl.textContent = '';
+    if (!statusEl) return;
+    if (!apiKey) { statusEl.textContent = 'Brak klucza Gemini — uzupełnij w Ustawieniach.'; return; }
+
+    const supplements = suppListForPrompt();
+    const payload = buildSuppAnalysisPayload(scope);
+    if (supplements.length === 0 && payload.pusty) {
+      statusEl.textContent = 'Brak danych do analizy.';
+      return;
+    }
+
+    const cache = Storage.getSuppStaticCache();
+    const hasAnyReport = Storage.getSupplementAnalyses().length > 0;
+    if (!cache && !hasAnyReport) {
+      if (!confirm('Lista suplementów i leków zostanie wysłana do Gemini API (Google). Kontynuować?')) return;
+    }
+
+    statusEl.textContent = 'Analizuję…';
+    try {
+      const parsed = await Ocr.analyzeSupplements(
+        scope,
+        { supplements, startDate: payload.startDate, endDate: payload.endDate, periodData: payload.periodData },
+        Storage.getSettings().healthProfile, !!cache, apiKey
+      );
+
+      if (cache) {
+        parsed.interactions = cache.interactions;
+        parsed.dose_totals = cache.dose_totals;
+      } else {
+        Storage.saveSuppStaticCache(parsed.interactions, parsed.dose_totals);
+      }
+
+      Storage.saveSupplementAnalysis(scope, payload.startDate, payload.endDate, parsed);
+      pushSupplementAnalysesToCloud();
+      statusEl.textContent = '';
+      renderSupplementAnalysesSection();
+      showToast('Zapisano raport');
+    } catch (e) {
+      statusEl.textContent = '';
+      if (errorEl) errorEl.textContent = analysisErrorMessage(e.message);
+    }
+  }
+
+  function suppSeverityBadge(severity) {
+    return `<span class="supp-analysis-badge sev-${escapeHtml(severity || 'info')}">${escapeHtml(severity || 'info')}</span>`;
+  }
+
+  function suppAnalysisTitle(r) {
+    const label = SUPP_ANALYSIS_SCOPES[r.scope] || r.scope;
+    if (r.scope === 'day') return `${label} ${r.endDate}`;
+    return `${label} ${r.startDate} – ${r.endDate}`;
+  }
+
+  function renderSuppAnalysisBody(result) {
+    if (!result || typeof result !== 'object') return '<div class="hint">Nie udało się odczytać raportu.</div>';
+
+    const interactions = result.interactions || [];
+    const doseTotals = result.dose_totals || [];
+    const timingIssues = result.timing_issues || [];
+    const compliance = result.compliance || null;
+    const adhocPatterns = result.adhoc_patterns || [];
+    const recommendations = result.recommendations || [];
+    const dataGaps = result.data_gaps || [];
+
+    let html = '';
+
+    if (interactions.length) {
+      html += `<div class="analysis-block"><strong>Interakcje</strong>
+        ${interactions.map((i) => `
+          <div class="supp-analysis-item">
+            ${suppSeverityBadge(i.severity)}<span class="supp-analysis-item-title">${escapeHtml((i.items || []).join(' + '))}</span>
+            ${i.problem ? `<div class="supp-analysis-item-text">${escapeHtml(i.problem)}</div>` : ''}
+            ${i.advice ? `<div class="supp-analysis-item-text">${escapeHtml(i.advice)}</div>` : ''}
+          </div>
+        `).join('')}
+      </div>`;
+    }
+
+    if (doseTotals.length) {
+      html += `<div class="analysis-block"><strong>Dawki łączne</strong>
+        ${doseTotals.map((d) => `
+          <div class="supp-analysis-item">
+            <span class="supp-analysis-badge status-${escapeHtml(d.status || 'ok')}">${escapeHtml(d.status || 'ok')}</span>
+            <span class="supp-analysis-item-title">${escapeHtml(d.substance || '')}</span>
+            <div class="supp-analysis-item-text">${escapeHtml(d.daily_total || '')}${d.upper_limit ? ` (limit: ${escapeHtml(d.upper_limit)})` : ''}</div>
+            ${d.sources && d.sources.length ? `<div class="supp-analysis-item-text">Źródła: ${escapeHtml(d.sources.join(', '))}</div>` : ''}
+          </div>
+        `).join('')}
+      </div>`;
+    }
+
+    if (timingIssues.length) {
+      html += `<div class="analysis-block"><strong>Pory przyjmowania</strong>
+        ${timingIssues.map((t) => `
+          <div class="supp-analysis-item">
+            <span class="supp-analysis-item-title">${escapeHtml(t.item || '')}</span>
+            ${t.observed ? `<div class="supp-analysis-item-text">${escapeHtml(t.observed)}</div>` : ''}
+            ${t.advice ? `<div class="supp-analysis-item-text">${escapeHtml(t.advice)}</div>` : ''}
+          </div>
+        `).join('')}
+      </div>`;
+    }
+
+    if (compliance && (compliance.pct || compliance.note)) {
+      html += `<div class="analysis-block"><strong>Regularność</strong>
+        <div>${escapeHtml(String(compliance.pct != null ? compliance.pct : ''))}${compliance.pct != null ? '%' : ''}</div>
+        ${compliance.note ? `<div class="supp-analysis-item-text">${escapeHtml(compliance.note)}</div>` : ''}
+      </div>`;
+    }
+
+    if (adhocPatterns.length) {
+      html += `<div class="analysis-block"><strong>Leki doraźne</strong>
+        ${adhocPatterns.map((a) => `
+          <div class="supp-analysis-item">
+            <span class="supp-analysis-item-title">${escapeHtml(a.name || '')}${a.count ? ` × ${escapeHtml(String(a.count))}` : ''}</span>
+            ${a.note ? `<div class="supp-analysis-item-text">${escapeHtml(a.note)}</div>` : ''}
+          </div>
+        `).join('')}
+      </div>`;
+    }
+
+    if (result.summary) {
+      html += `<div class="analysis-block">${escapeHtml(result.summary)}</div>`;
+    }
+
+    if (recommendations.length) {
+      html += `<div class="analysis-block"><strong>Zalecenia</strong>
+        <ul class="analysis-recommendations">${recommendations.map((r) => `<li>${escapeHtml(r)}</li>`).join('')}</ul>
+      </div>`;
+    }
+
+    if (dataGaps.length) {
+      html += `<div class="analysis-block hint">Braki w danych: ${dataGaps.map(escapeHtml).join('; ')}</div>`;
+    }
+
+    html += `<div class="hint" style="margin-top:8px;">${escapeHtml(result.disclaimer || 'To nie jest porada medyczna. W razie wątpliwości skonsultuj się z lekarzem lub farmaceutą.')}</div>`;
+
+    return html;
+  }
+
+  function renderSupplementAnalysesSection() {
+    const container = document.getElementById('supplementAnalysesSection');
+    if (!container) return;
+
+    const reports = Storage.getSupplementAnalyses();
+    const listHtml = reports.length === 0
+      ? '<div class="hint">Brak zapisanych analiz.</div>'
+      : reports.map((r) => `
+          <div class="analysis-card">
+            <div class="analysis-card-header" data-action="toggle">
+              <span class="analysis-card-title">${escapeHtml(suppAnalysisTitle(r))}</span>
+              <button class="entry-delete" data-action="delete" data-key="${escapeHtml(r.key)}" aria-label="Usuń raport">×</button>
+            </div>
+            <div class="analysis-card-body" hidden>${renderSuppAnalysisBody(r.result)}</div>
+          </div>
+        `).join('');
+
+    container.innerHTML = `
+      <div class="section-header-row">
+        <h3 class="section-title">Analiza AI</h3>
+      </div>
+      <div class="supp-analysis-scope-row">
+        <button class="btn btn-secondary" data-scope="day">Dzień</button>
+        <button class="btn btn-secondary" data-scope="week">Tydzień</button>
+        <button class="btn btn-secondary" data-scope="month">Miesiąc</button>
+      </div>
+      <div id="suppAnalysisStatus" class="hint"></div>
+      <div id="suppAnalysisError" class="hint" style="color:var(--danger);"></div>
+      <div id="suppAnalysesList">${listHtml}</div>
+    `;
+
+    container.querySelectorAll('[data-scope]').forEach((btn) => {
+      btn.addEventListener('click', () => runSupplementAnalysis(btn.dataset.scope));
+    });
+    container.querySelectorAll('[data-action="toggle"]').forEach((el) => {
+      el.addEventListener('click', (e) => {
+        if (e.target.closest('[data-action="delete"]')) return;
+        const body = el.parentElement.querySelector('.analysis-card-body');
+        body.hidden = !body.hidden;
+      });
+    });
+    container.querySelectorAll('[data-action="delete"]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (confirm('Usunąć ten raport?')) {
+          Storage.deleteSupplementAnalysis(btn.dataset.key);
+          pushSupplementAnalysesToCloud();
+          renderSupplementAnalysesSection();
+          showToast('Usunięto raport');
+        }
       });
     });
   }

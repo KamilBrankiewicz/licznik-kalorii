@@ -8,6 +8,8 @@ const Storage = (() => {
   const DAILY_ANALYSES_KEY = 'dailyAnalyses';
   const SUPPLEMENTS_KEY = 'supplements';
   const SUPPLEMENT_LOG_KEY = 'supplementLog';
+  const SUPPLEMENT_ANALYSES_KEY = 'supplementAnalyses';
+  const SUPP_STATIC_CACHE_KEY = 'suppAnalysisStaticCache';
   const SEEN_SHARED_RECIPES_KEY = 'seenSharedRecipeIds';
   const THEME_KEY = 'themePreference';
   const HISTORY_METRIC_KEY = 'historyMetricPreference';
@@ -700,6 +702,75 @@ const Storage = (() => {
     return merged;
   }
 
+  // ── Raporty analizy suplementów — mapa { "scope__endDate": {...} },
+  // nagrobki + merge jak przy dailyAnalyses ──
+
+  function getRawSupplementAnalyses() {
+    const raw = localStorage.getItem(SUPPLEMENT_ANALYSES_KEY);
+    return raw ? JSON.parse(raw) : {};
+  }
+
+  function saveRawSupplementAnalyses(map) {
+    localStorage.setItem(SUPPLEMENT_ANALYSES_KEY, JSON.stringify(map));
+  }
+
+  function getSupplementAnalyses() {
+    return Object.entries(getRawSupplementAnalyses())
+      .filter(([, r]) => !r.deleted)
+      .map(([key, r]) => ({ key, ...r }))
+      .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+  }
+
+  function saveSupplementAnalysis(scope, startDate, endDate, result) {
+    const map = getRawSupplementAnalyses();
+    map[`${scope}__${endDate}`] = {
+      scope, startDate, endDate, result, updatedAt: new Date().toISOString()
+    };
+    saveRawSupplementAnalyses(map);
+  }
+
+  function deleteSupplementAnalysis(key) {
+    const map = getRawSupplementAnalyses();
+    if (!map[key]) return;
+    map[key] = { deleted: true, updatedAt: new Date().toISOString() };
+    saveRawSupplementAnalyses(map);
+  }
+
+  function mergeSupplementAnalyses(mapA, mapB) {
+    const merged = { ...mapA };
+    Object.entries(mapB).forEach(([key, r]) => {
+      const prev = merged[key];
+      if (!prev || (r.updatedAt || '') > (prev.updatedAt || '')) merged[key] = r;
+    });
+    return merged;
+  }
+
+  // ── Cache sekcji statycznych analizy (interakcje, sumy dawek) — lokalny, odtwarzalny ──
+
+  function getSupplementsFingerprint() {
+    return getSupplements()
+      .filter((s) => s.active !== false)
+      .sort((a, b) => a.id.localeCompare(b.id))
+      .map((s) => `${s.id}:${s.updatedAt || ''}`)
+      .join('|');
+  }
+
+  function getSuppStaticCache() {
+    const raw = localStorage.getItem(SUPP_STATIC_CACHE_KEY);
+    if (!raw) return null;
+    const cache = JSON.parse(raw);
+    return cache.fingerprint === getSupplementsFingerprint() ? cache : null;
+  }
+
+  function saveSuppStaticCache(interactions, doseTotals) {
+    localStorage.setItem(SUPP_STATIC_CACHE_KEY, JSON.stringify({
+      fingerprint: getSupplementsFingerprint(),
+      interactions: interactions || [],
+      dose_totals: doseTotals || [],
+      updatedAt: new Date().toISOString()
+    }));
+  }
+
   function exportData() {
     const entries = {};
     getAllDates().forEach((date) => {
@@ -715,7 +786,8 @@ const Storage = (() => {
       analysisGoals: getRawGoals(),
       dailyAnalyses: getRawDailyAnalyses(),
       supplements: getRawSupplements(),
-      supplementLog: getRawSupplementLog()
+      supplementLog: getRawSupplementLog(),
+      supplementAnalyses: getRawSupplementAnalyses()
     };
   }
 
@@ -762,6 +834,11 @@ const Storage = (() => {
         mode === 'replace' ? data.supplementLog : mergeSupplementLog(getRawSupplementLog(), data.supplementLog)
       );
     }
+    if (data.supplementAnalyses) {
+      saveRawSupplementAnalyses(mode === 'replace'
+        ? data.supplementAnalyses
+        : mergeSupplementAnalyses(getRawSupplementAnalyses(), data.supplementAnalyses));
+    }
   }
 
   function clearAllData() {
@@ -777,6 +854,8 @@ const Storage = (() => {
         key === DAILY_ANALYSES_KEY ||
         key === SUPPLEMENTS_KEY ||
         key === SUPPLEMENT_LOG_KEY ||
+        key === SUPPLEMENT_ANALYSES_KEY ||
+        key === SUPP_STATIC_CACHE_KEY ||
         key.startsWith(ENTRY_PREFIX)
       ) {
         keysToRemove.push(key);
@@ -867,6 +946,15 @@ const Storage = (() => {
     removeAdhocQuickItem,
     deleteSupplementLogEntry,
     mergeSupplementLog,
+    getRawSupplementAnalyses,
+    saveRawSupplementAnalyses,
+    getSupplementAnalyses,
+    saveSupplementAnalysis,
+    deleteSupplementAnalysis,
+    mergeSupplementAnalyses,
+    getSupplementsFingerprint,
+    getSuppStaticCache,
+    saveSuppStaticCache,
     getUniqueProducts,
     exportData,
     importData,

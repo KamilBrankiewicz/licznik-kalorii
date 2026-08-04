@@ -53,6 +53,8 @@ index.html  →  app.js  →  ui.js  →  storage.js  →  localStorage
 | `recipes` | `Recipe[]` | przepisy z listą składników, z nagrobkami |
 | `supplements` | `Supplement[]` | definicje suplementów/leków, z nagrobkami |
 | `supplementLog` | `{ [YYYY-MM-DD__id]: LogRec }` | dziennik przyjęć (planowych i doraźnych), z nagrobkami |
+| `supplementAnalyses` | `{ [scope__endDate]: AnalysisRec }` | zapisane raporty analizy AI suplementów (dzień/tydzień/miesiąc), z nagrobkami |
+| `suppAnalysisStaticCache` | `{ fingerprint, interactions, dose_totals, updatedAt }` | lokalny cache sekcji zależnych tylko od listy suplementów — **nie** synchronizowany, bez nagrobków, poza eksportem |
 
 ```javascript
 Entry = {
@@ -89,6 +91,7 @@ users/{uid}/meta/favorites      → { list: [...] }
 users/{uid}/meta/recipes        → { list: [...] }
 users/{uid}/meta/supplements    → { list: [...] }
 users/{uid}/meta/supplementLog  → { map: {...} }
+users/{uid}/meta/supplementAnalyses → { map: {...} }
 
 sharedRecipes/{recipientUid}/inbox/{itemId} → kopia Recipe + { sharedBy: uid, sharedAt }
 ```

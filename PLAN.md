@@ -6,7 +6,7 @@
 > [docs/MAINTENANCE.md](docs/MAINTENANCE.md) — checklista wdrożenia ·
 > [docs/CHANGELOG.md](docs/CHANGELOG.md) — co i kiedy się zmieniło.
 
-## Stan realizacji (2026-08-03)
+## Stan realizacji (2026-08-04)
 
 **Zrobione:**
 - ✅ Faza 1 (MVP) w całości: szkielet PWA, storage, widok dzienny, formularz ręczny, OCR etykiet (Gemini), ustawienia, nawigacja + historia
@@ -27,6 +27,9 @@
   - Udostępnianie przepisów między dwoma kontami (partner UID w Ustawieniach, skrzynka `sharedRecipes` w Firestore) — przepis trafia do listy przepisów drugiej osoby, każdy sam deklaruje swoją porcję przez „Dodaj porcję”; przycisk kopiowania własnego UID w Ustawieniach; zakładki „Własne”/„Udostępnione” w widoku Przepisy rozdzielają otrzymane przepisy od własnych
   - Ustawienia przeorganizowane w zwijane sekcje (`<details>`), z sekcją „Wygląd” na górze: ręczny przełącznik motywu Jasny/Ciemny/Auto, zapisywany per-urządzenie (`Storage.getTheme/saveTheme`, poza syncem Firebase)
   - Moduł suplementów i leków (ukryty domyślnie, patrz Faza 6 niżej)
+  - Analiza AI suplementów i leków (interakcje, sumy dawek vs limity, pory dawek vs posiłki,
+    regularność przyjmowania, wzorce leków doraźnych) w widoku suplementów, z lokalnym cache
+    sekcji statycznych — `docs/PLAN-ANALIZA-SUPLEMENTOW.md`
 
 **Pozostało (świadomie odłożone):**
 - Wielojęzyczność — raczej bez sensu przy aplikacji dla jednego użytkownika

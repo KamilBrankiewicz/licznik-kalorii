@@ -373,5 +373,79 @@ ${GOAL_RESPONSE_FORMAT}`;
     return callGemini([{ text: prompt }], apiKey);
   }
 
-  return { analyzeLabel, analyzeVoiceEntry, analyzeScreenshot, analyzeMealPhoto, analyzeRecipeText, analyzeRecipeImage, analyzeIngredientLookup, transcribeAudio, analyzeDayAgainstGoal };
+  const SUPP_RESPONSE_FORMAT = `## Format odpowiedzi — WYŁĄCZNIE poniższy JSON, bez tekstu przed/po.
+Pusta tablica jest poprawną odpowiedzią w każdej sekcji — NIE wymyślaj ustaleń, żeby wypełnić sekcje.
+Sekcje oznaczone w zadaniach jako pomijane zwróć jako pustą tablicę.
+{
+  "interactions": [
+    { "items": ["nazwa A", "nazwa B"], "severity": "info|uwaga|istotne",
+      "problem": "na czym polega interakcja (1-2 zdania)",
+      "advice": "co zrobić, np. 'rozdziel przyjmowanie o min. 2h'" }
+  ],
+  "dose_totals": [
+    { "substance": "nazwa substancji", "daily_total": "łączna dawka dzienna ze wszystkich źródeł",
+      "upper_limit": "górny bezpieczny limit lub null, jeśli nieznany",
+      "status": "ok|blisko_limitu|przekroczenie", "sources": ["z których pozycji się sumuje"] }
+  ],
+  "timing_issues": [
+    { "item": "nazwa", "observed": "co zaobserwowano w danych (pora dawki vs posiłki)",
+      "advice": "konkretna sugestia zmiany pory" }
+  ],
+  "compliance": { "pct": 0, "note": "1-2 zdania o regularności; wskaż najsłabsze pozycje" },
+  "adhoc_patterns": [
+    { "name": "nazwa leku", "count": 0, "note": "obserwacja; przy częstym użyciu zasugeruj konsultację" }
+  ],
+  "summary": "2-3 zdania podsumowania całości",
+  "recommendations": ["konkretna, wykonalna porada (maks. 4 pozycje)"],
+  "data_gaps": ["czego zabrakło w danych, np. 'brak składu multiwitaminy'"],
+  "confidence": "low|medium|high",
+  "disclaimer": "krótkie zastrzeżenie: to nie porada medyczna"
+}
+Jeśli lista suplementów i log są puste, zwróć: {"error": "brak danych do analizy"}`;
+
+  const SUPP_SCOPE_TASKS = {
+    day: `1. Interakcje między wszystkimi pozycjami (także doraźnymi i z profilem zdrowotnym).
+2. Sumowanie substancji ze wszystkich źródeł vs górne bezpieczne limity.
+3. Pory dawek vs posiłki z tego dnia (wchłanianie: tłuszcz, kawa, nabiał, "na czczo", odstępy między konkurującymi minerałami).
+Sekcje compliance i adhoc_patterns pomiń (pusta tablica / pct 0).`,
+    week: `1. Interakcje między wszystkimi pozycjami (także doraźnymi i z profilem zdrowotnym).
+2. Sumowanie substancji ze wszystkich źródeł vs górne bezpieczne limity.
+3. Regularność przyjmowania (compliance) na podstawie zagregowanych danych.
+4. Wzorce leków doraźnych (częstotliwość, interakcje ze stałymi pozycjami).
+Sekcję timing_issues pomiń (pusta tablica).`,
+    month: `1. Interakcje między wszystkimi pozycjami (także doraźnymi i z profilem zdrowotnym).
+2. Sumowanie substancji ze wszystkich źródeł vs górne bezpieczne limity.
+3. Regularność przyjmowania (compliance) — trendy, najdłuższe przerwy.
+4. Wzorce leków doraźnych w skali miesiąca (nadużywanie, powtarzalność objawów).
+Sekcję timing_issues pomiń (pusta tablica).`
+  };
+
+  // skipStatic = sekcje interactions/dose_totals są w cache i mają być pominięte
+  async function analyzeSupplements(scope, payload, healthProfile, skipStatic, apiKey) {
+    const profileText = (healthProfile || '').trim() || 'Nie podano.';
+    const skipNote = skipStatic
+      ? '\nUWAGA: sekcje interactions i dose_totals pomiń całkowicie (zwróć puste tablice) — są już policzone.'
+      : '';
+    const prompt = `Jesteś asystentem analizy suplementacji i leków. NIE jesteś lekarzem — przy każdej
+istotnej interakcji lub przekroczeniu dawki zalecaj konsultację z lekarzem lub farmaceutą.
+Odpowiadaj wyłącznie po polsku, rzeczowo i ostrożnie.
+
+## Profil użytkownika
+${profileText}
+
+## Stałe suplementy i leki
+${JSON.stringify(payload.supplements)}
+
+## Dane z okresu (zakres: ${scope}, ${payload.startDate} – ${payload.endDate})
+${JSON.stringify(payload.periodData)}
+
+## Zadania
+${SUPP_SCOPE_TASKS[scope]}${skipNote}
+Raportuj TYLKO rzeczywiste ustalenia poparte danymi wejściowymi.
+
+${SUPP_RESPONSE_FORMAT}`;
+    return callGemini([{ text: prompt }], apiKey);
+  }
+
+  return { analyzeLabel, analyzeVoiceEntry, analyzeScreenshot, analyzeMealPhoto, analyzeRecipeText, analyzeRecipeImage, analyzeIngredientLookup, transcribeAudio, analyzeDayAgainstGoal, analyzeSupplements };
 })();

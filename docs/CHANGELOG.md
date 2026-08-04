@@ -15,6 +15,26 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku — niezacommitowane] 2026-08-04 — Analiza AI suplementów i leków (Gemini)
+**Co:** W widoku suplementów doszła sekcja „Analiza AI" z trzema zakresami (Dzień/Tydzień/
+  Miesiąc). Jedno wywołanie Gemini zwraca wielosekcyjny raport: interakcje między pozycjami,
+  sumowanie substancji vs limity, pory dawek vs posiłki (tylko dzień), regularność przyjmowania
+  i wzorce leków doraźnych (tylko tydzień/miesiąc). Raporty są zapisywane, synchronizowane
+  i przetrwają eksport/import. Każdy raport kończy się zastrzeżeniem, że to nie porada medyczna.
+**Dlaczego:** Ręczne śledzenie interakcji i limitów dawek między wieloma suplementami/lekami
+  jest trudne; AI robi to na podstawie już zebranych danych z modułu suplementów, bez dodatkowej
+  pracy użytkownika.
+**Pliki:** `js/storage.js`, `js/ocr.js`, `js/firebase-sync.js`, `js/ui.js`, `index.html`,
+  `css/style.css`, `sw.js`
+**Uwagi:**
+- Sekcje `interactions`/`dose_totals` zależą tylko od listy definicji, więc są cache'owane
+  lokalnie (`suppAnalysisStaticCache`, z fingerprintem listy) i pomijane w kolejnych promptach
+  dopóki lista się nie zmieni — oszczędza tokeny.
+- Tydzień/miesiąc dostają dane zagregowane w JS (nie surowy log) — prompt rośnie wolniej niż
+  liczba dni.
+- Przy pierwszej analizie w ogóle (brak cache i brak zapisanych raportów) pokazuje się
+  potwierdzenie wysyłki danych do Gemini API.
+
 ## [w toku — niezacommitowane] 2026-08-03 — Suplementy: picker dni tygodnia, sekcja leków doraźnych
 **Co:**
 - Picker dni tygodnia w formularzu suplementu przerobiony z prostych checkboxów na pełną

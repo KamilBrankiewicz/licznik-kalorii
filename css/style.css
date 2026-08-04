@@ -1316,6 +1316,23 @@ h1.page-title {
 }
 .supp-plus-btn:active { transform: scale(.9); }
 
+/* Analiza AI suplementów (view-suplementy) */
+.supp-analysis-scope-row { display: flex; gap: 8px; margin: 10px 0; }
+.supp-analysis-scope-row .btn { flex: 1; padding: 8px 0; font-size: 12.5px; }
+.supp-analysis-badge {
+  display: inline-block; font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .3px; padding: 2px 8px; border-radius: 999px; margin-right: 6px;
+  background: var(--border); color: var(--text-muted);
+}
+.supp-analysis-badge.sev-uwaga { background: rgba(251,191,36,0.18); color: var(--warning); }
+.supp-analysis-badge.sev-istotne, .supp-analysis-badge.status-przekroczenie {
+  background: rgba(248,113,113,0.18); color: var(--danger);
+}
+.supp-analysis-item { padding: 8px 0; border-top: 1px solid var(--border); font-size: 13.5px; }
+.supp-analysis-item:first-child { border-top: none; }
+.supp-analysis-item-title { font-weight: 600; }
+.supp-analysis-item-text { color: var(--text-muted); font-size: 12.5px; margin-top: 2px; }
+
 /* Day-of-week grid picker */
 .dow-grid {
   display: grid; grid-template-columns: repeat(7, 1fr); gap: 0;
