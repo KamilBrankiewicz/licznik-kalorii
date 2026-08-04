@@ -9,6 +9,7 @@ const Storage = (() => {
   const SUPPLEMENTS_KEY = 'supplements';
   const SUPPLEMENT_LOG_KEY = 'supplementLog';
   const SUPPLEMENT_ANALYSES_KEY = 'supplementAnalyses';
+  const DIET_ANALYSES_KEY = 'dietAnalyses';
   const SUPP_STATIC_CACHE_KEY = 'suppAnalysisStaticCache';
   const SEEN_SHARED_RECIPES_KEY = 'seenSharedRecipeIds';
   const THEME_KEY = 'themePreference';
@@ -745,6 +746,49 @@ const Storage = (() => {
     return merged;
   }
 
+  // ── Raporty analizy AI diety — mapa { "scope__endDate": {...} },
+  // nagrobki + merge jak przy supplementAnalyses ──
+
+  function getRawDietAnalyses() {
+    const raw = localStorage.getItem(DIET_ANALYSES_KEY);
+    return raw ? JSON.parse(raw) : {};
+  }
+
+  function saveRawDietAnalyses(map) {
+    localStorage.setItem(DIET_ANALYSES_KEY, JSON.stringify(map));
+  }
+
+  function getDietAnalyses() {
+    return Object.entries(getRawDietAnalyses())
+      .filter(([, r]) => !r.deleted)
+      .map(([key, r]) => ({ key, ...r }))
+      .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+  }
+
+  function saveDietAnalysis(scope, startDate, endDate, result) {
+    const map = getRawDietAnalyses();
+    map[`${scope}__${endDate}`] = {
+      scope, startDate, endDate, result, updatedAt: new Date().toISOString()
+    };
+    saveRawDietAnalyses(map);
+  }
+
+  function deleteDietAnalysis(key) {
+    const map = getRawDietAnalyses();
+    if (!map[key]) return;
+    map[key] = { deleted: true, updatedAt: new Date().toISOString() };
+    saveRawDietAnalyses(map);
+  }
+
+  function mergeDietAnalyses(mapA, mapB) {
+    const merged = { ...mapA };
+    Object.entries(mapB).forEach(([key, r]) => {
+      const prev = merged[key];
+      if (!prev || (r.updatedAt || '') > (prev.updatedAt || '')) merged[key] = r;
+    });
+    return merged;
+  }
+
   // ── Cache sekcji statycznych analizy (interakcje, sumy dawek) — lokalny, odtwarzalny ──
 
   function getSupplementsFingerprint() {
@@ -787,7 +831,8 @@ const Storage = (() => {
       dailyAnalyses: getRawDailyAnalyses(),
       supplements: getRawSupplements(),
       supplementLog: getRawSupplementLog(),
-      supplementAnalyses: getRawSupplementAnalyses()
+      supplementAnalyses: getRawSupplementAnalyses(),
+      dietAnalyses: getRawDietAnalyses()
     };
   }
 
@@ -839,6 +884,11 @@ const Storage = (() => {
         ? data.supplementAnalyses
         : mergeSupplementAnalyses(getRawSupplementAnalyses(), data.supplementAnalyses));
     }
+    if (data.dietAnalyses) {
+      saveRawDietAnalyses(mode === 'replace'
+        ? data.dietAnalyses
+        : mergeDietAnalyses(getRawDietAnalyses(), data.dietAnalyses));
+    }
   }
 
   function clearAllData() {
@@ -855,6 +905,7 @@ const Storage = (() => {
         key === SUPPLEMENTS_KEY ||
         key === SUPPLEMENT_LOG_KEY ||
         key === SUPPLEMENT_ANALYSES_KEY ||
+        key === DIET_ANALYSES_KEY ||
         key === SUPP_STATIC_CACHE_KEY ||
         key.startsWith(ENTRY_PREFIX)
       ) {
@@ -952,6 +1003,12 @@ const Storage = (() => {
     saveSupplementAnalysis,
     deleteSupplementAnalysis,
     mergeSupplementAnalyses,
+    getRawDietAnalyses,
+    saveRawDietAnalyses,
+    getDietAnalyses,
+    saveDietAnalysis,
+    deleteDietAnalysis,
+    mergeDietAnalyses,
     getSupplementsFingerprint,
     getSuppStaticCache,
     saveSuppStaticCache,

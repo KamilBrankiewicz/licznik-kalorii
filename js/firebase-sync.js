@@ -216,6 +216,19 @@ async function pullSupplementAnalyses() {
   return snap.exists() ? snap.data().map || {} : {};
 }
 
+async function pushDietAnalyses(map) {
+  if (!currentUser) return;
+  const { doc, setDoc } = firestoreMod;
+  await setDoc(doc(db, 'users', currentUser.uid, 'meta', 'dietAnalyses'), { map });
+}
+
+async function pullDietAnalyses() {
+  if (!currentUser) return {};
+  const { doc, getDoc } = firestoreMod;
+  const snap = await getDoc(doc(db, 'users', currentUser.uid, 'meta', 'dietAnalyses'));
+  return snap.exists() ? snap.data().map || {} : {};
+}
+
 const FirebaseSync = {
   init,
   signIn,
@@ -243,6 +256,8 @@ const FirebaseSync = {
   pullSupplementLog,
   pushSupplementAnalyses,
   pullSupplementAnalyses,
+  pushDietAnalyses,
+  pullDietAnalyses,
   pushSharedRecipe,
   pullSharedRecipes,
   deleteSharedRecipe,

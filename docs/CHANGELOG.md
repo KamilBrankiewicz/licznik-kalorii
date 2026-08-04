@@ -15,6 +15,31 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku — niezacommitowane] 2026-08-04 — Analiza AI diety (tydzień/miesiąc/kwartał)
+**Co:** W Dzienniku, pod istniejącym raportem odżywczym dnia, doszła sekcja „Analiza AI diety"
+  z trzema zakresami wielodniowymi (Tydzień/Miesiąc/Kwartał — celowo bez „Dnia", bo ten
+  przypadek pokrywa już analiza względem celów). Raport zawiera bilans energetyczny
+  (zmiana wagi, szacowane TDEE i dzienny deficyt/nadwyżka), przegląd średnich makro vs cele,
+  wykryte wzorce (regularność, dni odstające, jakość diety) i rekomendacje. Bilans liczony
+  w JS z pomiarów wagi (`Δkg × 7700 / dni`), AI go tylko interpretuje — nie przelicza.
+**Dlaczego:** Motywujący przypadek: „schudłem 1 kg w miesiąc, co to oznacza względem tego,
+  co jadłem?" — wymaga trendów wielodniowych i korelacji spożycia z wagą, czego nie daje
+  analiza pojedynczego dnia względem celu.
+**Pliki:** `js/storage.js`, `js/ocr.js`, `js/firebase-sync.js`, `js/ui.js`, `index.html`,
+  `css/style.css`, `sw.js`
+**Uwagi:**
+- Bez cache'u statycznego (w przeciwieństwie do analizy suplementów) — tu każda sekcja
+  zależy od danych okresu, nic nie jest niezmienne między wywołaniami.
+- Guard w JS przed wywołaniem API: minimalna liczba dni z wpisami (week ≥ 3, month ≥ 7,
+  quarter ≥ 14) — poniżej progu zero żądań sieciowych, tylko komunikat.
+- Budżet tokenów rośnie z zakresem: week wysyła dzienne wiersze + nazwy posiłków, month —
+  30 podsumowań dziennych bez nazw + top-10 częstych produktów, quarter — 13 agregatów
+  tygodniowych + top-15 produktów (nigdy pojedyncze wpisy dla month/quarter).
+- Waga jest opcjonalna: przy < 2 pomiarach lub rozpiętości < 5 dni `bilans_wstepny` to
+  `null`, a AI ma to odnotować w `data_gaps` zamiast zgadywać.
+
+---
+
 ## [w toku — niezacommitowane] 2026-08-04 — Analiza AI suplementów i leków (Gemini)
 **Co:** W widoku suplementów doszła sekcja „Analiza AI" z trzema zakresami (Dzień/Tydzień/
   Miesiąc). Jedno wywołanie Gemini zwraca wielosekcyjny raport: interakcje między pozycjami,

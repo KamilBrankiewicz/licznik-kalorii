@@ -30,6 +30,9 @@
   - Analiza AI suplementów i leków (interakcje, sumy dawek vs limity, pory dawek vs posiłki,
     regularność przyjmowania, wzorce leków doraźnych) w widoku suplementów, z lokalnym cache
     sekcji statycznych — `docs/PLAN-ANALIZA-SUPLEMENTOW.md`
+  - Analiza AI diety w Dzienniku (Tydzień/Miesiąc/Kwartał) — bilans energetyczny liczony w JS
+    z pomiarów wagi (AI go tylko interpretuje), przegląd makro vs cele, wzorce i rekomendacje;
+    bez cache'u statycznego, z guardem „za mało danych" przed wywołaniem API
 
 **Pozostało (świadomie odłożone):**
 - Wielojęzyczność — raczej bez sensu przy aplikacji dla jednego użytkownika

@@ -287,6 +287,7 @@ const UI = (() => {
     }
 
     renderDailyAnalysesSection();
+    renderDietAnalysesSection();
   }
 
   // Relog: kopiuje wpis na dziś z bieżącą godziną (kategoria wg godziny)
@@ -398,6 +399,12 @@ const UI = (() => {
   function pushSupplementAnalysesToCloud() {
     if (window.FirebaseSync && FirebaseSync.isSignedIn()) {
       FirebaseSync.pushSupplementAnalyses(Storage.getRawSupplementAnalyses()).catch(() => showToast('Błąd synchronizacji analiz suplementów'));
+    }
+  }
+
+  function pushDietAnalysesToCloud() {
+    if (window.FirebaseSync && FirebaseSync.isSignedIn()) {
+      FirebaseSync.pushDietAnalyses(Storage.getRawDietAnalyses()).catch(() => showToast('Błąd synchronizacji analiz diety'));
     }
   }
 
@@ -950,6 +957,11 @@ const UI = (() => {
       const mergedSuppAnalyses = Storage.mergeSupplementAnalyses(remoteSuppAnalyses, Storage.getRawSupplementAnalyses());
       Storage.saveRawSupplementAnalyses(mergedSuppAnalyses);
       await FirebaseSync.pushSupplementAnalyses(mergedSuppAnalyses);
+
+      const remoteDietAnalyses = await FirebaseSync.pullDietAnalyses();
+      const mergedDietAnalyses = Storage.mergeDietAnalyses(remoteDietAnalyses, Storage.getRawDietAnalyses());
+      Storage.saveRawDietAnalyses(mergedDietAnalyses);
+      await FirebaseSync.pushDietAnalyses(mergedDietAnalyses);
 
       const remoteSettings = await FirebaseSync.pullSettings();
       const localSettings = Storage.getSettings();
@@ -2075,6 +2087,8 @@ const UI = (() => {
   // ── Analiza AI suplementów (view-suplementy) ──
 
   const SUPP_ANALYSIS_SCOPES = { day: 'Dzień', week: 'Tydzień', month: 'Miesiąc' };
+  const DIET_ANALYSIS_SCOPES = { week: 'Tydzień', month: 'Miesiąc', quarter: 'Kwartał' };
+  const DIET_ANALYSIS_MIN_DAYS = { week: 3, month: 7, quarter: 14 };
 
   function suppListForPrompt() {
     return Storage.getSupplements().filter((s) => s.active !== false).map((s) => ({
@@ -2399,6 +2413,298 @@ const UI = (() => {
           Storage.deleteSupplementAnalysis(btn.dataset.key);
           pushSupplementAnalysesToCloud();
           renderSupplementAnalysesSection();
+          showToast('Usunięto raport');
+        }
+      });
+    });
+  }
+
+  // ── Analiza AI diety (Tydzień/Miesiąc/Kwartał) — trendy wielodniowe i bilans energetyczny ──
+
+  const DIET_DAY_NAMES = ['Nd', 'Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'So'];
+
+  function dietDayOfWeek(dateStr) {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    return DIET_DAY_NAMES[new Date(y, m - 1, d).getDay()];
+  }
+
+  function daysBetweenDates(dateA, dateB) {
+    const [ya, ma, da] = dateA.split('-').map(Number);
+    const [yb, mb, db] = dateB.split('-').map(Number);
+    return Math.round((Date.UTC(yb, mb - 1, db) - Date.UTC(ya, ma - 1, da)) / 86400000);
+  }
+
+  function groupProductCounts(dates, limit) {
+    const counts = {};
+    dates.forEach((date) => {
+      Storage.getEntries(date).forEach((e) => {
+        const name = (e.name || '').trim();
+        if (!name) return;
+        const key = name.toLowerCase();
+        counts[key] = counts[key] || { nazwa: name, ile_razy: 0 };
+        counts[key].ile_razy++;
+      });
+    });
+    return Object.values(counts).sort((a, b) => b.ile_razy - a.ile_razy).slice(0, limit);
+  }
+
+  function buildWeightBalance(pomiaryWagi) {
+    if (pomiaryWagi.length < 2) return null;
+    const w0 = pomiaryWagi[0];
+    const w1 = pomiaryWagi[pomiaryWagi.length - 1];
+    const okresPomiaruDni = daysBetweenDates(w0.data, w1.data);
+    if (okresPomiaruDni < 5) return null;
+    return { w0, w1, okresPomiaruDni };
+  }
+
+  function buildWeekAggregate(weekDates) {
+    const daysWithEntries = weekDates.map((d) => Storage.getDailySummary(d)).filter((s) => s.kcal > 0);
+    const n = daysWithEntries.length;
+    const avg = (key) => (n > 0 ? Math.round(daysWithEntries.reduce((s, d) => s + d[key], 0) / n) : 0);
+    return {
+      od: weekDates[0], do: weekDates[weekDates.length - 1],
+      dni_z_wpisami: n,
+      sr_kcal: avg('kcal'), sr_bialko_g: avg('protein'), sr_wegle_g: avg('carbs'),
+      sr_tluszcz_g: avg('fat'), sr_blonnik_g: avg('fiber')
+    };
+  }
+
+  // Zwraca { scope, startDate, endDate, cele, periodData, dniZWpisami }; daty licz zawsze względem currentDate
+  function buildDietAnalysisPayload(scope) {
+    const endDate = currentDate;
+    const days = { week: 7, month: 30, quarter: 90 }[scope];
+    const startDate = shiftDateStr(endDate, -(days - 1));
+    const range = dateRangeEnding(endDate, days);
+
+    const settings = Storage.getSettings();
+    const cele = {
+      kcal: settings.kcalGoal, bialko_g: settings.proteinGoal,
+      wegle_g: settings.carbsGoal, tluszcz_g: settings.fatGoal, blonnik_g: settings.fiberGoal
+    };
+
+    const allWeights = Storage.getWeightHistory();
+    const weightsInRange = allWeights.filter((w) => w.date >= startDate && w.date <= endDate);
+    const baseline = allWeights.filter((w) => w.date < startDate).sort((a, b) => b.date.localeCompare(a.date))[0] || null;
+    const pomiary_wagi = [...(baseline ? [baseline] : []), ...weightsInRange].map((w) => {
+      const rec = { data: w.date, kg: w.kg };
+      if (w.smm != null) rec.smm = w.smm;
+      if (w.bf != null) rec.bf = w.bf;
+      return rec;
+    });
+
+    const dayEntries = range.map((date) => ({ date, summary: Storage.getDailySummary(date) }));
+    const daysWithEntries = dayEntries.filter((d) => d.summary.kcal > 0);
+    const dniZWpisami = daysWithEntries.length;
+    const srKcalDniZWpisami = dniZWpisami > 0
+      ? Math.round(daysWithEntries.reduce((s, d) => s + d.summary.kcal, 0) / dniZWpisami)
+      : 0;
+
+    let bilans_wstepny = null;
+    const balance = buildWeightBalance(pomiary_wagi);
+    if (balance) {
+      const zmiana = Math.round((balance.w1.kg - balance.w0.kg) * 10) / 10;
+      const deficyt = Math.round((zmiana * 7700) / balance.okresPomiaruDni);
+      bilans_wstepny = {
+        zmiana_wagi_kg: zmiana,
+        szacowany_deficyt_dzienny: deficyt,
+        szacowane_tdee: srKcalDniZWpisami - deficyt,
+        okres_pomiaru_dni: balance.okresPomiaruDni,
+        sr_kcal_dni_z_wpisami: srKcalDniZWpisami,
+        dni_z_wpisami: dniZWpisami,
+        dni_okresu: days
+      };
+    }
+
+    let periodData;
+    if (scope === 'week') {
+      const dni = dayEntries.map(({ date, summary }) => summary.kcal > 0
+        ? {
+            data: date, dzien_tygodnia: dietDayOfWeek(date),
+            kcal: Math.round(summary.kcal), bialko_g: Math.round(summary.protein),
+            wegle_g: Math.round(summary.carbs), tluszcz_g: Math.round(summary.fat), blonnik_g: Math.round(summary.fiber),
+            posilki: Storage.getEntries(date).map((e) => e.name)
+          }
+        : { data: date, dzien_tygodnia: dietDayOfWeek(date), brak_wpisow: true });
+      periodData = { dni, pomiary_wagi, bilans_wstepny };
+    } else if (scope === 'month') {
+      const dni = dayEntries.map(({ date, summary }) => summary.kcal > 0
+        ? {
+            data: date, dzien_tygodnia: dietDayOfWeek(date),
+            kcal: Math.round(summary.kcal), bialko_g: Math.round(summary.protein),
+            wegle_g: Math.round(summary.carbs), tluszcz_g: Math.round(summary.fat), blonnik_g: Math.round(summary.fiber)
+          }
+        : { data: date, dzien_tygodnia: dietDayOfWeek(date), brak_wpisow: true });
+      periodData = { dni, najczestsze_produkty: groupProductCounts(range, 10), pomiary_wagi, bilans_wstepny };
+    } else {
+      const tygodnie = [];
+      for (let i = 0; i < range.length; i += 7) tygodnie.push(buildWeekAggregate(range.slice(i, i + 7)));
+      periodData = { tygodnie, najczestsze_produkty: groupProductCounts(range, 15), pomiary_wagi, bilans_wstepny };
+    }
+
+    return { scope, startDate, endDate, cele, periodData, dniZWpisami };
+  }
+
+  async function runDietAnalysis(scope) {
+    const apiKey = Storage.getSettings().geminiApiKey;
+    const statusEl = document.getElementById('dietAnalysisStatus');
+    const errorEl = document.getElementById('dietAnalysisError');
+    if (errorEl) errorEl.textContent = '';
+    if (!statusEl) return;
+    if (!apiKey) { statusEl.textContent = 'Brak klucza Gemini — uzupełnij w Ustawieniach.'; return; }
+
+    const payload = buildDietAnalysisPayload(scope);
+    const minDays = DIET_ANALYSIS_MIN_DAYS[scope];
+    if (payload.dniZWpisami < minDays) {
+      statusEl.textContent = `Za mało danych — dni z wpisami: ${payload.dniZWpisami} (minimum ${minDays}).`;
+      return;
+    }
+
+    if (Storage.getDietAnalyses().length === 0) {
+      if (!confirm('Podsumowania posiłków, pomiary wagi i cele zostaną wysłane do Gemini API (Google). Kontynuować?')) return;
+    }
+
+    statusEl.textContent = 'Analizuję…';
+    try {
+      const parsed = await Ocr.analyzeDiet(
+        scope,
+        { startDate: payload.startDate, endDate: payload.endDate, cele: payload.cele, periodData: payload.periodData },
+        Storage.getSettings().healthProfile, apiKey
+      );
+
+      Storage.saveDietAnalysis(scope, payload.startDate, payload.endDate, parsed);
+      pushDietAnalysesToCloud();
+      statusEl.textContent = '';
+      renderDietAnalysesSection();
+      showToast('Zapisano raport');
+    } catch (e) {
+      statusEl.textContent = '';
+      if (errorEl) {
+        errorEl.textContent = e.message === 'NOT_RECOGNIZED'
+          ? 'AI uznało, że danych jest za mało do rzetelnej analizy.'
+          : analysisErrorMessage(e.message);
+      }
+    }
+  }
+
+  function dietAnalysisTitle(r) {
+    const label = DIET_ANALYSIS_SCOPES[r.scope] || r.scope;
+    return `${label} ${r.startDate} – ${r.endDate}`;
+  }
+
+  function renderDietAnalysisBody(result) {
+    if (!result || typeof result !== 'object') return '<div class="hint">Nie udało się odczytać raportu.</div>';
+
+    const balance = result.weight_energy_balance || null;
+    const macroReview = result.macro_review || [];
+    const patterns = result.patterns || [];
+    const recommendations = result.recommendations || [];
+    const dataGaps = result.data_gaps || [];
+
+    let html = '';
+
+    if (result.summary) {
+      html += `<div class="analysis-block">${escapeHtml(result.summary)}</div>`;
+    }
+
+    if (balance) {
+      html += `<div class="analysis-block"><strong>Bilans energetyczny</strong>
+        <div class="week-stats">
+          <div class="week-stat"><div class="value">${escapeHtml(String(balance.zmiana_wagi_kg ?? '—'))} kg</div><div class="label">zmiana wagi</div></div>
+          <div class="week-stat"><div class="value">${escapeHtml(String(balance.szacowana_tdee ?? '—'))}</div><div class="label">szac. TDEE</div></div>
+          <div class="week-stat"><div class="value">${escapeHtml(String(balance.szacowany_deficyt_dzienny ?? '—'))}</div><div class="label">deficyt/dzień</div></div>
+        </div>
+        ${balance.ocena ? `<div style="margin-top:8px;">${suppSeverityBadge(balance.ocena)}</div>` : ''}
+        ${balance.note ? `<div class="supp-analysis-item-text">${escapeHtml(balance.note)}</div>` : ''}
+      </div>`;
+    }
+
+    if (macroReview.length) {
+      html += `<div class="analysis-block"><strong>Makroskładniki</strong>
+        ${macroReview.map((m) => `
+          <div class="supp-analysis-item">
+            <span class="supp-analysis-badge status-${escapeHtml(m.status || 'ok')}">${escapeHtml(m.status || 'ok')}</span>
+            <span class="supp-analysis-item-title">${escapeHtml(m.skladnik || '')}</span>
+            <div class="supp-analysis-item-text">${escapeHtml(String(m.srednio ?? ''))} vs cel ${escapeHtml(String(m.cel ?? ''))}</div>
+            ${m.note ? `<div class="supp-analysis-item-text">${escapeHtml(m.note)}</div>` : ''}
+          </div>
+        `).join('')}
+      </div>`;
+    }
+
+    if (patterns.length) {
+      html += `<div class="analysis-block"><strong>Wzorce</strong>
+        ${patterns.map((p) => `
+          <div class="supp-analysis-item">
+            ${suppSeverityBadge(p.severity)}<span class="supp-analysis-item-title">${escapeHtml(p.observation || '')}</span>
+            ${p.note ? `<div class="supp-analysis-item-text">${escapeHtml(p.note)}</div>` : ''}
+          </div>
+        `).join('')}
+      </div>`;
+    }
+
+    if (recommendations.length) {
+      html += `<div class="analysis-block"><strong>Zalecenia</strong>
+        <ul class="analysis-recommendations">${recommendations.map((r) => `<li>${escapeHtml(r)}</li>`).join('')}</ul>
+      </div>`;
+    }
+
+    if (dataGaps.length) {
+      html += `<div class="analysis-block hint">Braki w danych: ${dataGaps.map(escapeHtml).join('; ')}</div>`;
+    }
+
+    html += `<div class="hint" style="margin-top:8px;">${escapeHtml(result.disclaimer || 'To nie jest porada medyczna ani dietetyczna.')}</div>`;
+
+    return html;
+  }
+
+  function renderDietAnalysesSection() {
+    const container = document.getElementById('dietAnalysesSection');
+    if (!container) return;
+
+    const reports = Storage.getDietAnalyses();
+    const listHtml = reports.length === 0
+      ? '<div class="hint">Brak zapisanych analiz.</div>'
+      : reports.map((r) => `
+          <div class="analysis-card">
+            <div class="analysis-card-header" data-action="toggle">
+              <span class="analysis-card-title">${escapeHtml(dietAnalysisTitle(r))}</span>
+              <button class="entry-delete" data-action="delete" data-key="${escapeHtml(r.key)}" aria-label="Usuń raport">×</button>
+            </div>
+            <div class="analysis-card-body" hidden>${renderDietAnalysisBody(r.result)}</div>
+          </div>
+        `).join('');
+
+    container.innerHTML = `
+      <div class="section-header-row">
+        <h3 class="section-title">Analiza AI diety</h3>
+      </div>
+      <div class="supp-analysis-scope-row">
+        <button class="btn btn-secondary" data-scope="week">Tydzień</button>
+        <button class="btn btn-secondary" data-scope="month">Miesiąc</button>
+        <button class="btn btn-secondary" data-scope="quarter">Kwartał</button>
+      </div>
+      <div id="dietAnalysisStatus" class="hint"></div>
+      <div id="dietAnalysisError" class="hint" style="color:var(--danger);"></div>
+      <div id="dietAnalysesList">${listHtml}</div>
+    `;
+
+    container.querySelectorAll('[data-scope]').forEach((btn) => {
+      btn.addEventListener('click', () => runDietAnalysis(btn.dataset.scope));
+    });
+    container.querySelectorAll('[data-action="toggle"]').forEach((el) => {
+      el.addEventListener('click', (e) => {
+        if (e.target.closest('[data-action="delete"]')) return;
+        const body = el.parentElement.querySelector('.analysis-card-body');
+        body.hidden = !body.hidden;
+      });
+    });
+    container.querySelectorAll('[data-action="delete"]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (confirm('Usunąć ten raport?')) {
+          Storage.deleteDietAnalysis(btn.dataset.key);
+          pushDietAnalysesToCloud();
+          renderDietAnalysesSection();
           showToast('Usunięto raport');
         }
       });

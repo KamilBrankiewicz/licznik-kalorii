@@ -447,5 +447,71 @@ ${SUPP_RESPONSE_FORMAT}`;
     return callGemini([{ text: prompt }], apiKey);
   }
 
-  return { analyzeLabel, analyzeVoiceEntry, analyzeScreenshot, analyzeMealPhoto, analyzeRecipeText, analyzeRecipeImage, analyzeIngredientLookup, transcribeAudio, analyzeDayAgainstGoal, analyzeSupplements };
+  const DIET_RESPONSE_FORMAT = `## Format odpowiedzi — WYŁĄCZNIE poniższy JSON, bez tekstu przed/po.
+Pusta tablica jest poprawną odpowiedzią w każdej sekcji — NIE wymyślaj ustaleń, żeby wypełnić sekcje.
+Jeśli w danych wejściowych "bilans_wstepny" jest null, zwróć "weight_energy_balance": null i odnotuj brak wagi w data_gaps.
+Wartości liczbowe w weight_energy_balance PRZEPISZ z "bilans_wstepny" — nie licz ich samodzielnie.
+{
+  "summary": "2-3 zdania podsumowania okresu",
+  "weight_energy_balance": {
+    "zmiana_wagi_kg": 0, "szacowana_tdee": 0, "szacowany_deficyt_dzienny": 0,
+    "ocena": "deficyt|utrzymanie|nadwyzka",
+    "note": "interpretacja: czy tempo jest bezpieczne i spójne ze spożyciem; pewność szacunku"
+  },
+  "macro_review": [
+    { "skladnik": "kalorie|białko|węglowodany|tłuszcz|błonnik",
+      "srednio": "średnia dzienna z dni z wpisami", "cel": "cel dzienny",
+      "status": "ok|ponizej|powyzej", "note": "1 zdanie, tylko przy istotnym odchyleniu" }
+  ],
+  "patterns": [
+    { "severity": "info|uwaga|istotne",
+      "observation": "wzorzec (np. weekendy +30% kcal, brak wpisów w piątki)",
+      "note": "co z tego wynika / co zrobić" }
+  ],
+  "recommendations": ["konkretna porada (maks. 4)"],
+  "data_gaps": ["np. 'tylko 2 pomiary wagi', '12 z 30 dni z wpisami'"],
+  "confidence": "low|medium|high",
+  "disclaimer": "to nie porada medyczna ani dietetyczna"
+}
+Jeśli dane z okresu są puste, zwróć: {"error": "brak danych do analizy"}`;
+
+  const DIET_SCOPE_TASKS = {
+    week: `1. Średnie dzienne wartości vs cele → macro_review.
+2. Regularność: dni bez wpisów, rozrzut kcal, wzorce dni tygodnia.
+3. Jakość diety na podstawie nazw posiłków (powtarzalność, produkty przetworzone, brakujące grupy — warzywa, błonnik).
+4. Krótki komentarz do bilans_wstepny (jeśli podany) z zaznaczeniem dużej niepewności (wahania wody) przy tak krótkim okresie.`,
+    month: `1. Bilans energetyczny — NAJWAŻNIEJSZA SEKCJA: spójność zmiany wagi ze spożyciem, ocena tempa (bezpieczne 0,25–1 kg/tydz.). Gdy dni_z_wpisami jest znacznie mniejsze niż długość okresu, wprost zaznacz że szacunek TDEE jest zafałszowany.
+2. Trendy składu ciała (smm/bf) jeśli dostępne: czy zmiana to głównie tłuszcz czy mięśnie.
+3. Średnie makroskładniki vs cele + systematyczność logowania.
+4. Wzorce: dni odstające, powtarzalne braki, najczęstsze produkty.`,
+    quarter: `1. Trend długoterminowy wagi/składu ciała: fazy, plateau (≥3 tygodnie bez zmiany), łączna zmiana w okresie.
+2. Bilans energetyczny w skali kwartału, spójność średnich tygodniowych ze trendem wagi.
+3. Zmiany nawyków między tygodniami (dane wejściowe to agregaty tygodniowe).
+4. Rekomendacje strategiczne: czy cele kcal/makro wymagają korekty względem oszacowanego TDEE. macro_review liczone ze średnich całego okresu.`
+  };
+
+  async function analyzeDiet(scope, payload, healthProfile, apiKey) {
+    const profileText = (healthProfile || '').trim() || 'Nie podano.';
+    const prompt = `Jesteś asystentem analizy diety i masy ciała. NIE jesteś lekarzem ani dietetykiem
+klinicznym — przy niepokojących trendach (bardzo szybka zmiana wagi, skrajny deficyt/nadwyżka) zalecaj
+konsultację ze specjalistą. Odpowiadaj wyłącznie po polsku, rzeczowo, odwołując się do konkretnych liczb.
+
+## Profil użytkownika
+${profileText}
+
+## Cele dzienne
+${JSON.stringify(payload.cele)}
+
+## Dane z okresu (zakres: ${scope}, ${payload.startDate} – ${payload.endDate})
+${JSON.stringify(payload.periodData)}
+
+## Zadania
+${DIET_SCOPE_TASKS[scope]}
+Raportuj TYLKO ustalenia poparte danymi wejściowymi.
+
+${DIET_RESPONSE_FORMAT}`;
+    return callGemini([{ text: prompt }], apiKey);
+  }
+
+  return { analyzeLabel, analyzeVoiceEntry, analyzeScreenshot, analyzeMealPhoto, analyzeRecipeText, analyzeRecipeImage, analyzeIngredientLookup, transcribeAudio, analyzeDayAgainstGoal, analyzeSupplements, analyzeDiet };
 })();

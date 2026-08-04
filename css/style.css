@@ -1328,6 +1328,7 @@ h1.page-title {
 .supp-analysis-badge.sev-istotne, .supp-analysis-badge.status-przekroczenie {
   background: rgba(248,113,113,0.18); color: var(--danger);
 }
+.supp-analysis-badge.status-ponizej, .supp-analysis-badge.status-powyzej { background: rgba(251,191,36,0.18); color: var(--warning); }
 .supp-analysis-item { padding: 8px 0; border-top: 1px solid var(--border); font-size: 13.5px; }
 .supp-analysis-item:first-child { border-top: none; }
 .supp-analysis-item-title { font-weight: 600; }
