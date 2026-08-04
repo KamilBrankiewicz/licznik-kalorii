@@ -305,3 +305,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 });
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') UI.flushSupplementLogPush();
+});

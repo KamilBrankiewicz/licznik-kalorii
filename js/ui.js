@@ -392,9 +392,30 @@ const UI = (() => {
     }
   }
 
-  function pushSupplementLogToCloud() {
+  // Push logu: debounce 2 s, zbiera dotknięte miesiące; month = 'YYYY-MM'
+  let suppLogPushTimer = null;
+  const suppLogPendingMonths = new Set();
+
+  function pushSupplementLogToCloud(month) {
+    suppLogPendingMonths.add(month || currentDate.slice(0, 7));
+    clearTimeout(suppLogPushTimer);
+    suppLogPushTimer = setTimeout(flushSupplementLogPush, 2000);
+  }
+
+  function flushSupplementLogPush() {
+    clearTimeout(suppLogPushTimer);
+    suppLogPushTimer = null;
+    if (suppLogPendingMonths.size === 0) return;
+    if (!(window.FirebaseSync && FirebaseSync.isSignedIn())) { suppLogPendingMonths.clear(); return; }
+    const months = [...suppLogPendingMonths];
+    suppLogPendingMonths.clear();
+    FirebaseSync.pushSupplementLogMonths(Storage.getRawSupplementLog(), months)
+      .catch(() => showToast('Błąd synchronizacji suplementów'));
+  }
+
+  function pushAdhocQuickItemsToCloud() {
     if (window.FirebaseSync && FirebaseSync.isSignedIn()) {
-      FirebaseSync.pushSupplementLog(Storage.getRawSupplementLog()).catch(() => showToast('Błąd synchronizacji suplementów'));
+      FirebaseSync.pushAdhocQuickItems(Storage.getRawAdhocQuickItems()).catch(() => showToast('Błąd synchronizacji leków doraźnych'));
     }
   }
 
@@ -411,9 +432,12 @@ const UI = (() => {
   }
 
   function escapeHtml(str) {
-    const div = document.createElement('div');
-    div.textContent = str || '';
-    return div.innerHTML;
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   function isBadHistoryDay(summary, metric) {
@@ -950,15 +974,22 @@ const UI = (() => {
       Storage.saveSupplements(mergedSupplements);
       await FirebaseSync.pushSupplements(mergedSupplements);
 
-      const remoteSuppLog = await FirebaseSync.pullSupplementLog();
+      const remoteSuppLog = await FirebaseSync.pullSupplementLogAll();
       const mergedSuppLog = Storage.mergeSupplementLog(remoteSuppLog, Storage.getRawSupplementLog());
       Storage.saveRawSupplementLog(mergedSuppLog);
-      await FirebaseSync.pushSupplementLog(mergedSuppLog);
+      const allSuppLogMonths = [...new Set(Object.keys(mergedSuppLog).map((k) => k.slice(0, 7)))];
+      await FirebaseSync.pushSupplementLogMonths(mergedSuppLog, allSuppLogMonths);
+      await FirebaseSync.clearLegacySupplementLog();
 
       const remoteSuppAnalyses = await FirebaseSync.pullSupplementAnalyses();
       const mergedSuppAnalyses = Storage.mergeSupplementAnalyses(remoteSuppAnalyses, Storage.getRawSupplementAnalyses());
       Storage.saveRawSupplementAnalyses(mergedSuppAnalyses);
       await FirebaseSync.pushSupplementAnalyses(mergedSuppAnalyses);
+
+      const remoteAdhocQuickItems = await FirebaseSync.pullAdhocQuickItems();
+      const mergedAdhocQuickItems = Storage.mergeAdhocQuickItems(remoteAdhocQuickItems, Storage.getRawAdhocQuickItems());
+      Storage.saveAdhocQuickItems(mergedAdhocQuickItems);
+      await FirebaseSync.pushAdhocQuickItems(mergedAdhocQuickItems);
 
       const remoteDietAnalyses = await FirebaseSync.pullDietAnalyses();
       const mergedDietAnalyses = Storage.mergeDietAnalyses(remoteDietAnalyses, Storage.getRawDietAnalyses());
@@ -1678,7 +1709,8 @@ const UI = (() => {
     document.getElementById('suppCycleOn').value = supp && supp.cycleOn != null ? supp.cycleOn : '';
     document.getElementById('suppCycleOff').value = supp && supp.cycleOff != null ? supp.cycleOff : '';
     document.getElementById('suppTimesPerDay').value = supp && supp.timesPerDay > 1 ? supp.timesPerDay : 1;
-    document.getElementById('suppStock').value = supp && supp.stock != null ? supp.stock : '';
+    const remainingStock = supp ? Storage.getRemainingStockMap()[supp.id] : null;
+    document.getElementById('suppStock').value = remainingStock != null ? remainingStock : '';
     document.getElementById('suppActive').checked = supp ? supp.active !== false : true;
     document.getElementById('suppFormError').textContent = '';
     updateSuppScheduleRowsVisibility();
@@ -1703,9 +1735,24 @@ const UI = (() => {
       timing: (document.querySelector('#suppTimingSelect button.active') || {}).dataset?.timing || 'any',
       scheduleType,
       active: document.getElementById('suppActive').checked,
-      timesPerDay: Math.max(1, Number(document.getElementById('suppTimesPerDay').value) || 1),
-      stock: document.getElementById('suppStock').value === '' ? null : Number(document.getElementById('suppStock').value)
+      timesPerDay: Math.max(1, Number(document.getElementById('suppTimesPerDay').value) || 1)
     };
+
+    const stockInput = document.getElementById('suppStock').value;
+    if (stockInput === '') {
+      data.stockBaseline = null;
+      data.stockBaselineDate = null;
+      data.stock = null;
+    } else {
+      const enteredStock = Number(stockInput);
+      const existingSupp = editingSuppId ? Storage.getSupplements().find((s) => s.id === editingSuppId) : null;
+      const remaining = existingSupp ? Storage.getRemainingStockMap()[existingSupp.id] : null;
+      if (remaining == null || enteredStock !== remaining) {
+        data.stockBaseline = enteredStock;
+        data.stockBaselineDate = new Date().toISOString().slice(0, 10);
+        data.stock = null;
+      }
+    }
 
     if (scheduleType === 'weekdays') {
       const days = [...document.querySelectorAll('#suppScheduleDaysRow input[data-dow]:checked')].map((cb) => Number(cb.dataset.dow));
@@ -1839,12 +1886,61 @@ const UI = (() => {
     return s.displayName || s.name;
   }
 
+  function isValidTimeStr(v) {
+    return /^([01]\d|2[0-3]):[0-5]\d$/.test(v || '');
+  }
+
+  // Podmienia span z godziną na <input type="time">, zapisuje raz na change/blur.
+  // Escape porzuca zmianę i wraca do renderu bez zapisu.
+  function startInlineTimeEdit(timeEl, currentValue, onSave) {
+    const input = document.createElement('input');
+    input.type = 'time';
+    input.className = 'supp-time-input';
+    if (isValidTimeStr(currentValue)) input.value = currentValue;
+    timeEl.innerHTML = '';
+    timeEl.appendChild(input);
+    input.focus();
+    let done = false;
+    function save() {
+      if (done) return;
+      done = true;
+      onSave(input.value);
+    }
+    input.addEventListener('change', save);
+    input.addEventListener('blur', save);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        done = true;
+        renderSupplementsSection();
+      }
+      e.stopPropagation();
+    });
+    input.addEventListener('click', (e) => e.stopPropagation());
+  }
+
+  function stockDisplayHtml(s, remaining) {
+    if (remaining == null) return '';
+    const coverage = Storage.getStockCoverage(s, remaining);
+    const low = remaining === 0 || (coverage && coverage.days <= 7);
+    let text = `zapas: ${remaining} szt.`;
+    if (coverage && coverage.lastDate) {
+      const [, mm, dd] = coverage.lastDate.split('-');
+      text += ` · na ${coverage.days} dni (do ${dd}.${mm})`;
+    }
+    return `<span class="supp-card-stock${low ? ' supp-stock-low' : ''}">${text}</span>`;
+  }
+
   function renderSupplementsSection() {
     const container = document.getElementById('supplementsSection');
     if (!container) return;
 
     const due = Storage.getSupplements().filter((s) => Storage.isSupplementDueOn(s, currentDate));
-    const adhoc = Storage.getSupplementLogForDate(currentDate).filter((r) => r.adhoc);
+    const logForDate = Storage.getSupplementLogForDate(currentDate);
+    const adhoc = logForDate.filter((r) => r.adhoc);
+    const timesBySuppId = new Map(
+      logForDate.filter((r) => r.suppId).map((r) => [r.suppId, Storage.extractDoseTimes(r)])
+    );
+    const remainingStockMap = Storage.getRemainingStockMap();
 
     let itemsHtml = '';
     TIMING_ORDER.forEach((timing) => {
@@ -1852,15 +1948,13 @@ const UI = (() => {
       if (group.length === 0) return;
       itemsHtml += `<div class="supp-group-label">${TIMING_LABELS[timing]}</div>`;
       itemsHtml += group.map((s) => {
-        const count = Storage.getSupplementTakenCount(currentDate, s.id);
+        const count = (timesBySuppId.get(s.id) || []).length;
         const target = Number(s.timesPerDay) || 1;
         const taken = count >= target;
         const partial = count > 0 && !taken;
         const countLabel = target > 1 ? `<span class="supp-count">${count}/${target}</span>` : (count > 1 ? `<span class="supp-count">×${count}</span>` : '');
         const initial = suppLabel(s).charAt(0).toUpperCase();
-        const stockHtml = s.stock != null
-          ? `<span class="supp-card-stock${s.stock <= 7 ? ' supp-stock-low' : ''}">zapas: ${s.stock}</span>`
-          : '';
+        const stockHtml = stockDisplayHtml(s, remainingStockMap[s.id]);
         return `
           <div class="supp-card${taken ? ' taken' : ''}${partial ? ' partial' : ''}" data-supp-id="${s.id}">
             <div class="supp-card-avatar">${escapeHtml(initial)}</div>
@@ -1882,11 +1976,10 @@ const UI = (() => {
         <button class="entry-delete" data-action="delete-adhoc" aria-label="Usuń">×</button>
       </div>`).join('');
 
-    const allSupps = Storage.getSupplements();
     let doseLogHtml = '';
     const doseEntries = [];
     due.forEach((s) => {
-      const times = Storage.getSupplementDoseTimes(currentDate, s.id);
+      const times = timesBySuppId.get(s.id) || [];
       times.forEach((t, i) => doseEntries.push({ supp: s, time: t, index: i }));
     });
     adhoc.forEach((r) => doseEntries.push({ adhocKey: r.key, name: r.name, time: r.time || '' }));
@@ -1944,16 +2037,29 @@ const UI = (() => {
     container.querySelectorAll('.supp-log-entry[data-supp-id]').forEach((el) => {
       el.addEventListener('click', (e) => {
         if (e.target.closest('.entry-delete')) return;
+        if (el.querySelector('.supp-time-input')) return;
         const suppId = el.dataset.suppId;
         const idx = Number(el.dataset.doseIndex);
-        const supp = allSupps.find((s) => s.id === suppId);
         const times = Storage.getSupplementDoseTimes(currentDate, suppId);
         const currentTime = times[idx] || '';
-        const newTime = prompt(`Godzina dawki — ${supp ? supp.name : ''}:`, currentTime);
-        if (newTime === null) return;
-        Storage.updateSupplementDoseTime(currentDate, suppId, idx, newTime.trim());
-        pushSupplementLogToCloud();
-        renderSupplementsSection();
+        startInlineTimeEdit(el.querySelector('.supp-log-time'), currentTime, (newTime) => {
+          Storage.updateSupplementDoseTime(currentDate, suppId, idx, newTime);
+          pushSupplementLogToCloud();
+          renderSupplementsSection();
+        });
+      });
+    });
+    container.querySelectorAll('.supp-log-entry.adhoc').forEach((el) => {
+      el.addEventListener('click', (e) => {
+        if (e.target.closest('.entry-delete')) return;
+        if (el.querySelector('.supp-time-input')) return;
+        const logKey = el.dataset.logKey;
+        const currentTime = el.querySelector('.supp-log-time').textContent.trim();
+        startInlineTimeEdit(el.querySelector('.supp-log-time'), currentTime === '—' ? '' : currentTime, (newTime) => {
+          Storage.updateSupplementLogEntryTime(logKey, newTime);
+          pushSupplementLogToCloud();
+          renderSupplementsSection();
+        });
       });
     });
     container.querySelectorAll('[data-action="delete-dose"]').forEach((btn) => {
@@ -1961,12 +2067,7 @@ const UI = (() => {
         e.stopPropagation();
         const suppId = btn.dataset.suppId;
         const idx = Number(btn.dataset.doseIndex);
-        const supp = allSupps.find((s) => s.id === suppId);
         Storage.removeSupplementDose(currentDate, suppId, idx);
-        if (supp && supp.stock != null) {
-          Storage.updateSupplement(suppId, { stock: supp.stock + 1 });
-          pushSupplementsToCloud();
-        }
         pushSupplementLogToCloud();
         renderSupplementsSection();
       });
@@ -1989,23 +2090,10 @@ const UI = (() => {
 
     if (count >= target) {
       Storage.toggleSupplementTaken(currentDate, suppId, nowTimeStr());
-      if (supp && supp.stock != null) {
-        const newStock = supp.stock + count;
-        Storage.updateSupplement(suppId, { stock: newStock });
-        pushSupplementsToCloud();
-      }
     } else if (count === 0) {
       Storage.toggleSupplementTaken(currentDate, suppId, nowTimeStr());
-      if (supp && supp.stock != null) {
-        Storage.updateSupplement(suppId, { stock: Math.max(0, supp.stock - 1) });
-        pushSupplementsToCloud();
-      }
     } else {
       Storage.incrementSupplementDose(currentDate, suppId, nowTimeStr());
-      if (supp && supp.stock != null) {
-        Storage.updateSupplement(suppId, { stock: Math.max(0, supp.stock - 1) });
-        pushSupplementsToCloud();
-      }
     }
     pushSupplementLogToCloud();
     renderSupplementsSection();
@@ -2013,12 +2101,6 @@ const UI = (() => {
 
   function incrementSupplementDose(suppId) {
     Storage.incrementSupplementDose(currentDate, suppId, nowTimeStr());
-    const supp = Storage.getSupplements().find((s) => s.id === suppId);
-    if (supp && supp.stock != null) {
-      const newStock = Math.max(0, supp.stock - 1);
-      Storage.updateSupplement(suppId, { stock: newStock });
-      pushSupplementsToCloud();
-    }
     pushSupplementLogToCloud();
     renderSupplementsSection();
   }
@@ -2056,6 +2138,7 @@ const UI = (() => {
       if (!name) return;
       Storage.addAdhocSupplementLog(currentDate, name, nowTimeStr());
       pushSupplementLogToCloud();
+      pushAdhocQuickItemsToCloud();
       input.value = '';
       renderSupplementsSection();
       showToast('Zapisano');
@@ -2072,6 +2155,7 @@ const UI = (() => {
         const name = chip.dataset.adhocName;
         Storage.addAdhocSupplementLog(currentDate, name, nowTimeStr());
         pushSupplementLogToCloud();
+        pushAdhocQuickItemsToCloud();
         renderSupplementsSection();
         showToast(`${name} — zapisano`);
       });
@@ -2081,6 +2165,7 @@ const UI = (() => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         Storage.removeAdhocQuickItem(btn.dataset.name);
+        pushAdhocQuickItemsToCloud();
         renderAdhocSupplementsSection();
       });
     });
@@ -2894,6 +2979,7 @@ const UI = (() => {
     closeSupplementModal,
     saveSupplementFromForm,
     updateSuppScheduleRowsVisibility,
+    flushSupplementLogPush,
     getCurrentDate: () => currentDate
   };
 })();

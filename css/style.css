@@ -1445,6 +1445,7 @@ h1.page-title {
 }
 .supp-log-name { flex: 1; min-width: 0; font-size: 14px; }
 .supp-log-entry .entry-delete { flex-shrink: 0; }
+.supp-time-input { width: 74px; font: inherit; background: transparent; color: inherit; border: 1px solid var(--border); border-radius: 6px; padding: 2px 4px; }
 
 /* ── Undo toast ── */
 .toast-undo {

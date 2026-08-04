@@ -52,10 +52,11 @@ index.html  →  app.js  →  ui.js  →  storage.js  →  localStorage
 | `favoriteProducts` | `Product[]` | przypięte produkty, z nagrobkami |
 | `recipes` | `Recipe[]` | przepisy z listą składników, z nagrobkami |
 | `supplements` | `Supplement[]` | definicje suplementów/leków, z nagrobkami |
-| `supplementLog` | `{ [YYYY-MM-DD__id]: LogRec }` | dziennik przyjęć (planowych i doraźnych), z nagrobkami |
+| `supplementLog` | `{ [YYYY-MM-DD__id]: LogRec }` | dziennik przyjęć (planowych i doraźnych), z nagrobkami; lokalnie zawsze jedna mapa — sharding dotyczy tylko Firestore, patrz niżej |
 | `supplementAnalyses` | `{ [scope__endDate]: AnalysisRec }` | zapisane raporty analizy AI suplementów (dzień/tydzień/miesiąc), z nagrobkami |
 | `suppAnalysisStaticCache` | `{ fingerprint, interactions, dose_totals, updatedAt }` | lokalny cache sekcji zależnych tylko od listy suplementów — **nie** synchronizowany, bez nagrobków, poza eksportem |
 | `dietAnalyses` | `{ [scope__endDate]: AnalysisRec }` | zapisane raporty analizy AI diety (tydzień/miesiąc/kwartał), z nagrobkami; bez cache'u statycznego — każda sekcja zależy od danych okresu |
+| `adhocQuickItems` | `AdhocQuickItem[]` | szybkie chipy leków doraźnych (nazwy ostatnio użyte), z nagrobkami |
 
 ```javascript
 Entry = {
@@ -76,7 +77,34 @@ Settings = {
 }
 
 WeightRec = { kg: number, updatedAt } | { deleted: true, updatedAt }
+
+Supplement = {
+  id: string, name: string, displayName?, dose?, notes?,
+  timing: "morning" | "noon" | "evening" | "any",
+  scheduleType: "daily" | "weekdays" | "everyN" | "cycle",
+  scheduleDays?, scheduleN?, cycleOn?, cycleOff?, anchorDate: "YYYY-MM-DD",
+  timesPerDay: number, active: boolean,
+  stockBaseline: number | null,      // zapas wpisany w formularzu — punkt odniesienia
+  stockBaselineDate: "YYYY-MM-DD" | null,  // data wpisania; dawki liczą się od dnia PO tej dacie
+  stock?: number | null,             // pole legacy sprzed modelu baza+data — patrz niżej
+  updatedAt: string
+}
+// nagrobek: { id, deleted: true, updatedAt }
+
+AdhocQuickItem = { name: string, usedAt: string, updatedAt: string } | { name, deleted: true, updatedAt }
+// tożsamość rekordu = name.toLowerCase(); merge po updatedAt (fallback usedAt dla starych rekordów bez updatedAt)
 ```
+
+**Zapas suplementu (`stockBaseline`/`stockBaselineDate` vs legacy `stock`):** bieżący zapas
+nie jest już przechowywany — `Storage.getRemainingStockMap()` liczy go jako
+`stockBaseline` minus liczbę dawek z `supplementLog`, których `date > stockBaselineDate`.
+Odhaczanie dawek **nie** dotyka rekordu suplementu (`updatedAt` definicji się nie zmienia).
+Stare rekordy sprzed tej zmiany mają tylko `stock` (bez `stockBaseline`) — traktowane jako
+baza z datą w przyszłości, więc żadna dawka się nie odejmuje, dopóki użytkownik nie zapisze
+suplementu ponownie w formularzu (wtedy zapis przechodzi na nowy model). Świadomie bez
+migracji hurtowej. `Storage.getStockCoverage(supp, remaining)` liczy z harmonogramu, na ile
+dni starczy zapasu (`{ days, lastDate }`) — alarm (`supp-stock-low`) gdy `days <= 7` lub
+zapas == 0.
 
 Odczyt ustawień zawsze przez `{ ...DEFAULT_SETTINGS, ...zapisane }` — dzięki temu nowe pole
 w `DEFAULT_SETTINGS` automatycznie działa dla istniejących użytkowników. **Dodając nowy cel
@@ -91,12 +119,27 @@ users/{uid}/meta/weights        → { map: {...} }
 users/{uid}/meta/favorites      → { list: [...] }
 users/{uid}/meta/recipes        → { list: [...] }
 users/{uid}/meta/supplements    → { list: [...] }
-users/{uid}/meta/supplementLog  → { map: {...} }
+users/{uid}/meta/supplementLog-YYYY-MM → { map: {...} }   // sharding po miesiącach, patrz niżej
+users/{uid}/meta/supplementLog  → { map: {} }              // legacy, zawsze pusty po pełnym syncu
 users/{uid}/meta/supplementAnalyses → { map: {...} }
 users/{uid}/meta/dietAnalyses   → { map: {...} }
+users/{uid}/meta/adhocQuickItems → { list: [...] }
 
 sharedRecipes/{recipientUid}/inbox/{itemId} → kopia Recipe + { sharedBy: uid, sharedAt }
 ```
+
+**Sharding logu suplementów:** `supplementLog` rośnie bez końca (nagrobki się nie
+kompaktują), więc jeden dokument ryzykował limit 1 MB Firestore. Wpisy są teraz pushowane
+per-miesiąc do `meta/supplementLog-YYYY-MM` (miesiąc = pierwsze 7 znaków klucza
+`YYYY-MM-DD__id`), `FirebaseSync.pushSupplementLogMonths(map, months)`. Push jest
+debounce'owany 2 s w `ui.js` (`pushSupplementLogToCloud`/`flushSupplementLogPush`) i zbiera
+tylko dotknięte miesiące, żeby seria szybkich odhaczeń nie odpaliła serii zapisów. Pull przy
+pełnym syncu (`FirebaseSync.pullSupplementLogAll`) czyta wszystkie shardy **oraz** stary
+dokument zbiorczy `meta/supplementLog` (dane sprzed shardingu), po czym
+`clearLegacySupplementLog()` nadpisuje go pustą mapą. Lokalnie nic się nie zmienia —
+`localStorage['supplementLog']` zawsze trzyma jedną pełną mapę; sharding istnieje tylko po
+stronie Firestore. `document.visibilitychange` w `app.js` wywołuje
+`UI.flushSupplementLogPush()`, żeby chowanie karty tuż po odhaczeniu nie zgubiło debounce'owanego zapisu.
 
 Dane dnia trzymane per-dokument, żeby push jednego dnia nie przepisywał całej historii.
 Kolekcje globalne (waga, ulubione, przepisy) siedzą w `meta/` jako pojedyncze dokumenty —

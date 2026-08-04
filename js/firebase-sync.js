@@ -190,17 +190,38 @@ async function pullSupplements() {
   return snap.exists() ? snap.data().list || [] : [];
 }
 
-async function pushSupplementLog(map) {
+// Push wybranych miesięcy: months = ['2026-08', ...]; map = pełna lokalna mapa logu
+async function pushSupplementLogMonths(map, months) {
   if (!currentUser) return;
   const { doc, setDoc } = firestoreMod;
-  await setDoc(doc(db, 'users', currentUser.uid, 'meta', 'supplementLog'), { map });
+  for (const month of months) {
+    const sub = {};
+    Object.entries(map).forEach(([key, rec]) => {
+      if (key.slice(0, 7) === month) sub[key] = rec;
+    });
+    await setDoc(doc(db, 'users', currentUser.uid, 'meta', `supplementLog-${month}`), { map: sub });
+  }
 }
 
-async function pullSupplementLog() {
+// Pull całości: wszystkie shardy + stary dokument zbiorczy (dane sprzed shardingu)
+async function pullSupplementLogAll() {
   if (!currentUser) return {};
-  const { doc, getDoc } = firestoreMod;
-  const snap = await getDoc(doc(db, 'users', currentUser.uid, 'meta', 'supplementLog'));
-  return snap.exists() ? snap.data().map || {} : {};
+  const { collection, getDocs } = firestoreMod;
+  const snapshot = await getDocs(collection(db, 'users', currentUser.uid, 'meta'));
+  const result = {};
+  snapshot.forEach((docSnap) => {
+    if (docSnap.id === 'supplementLog' || docSnap.id.startsWith('supplementLog-')) {
+      Object.assign(result, docSnap.data().map || {});
+    }
+  });
+  return result;
+}
+
+// Wyczyszczenie starego dokumentu zbiorczego po udanej migracji na shardy
+async function clearLegacySupplementLog() {
+  if (!currentUser) return;
+  const { doc, setDoc } = firestoreMod;
+  await setDoc(doc(db, 'users', currentUser.uid, 'meta', 'supplementLog'), { map: {} });
 }
 
 async function pushSupplementAnalyses(map) {
@@ -229,6 +250,19 @@ async function pullDietAnalyses() {
   return snap.exists() ? snap.data().map || {} : {};
 }
 
+async function pushAdhocQuickItems(list) {
+  if (!currentUser) return;
+  const { doc, setDoc } = firestoreMod;
+  await setDoc(doc(db, 'users', currentUser.uid, 'meta', 'adhocQuickItems'), { list });
+}
+
+async function pullAdhocQuickItems() {
+  if (!currentUser) return [];
+  const { doc, getDoc } = firestoreMod;
+  const snap = await getDoc(doc(db, 'users', currentUser.uid, 'meta', 'adhocQuickItems'));
+  return snap.exists() ? snap.data().list || [] : [];
+}
+
 const FirebaseSync = {
   init,
   signIn,
@@ -252,12 +286,15 @@ const FirebaseSync = {
   pullDailyAnalyses,
   pushSupplements,
   pullSupplements,
-  pushSupplementLog,
-  pullSupplementLog,
+  pushSupplementLogMonths,
+  pullSupplementLogAll,
+  clearLegacySupplementLog,
   pushSupplementAnalyses,
   pullSupplementAnalyses,
   pushDietAnalyses,
   pullDietAnalyses,
+  pushAdhocQuickItems,
+  pullAdhocQuickItems,
   pushSharedRecipe,
   pullSharedRecipes,
   deleteSharedRecipe,

@@ -33,6 +33,11 @@
   - Analiza AI diety w Dzienniku (Tydzień/Miesiąc/Kwartał) — bilans energetyczny liczony w JS
     z pomiarów wagi (AI go tylko interpretuje), przegląd makro vs cele, wzorce i rekomendacje;
     bez cache'u statycznego, z guardem „za mało danych" przed wywołaniem API
+  - Usprawnienia modułu suplementów (6 poprawek, `docs/PLAN-USPRAWNIENIA-SUPLEMENTY.md`):
+    nagrobki/merge/sync/eksport dla chipów leków doraźnych, zapas liczony z bazy + logu
+    zamiast nadpisywanego pola, alarm zapasu w dniach pokrycia wg harmonogramu, sharding
+    logu suplementów w Firestore po miesiącach z debounce'em pusha, edycja godziny dawki
+    przez `<input type="time">` zamiast `prompt()`, jeden odczyt logu dnia na render
 
 **Pozostało (świadomie odłożone):**
 - Wielojęzyczność — raczej bez sensu przy aplikacji dla jednego użytkownika

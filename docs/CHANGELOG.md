@@ -15,6 +15,36 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku — niezacommitowane] 2026-08-04 — Usprawnienia modułu suplementów (6 poprawek)
+**Co:** Sześć poprawek modułu suplementów wg `docs/PLAN-USPRAWNIENIA-SUPLEMENTY.md`:
+  (1) `escapeHtml` escapuje też `"`/`'`, więc nazwy z cudzysłowem nie psują atrybutów HTML;
+  (2) szybkie chipy leków doraźnych (`adhocQuickItems`) mają teraz nagrobki, merge po
+  `updatedAt`, sync do Firestore (`meta/adhocQuickItems`) i obsługę w eksporcie/imporcie —
+  wcześniej żyły tylko lokalnie i znikały przy czyszczeniu danych bez śladu; (3) zapas
+  suplementu przeszedł z modelu „bieżąca liczba nadpisywana przy każdym odhaczeniu" na
+  „baza (`stockBaseline`/`stockBaselineDate`) minus dawki z logu policzone na bieżąco" —
+  odhaczenia z dwóch urządzeń już się nie gubią, bo log ma merge per-wpis, a definicja
+  suplementu nie jest już dotykana przy każdym kliknięciu; (4) alarm zapasu liczy dni
+  pokrycia z harmonogramu („zapas: N szt. · na X dni (do DD.MM)", czerwony przy ≤ 7 dniach
+  lub 0 szt.) zamiast sztywnego progu „≤ 7 sztuk"; (5) log suplementów w Firestore jest
+  teraz shardowany po miesiącach (`meta/supplementLog-YYYY-MM`) z debounce'em pusha (2 s),
+  żeby jeden rosnący dokument nie uderzył w limit 1 MB; (6) edycja godziny dawki (planowej
+  i doraźnej) przez natywny `<input type="time">` zamiast `prompt()`, a
+  `renderSupplementsSection` czyta log dnia raz na render zamiast po razie na suplement.
+**Dlaczego:** Moduł suplementów działał, ale łamał kilka nienaruszalnych zasad projektu
+  (brak nagrobków przy chipach, brak `updatedAt`) i miał realne ryzyko utraty danych przy
+  syncu (nadpisywanie zapasu, rosnący bez końca dokument logu) oraz szorstki UX (`prompt()`).
+**Pliki:** `js/storage.js`, `js/firebase-sync.js`, `js/ui.js`, `js/app.js`, `index.html`,
+  `css/style.css`, `sw.js`
+**Uwagi:**
+- Stare rekordy z samym polem `stock` (sprzed tej zmiany) nadal się wyświetlają — traktowane
+  jako baza z datą w przyszłości, więc żadna dawka nie jest jeszcze odejmowana, dopóki
+  użytkownik nie edytuje suplementu w formularzu (wtedy zapis przechodzi na nowy model).
+  Świadomie bez migracji hurtowej — poza zakresem planu.
+- Stary dokument Firestore `meta/supplementLog` zostaje jako pusty (`{ map: {} }`) po
+  pierwszym pełnym syncu po tej zmianie; pull nadal go czyta (razem z shardami), żeby nie
+  zgubić danych sprzed shardingu.
+
 ## [w toku — niezacommitowane] 2026-08-04 — Analiza AI diety (tydzień/miesiąc/kwartał)
 **Co:** W Dzienniku, pod istniejącym raportem odżywczym dnia, doszła sekcja „Analiza AI diety"
   z trzema zakresami wielodniowymi (Tydzień/Miesiąc/Kwartał — celowo bez „Dnia", bo ten

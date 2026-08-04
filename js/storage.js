@@ -11,6 +11,7 @@ const Storage = (() => {
   const SUPPLEMENT_ANALYSES_KEY = 'supplementAnalyses';
   const DIET_ANALYSES_KEY = 'dietAnalyses';
   const SUPP_STATIC_CACHE_KEY = 'suppAnalysisStaticCache';
+  const ADHOC_QUICK_KEY = 'adhocQuickItems';
   const SEEN_SHARED_RECIPES_KEY = 'seenSharedRecipeIds';
   const THEME_KEY = 'themePreference';
   const HISTORY_METRIC_KEY = 'historyMetricPreference';
@@ -512,6 +513,48 @@ const Storage = (() => {
     return true;
   }
 
+  // Bieżący zapas: baza minus dawki z logu wzięte PO dacie bazy (date > stockBaselineDate).
+  // Zwraca mapę suppId -> liczba sztuk (tylko suplementy ze śledzonym zapasem).
+  function getRemainingStockMap() {
+    const supps = getSupplements().filter((s) => s.stockBaseline != null || s.stock != null);
+    if (supps.length === 0) return {};
+    const result = {};
+    supps.forEach((s) => {
+      result[s.id] = { base: s.stockBaseline != null ? Number(s.stockBaseline) : Number(s.stock) || 0,
+                       since: s.stockBaseline != null ? (s.stockBaselineDate || '') : '9999-12-31',
+                       used: 0 };
+    });
+    Object.values(getRawSupplementLog()).forEach((rec) => {
+      if (rec.deleted || !rec.suppId || !result[rec.suppId]) return;
+      if ((rec.date || '') > result[rec.suppId].since) {
+        result[rec.suppId].used += getSupplementTimes(rec).length;
+      }
+    });
+    const out = {};
+    Object.entries(result).forEach(([id, r]) => { out[id] = Math.max(0, r.base - r.used); });
+    return out;
+  }
+
+  // Na ile dni starczy zapasu wg harmonogramu; zwraca { days, lastDate } albo null.
+  // Liczy od jutra, maks. 365 dni w przód. days = liczba dni od dziś do lastDate.
+  function getStockCoverage(supp, remaining) {
+    if (remaining == null) return null;
+    const perDay = Math.max(1, Number(supp.timesPerDay) || 1);
+    const today = new Date().toISOString().slice(0, 10);
+    let left = remaining;
+    let lastDate = null;
+    const d = new Date();
+    for (let i = 1; i <= 365 && left > 0; i++) {
+      d.setDate(d.getDate() + 1);
+      const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      if (isSupplementDueOn(supp, iso)) {
+        left -= perDay;
+        lastDate = iso;
+      }
+    }
+    return { days: lastDate ? daysBetween(today, lastDate) : 0, lastDate };
+  }
+
   // ── Zapisane raporty analizy dnia — mapa { "YYYY-MM-DD__goalId": {...} },
   // usunięcia jako nagrobki, ten sam mechanizm merge co przy wadze/ulubionych ──
 
@@ -660,31 +703,61 @@ const Storage = (() => {
     addAdhocQuickItem(name);
   }
 
-  function getAdhocQuickItems() {
-    try { return JSON.parse(localStorage.getItem('adhocQuickItems')) || []; }
+  function getRawAdhocQuickItems() {
+    try { return JSON.parse(localStorage.getItem(ADHOC_QUICK_KEY)) || []; }
     catch { return []; }
   }
 
+  function getAdhocQuickItems() {
+    return getRawAdhocQuickItems().filter((i) => !i.deleted);
+  }
+
   function saveAdhocQuickItems(items) {
-    localStorage.setItem('adhocQuickItems', JSON.stringify(items));
+    localStorage.setItem(ADHOC_QUICK_KEY, JSON.stringify(items));
   }
 
   function addAdhocQuickItem(name) {
-    const items = getAdhocQuickItems();
     const normalized = name.trim();
     if (!normalized) return;
-    const existing = items.findIndex((i) => i.name.toLowerCase() === normalized.toLowerCase());
-    if (existing !== -1) {
-      items[existing].usedAt = new Date().toISOString();
+    const items = getRawAdhocQuickItems();
+    const now = new Date().toISOString();
+    const idx = items.findIndex((i) => i.name.toLowerCase() === normalized.toLowerCase());
+    if (idx !== -1) {
+      items[idx] = { name: items[idx].deleted ? normalized : items[idx].name, usedAt: now, updatedAt: now };
     } else {
-      items.push({ name: normalized, usedAt: new Date().toISOString() });
+      items.push({ name: normalized, usedAt: now, updatedAt: now });
     }
     saveAdhocQuickItems(items);
   }
 
   function removeAdhocQuickItem(name) {
-    const items = getAdhocQuickItems().filter((i) => i.name.toLowerCase() !== name.toLowerCase());
+    const now = new Date().toISOString();
+    const items = getRawAdhocQuickItems().map((i) =>
+      i.name.toLowerCase() === name.toLowerCase() ? { name: i.name, deleted: true, updatedAt: now } : i
+    );
     saveAdhocQuickItems(items);
+  }
+
+  // Scala dwie listy chipów po name (case-insensitive); przy konflikcie wygrywa nowszy
+  // updatedAt (fallback usedAt dla starych rekordów bez updatedAt) — ten sam mechanizm
+  // nagrobków co przy wpisach/ulubionych
+  function mergeAdhocQuickItems(listA, listB) {
+    const byName = new Map();
+    [...listA, ...listB].forEach((i) => {
+      const key = (i.name || '').toLowerCase();
+      const prev = byName.get(key);
+      const ts = i.updatedAt || i.usedAt || '';
+      const prevTs = prev ? (prev.updatedAt || prev.usedAt || '') : '';
+      if (!prev || ts > prevTs) byName.set(key, i);
+    });
+    return [...byName.values()];
+  }
+
+  function updateSupplementLogEntryTime(key, time) {
+    const map = getRawSupplementLog();
+    if (!map[key] || map[key].deleted) return;
+    map[key] = { ...map[key], time, updatedAt: new Date().toISOString() };
+    saveRawSupplementLog(map);
   }
 
   function deleteSupplementLogEntry(key) {
@@ -832,7 +905,8 @@ const Storage = (() => {
       supplements: getRawSupplements(),
       supplementLog: getRawSupplementLog(),
       supplementAnalyses: getRawSupplementAnalyses(),
-      dietAnalyses: getRawDietAnalyses()
+      dietAnalyses: getRawDietAnalyses(),
+      adhocQuickItems: getRawAdhocQuickItems()
     };
   }
 
@@ -889,6 +963,11 @@ const Storage = (() => {
         ? data.dietAnalyses
         : mergeDietAnalyses(getRawDietAnalyses(), data.dietAnalyses));
     }
+    if (data.adhocQuickItems) {
+      saveAdhocQuickItems(mode === 'replace'
+        ? data.adhocQuickItems
+        : mergeAdhocQuickItems(getRawAdhocQuickItems(), data.adhocQuickItems));
+    }
   }
 
   function clearAllData() {
@@ -907,6 +986,7 @@ const Storage = (() => {
         key === SUPPLEMENT_ANALYSES_KEY ||
         key === DIET_ANALYSES_KEY ||
         key === SUPP_STATIC_CACHE_KEY ||
+        key === ADHOC_QUICK_KEY ||
         key.startsWith(ENTRY_PREFIX)
       ) {
         keysToRemove.push(key);
@@ -981,6 +1061,8 @@ const Storage = (() => {
     deleteSupplement,
     mergeSupplements,
     isSupplementDueOn,
+    getRemainingStockMap,
+    getStockCoverage,
     getRawSupplementLog,
     saveRawSupplementLog,
     getSupplementLogForDate,
@@ -992,9 +1074,14 @@ const Storage = (() => {
     updateSupplementDoseTime,
     removeSupplementDose,
     addAdhocSupplementLog,
+    updateSupplementLogEntryTime,
+    extractDoseTimes: getSupplementTimes,
     getAdhocQuickItems,
+    getRawAdhocQuickItems,
+    saveAdhocQuickItems,
     addAdhocQuickItem,
     removeAdhocQuickItem,
+    mergeAdhocQuickItems,
     deleteSupplementLogEntry,
     mergeSupplementLog,
     getRawSupplementAnalyses,
