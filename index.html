@@ -140,7 +140,7 @@
   <section id="view-ustawienia" class="view">
     <div style="display:flex; align-items:baseline; justify-content:space-between; gap:8px;">
       <h1 class="page-title" style="margin-bottom:0;">Ustawienia</h1>
-      <span class="hint" style="white-space:nowrap;">v54</span>
+      <span class="hint" style="white-space:nowrap;">v56</span>
     </div>
 
     <h3 class="section-title" style="margin-top:16px;">Wygląd</h3>
@@ -597,6 +597,14 @@
     <div class="modal-sheet">
       <h3 id="suppModalTitle">Nowy suplement</h3>
 
+      <div class="scan-grid" id="suppAiButtonsRow">
+        <button type="button" class="btn scan-btn" id="suppScanLabelBtn">📷 Ze zdjęcia etykiety</button>
+        <button type="button" class="btn scan-btn" id="suppLookupBtn">🔍 Znajdź po nazwie</button>
+      </div>
+      <input type="file" id="suppLabelFileInput" accept="image/*" capture="environment" style="display:none;">
+      <div id="suppAiStatus" class="hint"></div>
+      <div id="suppAiError" class="error-msg"></div>
+
       <div class="form-group">
         <label>Nazwa</label>
         <input type="text" id="suppName" placeholder="np. Witamina D3">
@@ -610,6 +618,56 @@
         <label>Dawka (opcjonalnie)</label>
         <input type="text" id="suppDose" placeholder="np. 2000 IU">
       </div>
+
+      <div class="form-group">
+        <label>Typ</label>
+        <div class="supp-schedule-select" id="suppTypeSelect">
+          <button type="button" data-type="supplement">Suplement</button>
+          <button type="button" data-type="medication">Lek</button>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Forma (opcjonalnie)</label>
+        <select id="suppFormSelect">
+          <option value="">—</option>
+          <option value="tabletka">tabletka</option>
+          <option value="kapsułka">kapsułka</option>
+          <option value="krople">krople</option>
+          <option value="proszek">proszek</option>
+          <option value="płyn">płyn</option>
+          <option value="inna">inna</option>
+        </select>
+      </div>
+
+      <div class="form-row-2">
+        <div class="form-group">
+          <label>Wielkość opakowania</label>
+          <input type="number" id="suppPackageSize" inputmode="numeric" placeholder="szt. w opakowaniu (opcjonalnie)">
+        </div>
+        <div class="form-group">
+          <label>Producent/marka</label>
+          <input type="text" id="suppBrand" placeholder="opcjonalnie">
+        </div>
+      </div>
+
+      <details class="supp-collapsible" id="suppIngredientsSection">
+        <summary class="supp-collapsible-header">Skład (opcjonalnie)</summary>
+        <div id="suppIngredientsList"></div>
+        <button type="button" class="btn btn-secondary" id="suppAddIngredientBtn" style="margin-top:10px;">+ Dodaj składnik</button>
+      </details>
+
+      <div class="form-group">
+        <label>Zalecenia przyjmowania (opcjonalnie)</label>
+        <input type="text" id="suppInstructions" placeholder="np. z posiłkiem, na czczo">
+      </div>
+
+      <div class="form-group">
+        <label>Ostrzeżenia (opcjonalnie)</label>
+        <input type="text" id="suppWarnings" placeholder="np. interakcje, przeciwwskazania">
+      </div>
+
+      <div id="suppSourceHint" class="hint" hidden>Dane wypełnione przez AI — sprawdź przed zapisem.</div>
 
       <div class="form-group">
         <label>Pora dnia</label>

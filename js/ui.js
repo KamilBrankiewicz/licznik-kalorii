@@ -1555,6 +1555,73 @@ const UI = (() => {
 
   let editingGoalId = null;
   let editingSuppId = null;
+  let pendingSuppSource = 'manual';
+  let pendingSuppServingSize = '';
+
+  const SUPP_ING_UNITS = ['mg', 'µg', 'g', 'IU', 'ml', 'inna'];
+
+  function ingredientRowHtml(ing) {
+    ing = ing || {};
+    const unit = SUPP_ING_UNITS.includes(ing.unit) ? ing.unit : (ing.unit ? 'inna' : 'mg');
+    const otherVal = SUPP_ING_UNITS.includes(ing.unit) ? '' : (ing.unit || '');
+    return `
+      <div class="ingredient-row">
+        <input type="text" class="ing-name" placeholder="Nazwa składnika" value="${escapeHtml(ing.name || '')}">
+        <div class="form-row ingredient-row-details">
+          <input type="number" class="ing-amount" placeholder="Ilość" value="${ing.amount != null ? ing.amount : ''}">
+          <select class="ing-unit">
+            ${SUPP_ING_UNITS.map((u) => `<option value="${u}"${u === unit ? ' selected' : ''}>${u}</option>`).join('')}
+          </select>
+          <input type="number" class="ing-rws" placeholder="%RWS" value="${ing.rws != null ? ing.rws : ''}">
+        </div>
+        <input type="text" class="ing-unit-other ingredient-row-other" placeholder="jednostka" value="${escapeHtml(otherVal)}"${unit === 'inna' ? '' : ' hidden'}>
+        <button type="button" class="btn btn-danger ingredient-row-remove">✕ Usuń składnik</button>
+      </div>
+    `;
+  }
+
+  function renderSuppIngredientsRows(list) {
+    const container = document.getElementById('suppIngredientsList');
+    if (!container) return;
+    container.innerHTML = (list || []).map(ingredientRowHtml).join('');
+  }
+
+  function addSuppIngredientRow() {
+    const container = document.getElementById('suppIngredientsList');
+    if (!container) return;
+    container.insertAdjacentHTML('beforeend', ingredientRowHtml({}));
+    const section = document.getElementById('suppIngredientsSection');
+    if (section) section.open = true;
+  }
+
+  function removeSuppIngredientRow(rowEl) {
+    if (rowEl) rowEl.remove();
+  }
+
+  function updateIngredientUnitOther(selectEl) {
+    const row = selectEl.closest('.ingredient-row');
+    if (!row) return;
+    const otherInput = row.querySelector('.ing-unit-other');
+    otherInput.hidden = selectEl.value !== 'inna';
+  }
+
+  function collectSuppIngredientsFromForm() {
+    const rows = [...document.querySelectorAll('#suppIngredientsList .ingredient-row')];
+    const result = [];
+    rows.forEach((row) => {
+      const name = row.querySelector('.ing-name').value.trim();
+      if (!name) return;
+      const unitSelect = row.querySelector('.ing-unit').value;
+      const unit = unitSelect === 'inna' ? (row.querySelector('.ing-unit-other').value.trim() || 'inna') : unitSelect;
+      result.push({
+        name,
+        amount: Number(row.querySelector('.ing-amount').value) || null,
+        unit,
+        rws: Number(row.querySelector('.ing-rws').value) || null
+      });
+    });
+    return result;
+  }
 
   function renderGoalsList() {
     const container = document.getElementById('goalsList');
@@ -1649,7 +1716,7 @@ const UI = (() => {
 
     container.innerHTML = list.map((s) => `
       <div class="goal-item">
-        <span class="goal-item-name">${escapeHtml(suppLabel(s))}${s.active === false ? ' <span class="hint">(pauza)</span>' : ''} — ${SUPP_SCHEDULE_LABELS[s.scheduleType || 'daily']}</span>
+        <span class="goal-item-name">${escapeHtml(suppLabel(s))}${s.type === 'medication' ? '<span class="supp-type-badge">lek</span>' : ''}${s.active === false ? ' <span class="hint">(pauza)</span>' : ''} — ${SUPP_SCHEDULE_LABELS[s.scheduleType || 'daily']}${s.brand ? ` · ${escapeHtml(s.brand)}` : ''}</span>
         <div class="goal-item-actions">
           <button class="btn btn-secondary" data-action="edit" data-id="${s.id}" style="font-size:12px;padding:8px 12px;width:auto;">Edytuj</button>
           <button class="btn btn-danger" data-action="delete" data-id="${s.id}" style="font-size:12px;padding:8px;width:auto;">×</button>
@@ -1713,6 +1780,26 @@ const UI = (() => {
     document.getElementById('suppStock').value = remainingStock != null ? remainingStock : '';
     document.getElementById('suppActive').checked = supp ? supp.active !== false : true;
     document.getElementById('suppFormError').textContent = '';
+
+    document.getElementById('suppFormSelect').value = supp ? (supp.form || '') : '';
+    document.getElementById('suppPackageSize').value = supp && supp.packageSize != null ? supp.packageSize : '';
+    document.getElementById('suppBrand').value = supp ? (supp.brand || '') : '';
+    document.getElementById('suppInstructions').value = supp ? (supp.instructions || '') : '';
+    document.getElementById('suppWarnings').value = supp ? (supp.warnings || '') : '';
+    const typeVal = supp ? (supp.type || 'supplement') : 'supplement';
+    document.querySelectorAll('#suppTypeSelect button').forEach((b) => {
+      b.classList.toggle('active', b.dataset.type === typeVal);
+    });
+    const ingredients = supp && Array.isArray(supp.ingredients) ? supp.ingredients : [];
+    renderSuppIngredientsRows(ingredients);
+    document.getElementById('suppIngredientsSection').open = ingredients.length > 0;
+    document.getElementById('suppAiButtonsRow').hidden = !!editingSuppId;
+    document.getElementById('suppAiStatus').textContent = '';
+    document.getElementById('suppAiError').textContent = '';
+    document.getElementById('suppSourceHint').hidden = true;
+    pendingSuppSource = 'manual';
+    pendingSuppServingSize = supp ? (supp.servingSize || '') : '';
+
     updateSuppScheduleRowsVisibility();
     document.getElementById('suppModalOverlay').classList.add('active');
   }
@@ -1735,7 +1822,16 @@ const UI = (() => {
       timing: (document.querySelector('#suppTimingSelect button.active') || {}).dataset?.timing || 'any',
       scheduleType,
       active: document.getElementById('suppActive').checked,
-      timesPerDay: Math.max(1, Number(document.getElementById('suppTimesPerDay').value) || 1)
+      timesPerDay: Math.max(1, Number(document.getElementById('suppTimesPerDay').value) || 1),
+      type: (document.querySelector('#suppTypeSelect button.active') || {}).dataset?.type || 'supplement',
+      form: document.getElementById('suppFormSelect').value || '',
+      packageSize: document.getElementById('suppPackageSize').value === '' ? null : (Number(document.getElementById('suppPackageSize').value) || null),
+      brand: document.getElementById('suppBrand').value.trim(),
+      ingredients: collectSuppIngredientsFromForm(),
+      instructions: document.getElementById('suppInstructions').value.trim(),
+      warnings: document.getElementById('suppWarnings').value.trim(),
+      source: pendingSuppSource,
+      servingSize: pendingSuppServingSize
     };
 
     const stockInput = document.getElementById('suppStock').value;
@@ -1781,6 +1877,110 @@ const UI = (() => {
     renderSupplementsList();
     renderSupplementsSection();
     showToast(editingSuppId ? 'Zapisano zmiany' : 'Suplement zapisany');
+  }
+
+  function fillSuppFormFromAiResult(result) {
+    if (result.name) document.getElementById('suppName').value = result.name;
+    if (result.brand) document.getElementById('suppBrand').value = result.brand;
+    if (result.dose) document.getElementById('suppDose').value = result.dose;
+    if (result.type === 'medication' || result.type === 'supplement') {
+      document.querySelectorAll('#suppTypeSelect button').forEach((b) => {
+        b.classList.toggle('active', b.dataset.type === result.type);
+      });
+    }
+    if (result.form) document.getElementById('suppFormSelect').value = result.form;
+    if (result.packageSize != null) {
+      document.getElementById('suppPackageSize').value = result.packageSize;
+      if (!document.getElementById('suppStock').value) {
+        document.getElementById('suppStock').value = result.packageSize;
+      }
+    }
+    if (result.instructions) document.getElementById('suppInstructions').value = result.instructions;
+    if (result.warnings) document.getElementById('suppWarnings').value = result.warnings;
+    if (Array.isArray(result.ingredients) && result.ingredients.length) {
+      renderSuppIngredientsRows(result.ingredients);
+      document.getElementById('suppIngredientsSection').open = true;
+    }
+    if (result.suggestedTiming) {
+      document.querySelectorAll('#suppTimingSelect button').forEach((b) => {
+        b.classList.toggle('active', b.dataset.timing === result.suggestedTiming);
+      });
+    }
+    if (result.note) {
+      const notesEl = document.getElementById('suppNotes');
+      notesEl.value = notesEl.value ? `${notesEl.value}\n${result.note}` : result.note;
+    }
+    pendingSuppServingSize = result.servingSize || '';
+    document.getElementById('suppSourceHint').hidden = false;
+  }
+
+  function showSuppAiError(err) {
+    const errorEl = document.getElementById('suppAiError');
+    if (err.message === 'NO_API_KEY') {
+      errorEl.innerHTML = 'Brak klucza Gemini API. Dodaj go w <button type="button" class="link-btn go-settings">Ustawieniach</button>.';
+      errorEl.querySelector('.go-settings').addEventListener('click', () => {
+        closeSupplementModal();
+        switchView('ustawienia');
+      });
+    } else if (err.message === 'NETWORK_ERROR') {
+      errorEl.textContent = 'Błąd sieci — sprawdź połączenie z internetem.';
+    } else if (err.message === 'NOT_RECOGNIZED') {
+      errorEl.textContent = 'Nie rozpoznano produktu — wypełnij dane ręcznie.';
+    } else {
+      errorEl.textContent = 'Nie udało się pobrać danych. Wypełnij dane ręcznie.';
+    }
+  }
+
+  function setSuppAiButtonsDisabled(disabled) {
+    document.getElementById('suppScanLabelBtn').disabled = disabled;
+    document.getElementById('suppLookupBtn').disabled = disabled;
+  }
+
+  async function handleSuppLabelScan(file) {
+    const settings = Storage.getSettings();
+    const statusEl = document.getElementById('suppAiStatus');
+    const errorEl = document.getElementById('suppAiError');
+    errorEl.textContent = '';
+    statusEl.textContent = 'Analizuję etykietę...';
+    setSuppAiButtonsDisabled(true);
+
+    try {
+      const result = await Ocr.analyzeSupplementLabel(file, settings.geminiApiKey);
+      statusEl.textContent = '';
+      fillSuppFormFromAiResult(result);
+      pendingSuppSource = 'photo';
+      showToast('Rozpoznano etykietę — sprawdź dane');
+    } catch (err) {
+      statusEl.textContent = '';
+      showSuppAiError(err);
+    } finally {
+      setSuppAiButtonsDisabled(false);
+    }
+  }
+
+  async function handleSuppLookup() {
+    const name = document.getElementById('suppName').value.trim();
+    const errorEl = document.getElementById('suppAiError');
+    const statusEl = document.getElementById('suppAiStatus');
+    errorEl.textContent = '';
+    if (!name) { errorEl.textContent = 'Najpierw wpisz nazwę'; return; }
+
+    const settings = Storage.getSettings();
+    statusEl.textContent = 'Szukam produktu...';
+    setSuppAiButtonsDisabled(true);
+
+    try {
+      const result = await Ocr.lookupSupplementByName(name, settings.geminiApiKey);
+      statusEl.textContent = '';
+      fillSuppFormFromAiResult(result);
+      pendingSuppSource = 'ai';
+      showToast('Znaleziono produkt — sprawdź dane');
+    } catch (err) {
+      statusEl.textContent = '';
+      showSuppAiError(err);
+    } finally {
+      setSuppAiButtonsDisabled(false);
+    }
   }
 
   // ── Raport odżywczy (wyniki analizy dnia względem zapisanych celów) ──
@@ -2178,10 +2378,17 @@ const UI = (() => {
   const DIET_ANALYSIS_MIN_DAYS = { week: 3, month: 7, quarter: 14 };
 
   function suppListForPrompt() {
-    return Storage.getSupplements().filter((s) => s.active !== false).map((s) => ({
-      nazwa: suppLabel(s), dawka: s.dose || null, notatki: s.notes || null,
-      pora: s.timing || 'any', dawek_dziennie: s.timesPerDay || 1
-    }));
+    return Storage.getSupplements().filter((s) => s.active !== false).map((s) => {
+      const item = {
+        nazwa: suppLabel(s), dawka: s.dose || null, notatki: s.notes || null,
+        pora: s.timing || 'any', dawek_dziennie: s.timesPerDay || 1
+      };
+      if (s.type) item.type = s.type;
+      if (Array.isArray(s.ingredients) && s.ingredients.length) item.ingredients = s.ingredients;
+      if (s.form) item.form = s.form;
+      if (s.instructions) item.instructions = s.instructions;
+      return item;
+    });
   }
 
   function shiftDateStr(dateStr, deltaDays) {
@@ -2979,6 +3186,11 @@ const UI = (() => {
     closeSupplementModal,
     saveSupplementFromForm,
     updateSuppScheduleRowsVisibility,
+    addSuppIngredientRow,
+    removeSuppIngredientRow,
+    updateIngredientUnitOther,
+    handleSuppLabelScan,
+    handleSuppLookup,
     flushSupplementLogPush,
     getCurrentDate: () => currentDate
   };

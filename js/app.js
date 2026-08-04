@@ -288,6 +288,29 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('#suppTimingSelect button').forEach((b) => b.classList.remove('active'));
     btn.classList.add('active');
   });
+  document.getElementById('suppTypeSelect').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-type]');
+    if (!btn) return;
+    document.querySelectorAll('#suppTypeSelect button').forEach((b) => b.classList.remove('active'));
+    btn.classList.add('active');
+  });
+  document.getElementById('suppAddIngredientBtn').addEventListener('click', () => UI.addSuppIngredientRow());
+  document.getElementById('suppIngredientsList').addEventListener('click', (e) => {
+    const btn = e.target.closest('.ingredient-row-remove');
+    if (btn) UI.removeSuppIngredientRow(btn.closest('.ingredient-row'));
+  });
+  document.getElementById('suppIngredientsList').addEventListener('change', (e) => {
+    if (e.target.classList.contains('ing-unit')) UI.updateIngredientUnitOther(e.target);
+  });
+  document.getElementById('suppScanLabelBtn').addEventListener('click', () => {
+    document.getElementById('suppLabelFileInput').click();
+  });
+  document.getElementById('suppLabelFileInput').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) UI.handleSuppLabelScan(file);
+    e.target.value = '';
+  });
+  document.getElementById('suppLookupBtn').addEventListener('click', () => UI.handleSuppLookup());
 
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch((err) => {

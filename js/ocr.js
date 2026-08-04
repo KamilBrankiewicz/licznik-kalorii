@@ -106,13 +106,13 @@ Jeśli na zdjęciu nie widać jedzenia, zwróć: {"error": "nie rozpoznano jedze
     });
   }
 
-  async function callGemini(parts, apiKey) {
+  async function callGemini(parts, apiKey, extraPayload) {
     if (!apiKey) {
       throw new Error('NO_API_KEY');
     }
 
     const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent';
-    const payload = { contents: [{ parts }] };
+    const payload = { contents: [{ parts }], ...(extraPayload || {}) };
 
     let response;
     try {
@@ -184,6 +184,73 @@ Jeśli na zdjęciu nie widać jedzenia, zwróć: {"error": "nie rozpoznano jedze
       ],
       apiKey
     );
+  }
+
+  const PROMPT_SUPP_LABEL = `Zdjęcie przedstawia opakowanie/etykietę suplementu diety lub leku.
+Zwróć WYŁĄCZNIE JSON, bez tekstu przed/po, w formacie:
+{
+  "name": "pełna nazwa produktu z opakowania",
+  "brand": "producent lub null",
+  "type": "supplement | medication",
+  "form": "tabletka | kapsułka | krople | proszek | płyn | inna | null",
+  "servingSize": "porcja wg etykiety, np. '1 kapsułka', lub null",
+  "packageSize": number lub null,
+  "dose": "krótki opis dawki do wyświetlania, np. '2000 IU' lub '200 mg'",
+  "ingredients": [ { "name": "…", "amount": number lub null, "unit": "mg|µg|g|IU|ml|inna", "rws": number lub null } ],
+  "instructions": "zalecenia przyjmowania z etykiety lub null",
+  "warnings": "istotne ostrzeżenia z etykiety (krótko) lub null",
+  "suggestedTiming": "morning | noon | evening | any"
+}
+
+Zasady:
+- suggestedTiming wywnioskuj z zaleceń (np. "na noc" → evening); gdy brak podstaw → "any".
+- Przepisuj dane z etykiety, NIE dopowiadaj składników, których nie widać.
+Jeśli zdjęcie nie przedstawia etykiety suplementu/leku, zwróć: {"error": "not_recognized"}`;
+
+  async function analyzeSupplementLabel(file, apiKey) {
+    const base64 = await resizeImageToBase64(file);
+    return callGemini(
+      [
+        { text: PROMPT_SUPP_LABEL },
+        { inline_data: { mime_type: 'image/jpeg', data: base64 } }
+      ],
+      apiKey
+    );
+  }
+
+  const PROMPT_SUPP_LOOKUP = `Znajdź konkretny suplement diety lub lek dostępny w Polsce o nazwie: "%NAME%"
+Jeśli nazwa wskazuje wiele wariantów (różne dawki/warianty), wybierz najpopularniejszy.
+
+Zwróć WYŁĄCZNIE JSON, bez tekstu przed/po, w formacie:
+{
+  "name": "pełna nazwa produktu",
+  "brand": "producent lub null",
+  "type": "supplement | medication",
+  "form": "tabletka | kapsułka | krople | proszek | płyn | inna | null",
+  "servingSize": "porcja wg etykiety, np. '1 kapsułka', lub null",
+  "packageSize": number lub null,
+  "dose": "krótki opis dawki do wyświetlania, np. '2000 IU' lub '200 mg'",
+  "ingredients": [ { "name": "…", "amount": number lub null, "unit": "mg|µg|g|IU|ml|inna", "rws": number lub null } ],
+  "instructions": "zalecenia przyjmowania lub null",
+  "warnings": "istotne ostrzeżenia/interakcje (krótko) lub null",
+  "suggestedTiming": "morning | noon | evening | any",
+  "note": "uwagi o wyborze wariantu lub null"
+}
+
+Zasady:
+- Skład podawaj TYLKO jeśli znalazłeś dane konkretnego produktu; nie zgaduj.
+- Dla leków podaj substancję czynną w ingredients (np. ibuprofen 200 mg).
+- suggestedTiming wywnioskuj z zaleceń; gdy brak podstaw → "any".
+Jeśli produkt nierozpoznany, zwróć: {"error": "not_recognized"}`;
+
+  async function lookupSupplementByName(name, apiKey) {
+    const prompt = PROMPT_SUPP_LOOKUP.replace('%NAME%', name);
+    try {
+      return await callGemini([{ text: prompt }], apiKey, { tools: [{ google_search: {} }] });
+    } catch (e) {
+      if (e.message !== 'API_ERROR') throw e;
+      return callGemini([{ text: prompt }], apiKey);
+    }
   }
 
   const PROMPT_RECIPE = `Przeanalizuj tekst przepisu kulinarnego podany przez użytkownika. Zidentyfikuj wszystkie składniki, przelicz miary kuchenne (łyżki, szklanki, sztuki itp.) na gramy i oszacuj wartości odżywcze na 100g dla każdego składnika.
@@ -434,6 +501,8 @@ Odpowiadaj wyłącznie po polsku, rzeczowo i ostrożnie.
 ${profileText}
 
 ## Stałe suplementy i leki
+Pole "ingredients" (jeśli obecne) jest przepisane z etykiet — wykorzystuj je do wykrywania
+dublowania składników i sumowania dawek zamiast zgadywać skład po nazwie.
 ${JSON.stringify(payload.supplements)}
 
 ## Dane z okresu (zakres: ${scope}, ${payload.startDate} – ${payload.endDate})
@@ -513,5 +582,5 @@ ${DIET_RESPONSE_FORMAT}`;
     return callGemini([{ text: prompt }], apiKey);
   }
 
-  return { analyzeLabel, analyzeVoiceEntry, analyzeScreenshot, analyzeMealPhoto, analyzeRecipeText, analyzeRecipeImage, analyzeIngredientLookup, transcribeAudio, analyzeDayAgainstGoal, analyzeSupplements, analyzeDiet };
+  return { analyzeLabel, analyzeVoiceEntry, analyzeScreenshot, analyzeMealPhoto, analyzeRecipeText, analyzeRecipeImage, analyzeIngredientLookup, transcribeAudio, analyzeDayAgainstGoal, analyzeSupplements, analyzeDiet, analyzeSupplementLabel, lookupSupplementByName };
 })();

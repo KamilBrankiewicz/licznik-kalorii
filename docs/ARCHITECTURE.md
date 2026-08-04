@@ -87,9 +87,30 @@ Supplement = {
   stockBaseline: number | null,      // zapas wpisany w formularzu — punkt odniesienia
   stockBaselineDate: "YYYY-MM-DD" | null,  // data wpisania; dawki liczą się od dnia PO tej dacie
   stock?: number | null,             // pole legacy sprzed modelu baza+data — patrz niżej
+  // pola opcjonalne (wypełniane ręcznie lub przez AI — patrz "Dodawanie AI" niżej),
+  // stare rekordy ich nie mają, odczyt zawsze z domyślną wartością:
+  type?: "supplement" | "medication",       // domyślnie 'supplement'
+  form?: "tabletka" | "kapsułka" | "krople" | "proszek" | "płyn" | "inna",
+  servingSize?: string,               // "jedna dawka" wg etykiety, np. "1 kapsułka"
+  packageSize?: number | null,        // szt./porcji w opakowaniu
+  brand?: string,
+  ingredients?: { name: string, amount: number | null, unit: string, rws: number | null }[],
+  instructions?: string,              // zalecenia przyjmowania
+  warnings?: string,                  // ostrzeżenia/interakcje z etykiety
+  source?: "photo" | "ai" | "manual", // jak powstał rekord
   updatedAt: string
 }
 // nagrobek: { id, deleted: true, updatedAt }
+```
+
+**Dodawanie AI (etykieta / wyszukiwanie po nazwie):** `Ocr.analyzeSupplementLabel(file, apiKey)`
+i `Ocr.lookupSupplementByName(name, apiKey)` (w `ocr.js`) zwracają ten sam kształt JSON i
+tylko wypełniają formularz suplementu (`ui.js: handleSuppLabelScan/handleSuppLookup` →
+`fillSuppFormFromAiResult`) — nic nie zapisuje się bez ręcznego zatwierdzenia. Wyszukiwanie
+po nazwie woła Gemini z groundingiem (`tools: [{ google_search: {} }]`); przy błędzie HTTP
+jedna próba ponowna bez groundingu. `callGemini` przyjmuje trzeci opcjonalny parametr
+`extraPayload` scalany z payloadem — tak dopięto `tools` bez zmiany istniejących wywołań.
+```javascript
 
 AdhocQuickItem = { name: string, usedAt: string, updatedAt: string } | { name, deleted: true, updatedAt }
 // tożsamość rekordu = name.toLowerCase(); merge po updatedAt (fallback usedAt dla starych rekordów bez updatedAt)

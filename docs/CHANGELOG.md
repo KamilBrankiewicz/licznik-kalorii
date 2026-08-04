@@ -15,6 +15,26 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku — niezacommitowane] 2026-08-04 — Dodawanie suplementów/leków ze zdjęcia etykiety i po nazwie (AI)
+**Co:** Dwa nowe sposoby wypełniania formularza suplementu/leku: „📷 Ze zdjęcia etykiety"
+  (Gemini analizuje zdjęcie opakowania) i „🔍 Znajdź po nazwie" (Gemini z groundingiem
+  Google Search). Oba tylko wypełniają formularz — zapis wymaga ręcznego zatwierdzenia.
+  Formularz suplementu rozszerzony o: typ (suplement/lek, badge „lek" na liście), formę,
+  wielkość opakowania, markę, skład (dynamiczna lista składników w zwijanej sekcji),
+  zalecenia przyjmowania, ostrzeżenia. Analiza AI suplementów (`Ocr.analyzeSupplements`)
+  wykorzystuje teraz skład (`ingredients`), jeśli jest dostępny, zamiast zgadywać po nazwie.
+**Dlaczego:** ręczne przepisywanie składu z etykiety było żmudne i podatne na literówki
+  w dawkach — te dane są jednocześnie podstawą analizy interakcji/sumowania dawek.
+**Pliki:** `index.html`, `css/style.css`, `js/ui.js`, `js/app.js`, `js/ocr.js`, `sw.js`.
+**Uwagi:** `Ocr.callGemini` przyjął trzeci opcjonalny parametr `extraPayload` (używany do
+  `tools: [{ google_search: {} }]` przy wyszukiwaniu po nazwie) — żadne istniejące wywołanie
+  nie zmieniło zachowania. Wyszukiwanie po nazwie ma jedną próbę ponowną bez groundingu przy
+  błędzie HTTP. Model danych suplementu wstecznie zgodny — stare rekordy bez nowych pól
+  działają bez zmian, bez migracji. `storage.js`, nagrobki, merge i sync nie wymagały zmian
+  (cały obiekt suplementu już podróżował w całości). Zob. `docs/PLAN-SUPLEMENTY-AI-DODAWANIE.md`.
+
+---
+
 ## [w toku — niezacommitowane] 2026-08-04 — Usprawnienia modułu suplementów (6 poprawek)
 **Co:** Sześć poprawek modułu suplementów wg `docs/PLAN-USPRAWNIENIA-SUPLEMENTY.md`:
   (1) `escapeHtml` escapuje też `"`/`'`, więc nazwy z cudzysłowem nie psują atrybutów HTML;

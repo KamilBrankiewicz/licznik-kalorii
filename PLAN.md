@@ -38,6 +38,10 @@
     zamiast nadpisywanego pola, alarm zapasu w dniach pokrycia wg harmonogramu, sharding
     logu suplementów w Firestore po miesiącach z debounce'em pusha, edycja godziny dawki
     przez `<input type="time">` zamiast `prompt()`, jeden odczyt logu dnia na render
+  - Dodawanie suplementów/leków ze zdjęcia etykiety i wyszukiwania po nazwie (AI, z
+    groundingiem Google Search), formularz rozszerzony o typ/formę/opakowanie/markę/skład/
+    zalecenia/ostrzeżenia, skład wykorzystywany w analizie AI suplementów —
+    `docs/PLAN-SUPLEMENTY-AI-DODAWANIE.md`
 
 **Pozostało (świadomie odłożone):**
 - Wielojęzyczność — raczej bez sensu przy aplikacji dla jednego użytkownika
