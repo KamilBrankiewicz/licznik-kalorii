@@ -489,6 +489,10 @@ html, body {
   background: var(--bg-card);
 }
 
+.entries-list + .settings-accordion {
+  margin-top: 10px;
+}
+
 .settings-accordion summary {
   list-style: none;
   cursor: pointer;
