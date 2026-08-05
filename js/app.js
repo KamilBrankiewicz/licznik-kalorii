@@ -131,6 +131,10 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.addEventListener('click', () => UI.setHistoryMetric(btn.dataset.metric));
   });
 
+  document.querySelectorAll('#historyRangeTabs button').forEach((btn) => {
+    btn.addEventListener('click', () => UI.setHistoryRange(btn.dataset.range));
+  });
+
   document.getElementById('historySearchInput').addEventListener('input', () => UI.searchHistory());
 
   // Przycisk "Z przepisu" w modalu dodawania

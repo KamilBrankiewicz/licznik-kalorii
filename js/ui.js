@@ -9,6 +9,8 @@ const UI = (() => {
   let authListenerRegistered = false;
   let historyMetric = Storage.getHistoryMetric();
   let historyCalendarMonth = new Date();
+  let historyRange = 'week';
+  let historyMeasure = 'raw';
   let productCache = null;
   let autocompleteDebounce = null;
   let lastAutoFilledName = null;
@@ -453,6 +455,15 @@ const UI = (() => {
 
   function renderWeeklyStats() {
     const container = document.getElementById('weeklyStats');
+    document.querySelectorAll('#historyRangeTabs button').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.range === historyRange);
+    });
+
+    if (historyRange === 'month' || historyRange === 'quarter') {
+      renderNutritionRangeChart(container, historyRange);
+      return;
+    }
+
     const settings = Storage.getSettings();
     const dayNames = ['Nd', 'Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'So'];
     const todayStr = toDateStr(new Date());
@@ -515,6 +526,113 @@ const UI = (() => {
     container.querySelectorAll('[data-date]').forEach((el) => {
       el.addEventListener('click', () => goToDate(el.dataset.date));
     });
+  }
+
+  function buildNutritionChart(days, metricKey, goal, unit, judge) {
+    const W = 300, H = 100, PAD = 6;
+    const vals = days.map((d) => d.summary[metricKey]);
+    const min = Math.min(...vals, goal);
+    const max = Math.max(...vals, goal);
+    const yMin = min, yMax = max === min ? min + 1 : max;
+    const dayMs = 86400000;
+    const t0 = new Date(days[0].date + 'T00:00:00').getTime();
+    const t1 = new Date(days[days.length - 1].date + 'T00:00:00').getTime();
+    const span = Math.max(t1 - t0, dayMs);
+    const xy = (d) => {
+      const x = PAD + ((new Date(d.date + 'T00:00:00').getTime() - t0) / span) * (W - 2 * PAD);
+      const y = PAD + (1 - (d.summary[metricKey] - yMin) / (yMax - yMin)) * (H - 2 * PAD);
+      return [Math.round(x * 10) / 10, Math.round(y * 10) / 10];
+    };
+    const coords = days.map(xy);
+    const polyline = coords.map((c) => c.join(',')).join(' ');
+    const lastDot = coords[coords.length - 1];
+    const goalY = Math.round((PAD + (1 - (goal - yMin) / (yMax - yMin)) * (H - 2 * PAD)) * 10) / 10;
+
+    const avg = Math.round(vals.reduce((s, v) => s + v, 0) / vals.length);
+    const min2 = Math.round(Math.min(...vals));
+    const max2 = Math.round(Math.max(...vals));
+    const isBad = (v) => (judge === 'max' ? v > goal : judge === 'min' ? v < goal : false);
+    const inGoal = days.filter((d) => !isBad(d.summary[metricKey])).length;
+
+    return {
+      svg: `<svg class="nutrition-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
+        <line x1="${PAD}" y1="${goalY}" x2="${W - PAD}" y2="${goalY}" stroke="var(--warning)" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.7" vector-effect="non-scaling-stroke"/>
+        ${days.length > 1 ? `<polyline points="${polyline}" fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
+        <circle cx="${lastDot[0]}" cy="${lastDot[1]}" r="3" fill="var(--accent)"/>
+      </svg>`,
+      stats: `
+        <div class="week-stat"><div class="value">${avg} ${unit}</div><div class="label">średnia</div></div>
+        <div class="week-stat"><div class="value">${min2} ${unit}</div><div class="label">min</div></div>
+        <div class="week-stat"><div class="value">${max2} ${unit}</div><div class="label">max</div></div>
+        ${judge !== 'none' ? `<div class="week-stat"><div class="value">${inGoal}/${days.length}</div><div class="label">dni w celu</div></div>` : ''}`
+    };
+  }
+
+  function computeMovingAverage(days, key, window) {
+    return days.map((d, i) => {
+      const slice = days.slice(Math.max(0, i - window + 1), i + 1);
+      const avg = slice.reduce((s, x) => s + x.summary[key], 0) / slice.length;
+      return { date: d.date, summary: { ...d.summary, [key]: avg } };
+    });
+  }
+
+  function renderNutritionRangeChart(container, range) {
+    const settings = Storage.getSettings();
+    const metricKey = historyMetric;
+    const metric = { ...HISTORY_METRICS[metricKey], goal: settings[HISTORY_METRICS[metricKey].goalKey] };
+    const key = metricKeyOf(metric);
+    const daysCount = range === 'month' ? 30 : 90;
+
+    const days = [];
+    for (let i = daysCount - 1; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const date = toDateStr(d);
+      days.push({ date, summary: Storage.getDailySummary(date) });
+    }
+
+    const daysWithEntries = days.filter((d) => d.summary.kcal > 0);
+    if (daysWithEntries.length === 0) {
+      container.innerHTML = '';
+      return;
+    }
+
+    const chartDays = historyMeasure === 'avg7'
+      ? computeMovingAverage(days, key, 7).filter((d, i) => days[i].summary.kcal > 0)
+      : daysWithEntries;
+
+    const chart = buildNutritionChart(chartDays, key, metric.goal, metric.unit, metric.judge);
+    const title = range === 'month' ? 'Ostatnie 30 dni' : 'Ostatnie 90 dni';
+
+    container.innerHTML = `
+      <div class="summary-card">
+        <h3 class="section-title">${title} — ${metric.label}</h3>
+        <div class="measure-tabs" id="historyMeasureTabs">
+          <span class="measure-label">Miara:</span>
+          <button type="button" data-measure="raw" class="${historyMeasure === 'raw' ? 'active' : ''}">Suma dnia</button>
+          <button type="button" data-measure="avg7" class="${historyMeasure === 'avg7' ? 'active' : ''}">Średnia 7 dni</button>
+        </div>
+        ${chart.svg}
+        <div class="week-stats">${chart.stats}</div>
+      </div>
+    `;
+
+    container.querySelectorAll('#historyMeasureTabs button').forEach((btn) => {
+      btn.addEventListener('click', () => setHistoryMeasure(btn.dataset.measure));
+    });
+  }
+
+  function setHistoryMeasure(measure) {
+    historyMeasure = measure;
+    renderWeeklyStats();
+  }
+
+  function setHistoryRange(range) {
+    historyRange = range;
+    document.querySelectorAll('#historyRangeTabs button').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.range === range);
+    });
+    renderWeeklyStats();
   }
 
   let weightChartMetric = 'kg';
@@ -3206,6 +3324,7 @@ const UI = (() => {
     renderDiary,
     renderHistory,
     setHistoryMetric,
+    setHistoryRange,
     renderSettings,
     setTheme,
     saveSettingsFromForm,

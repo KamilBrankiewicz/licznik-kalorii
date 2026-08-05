@@ -15,6 +15,21 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku — niezacommitowane] 2026-08-05 — Wykres liniowy historii (tydzień/miesiąc/kwartał) + średnia 7-dniowa
+**Co:** W widoku Historia dodano przełącznik zakresu Tydzień/Miesiąc/Kwartał. Tydzień to
+  dotychczasowe 7 słupków. Miesiąc i kwartał to wykresy liniowe SVG (30/90 dni) z linią celu
+  i statystykami (średnia, min, max, dni w celu). Dla miesiąca/kwartału dodatkowo przełącznik
+  „Miara: Suma dnia / Średnia 7 dni" — wygładza wykres kroczącą średnią z ostatnich 7 dni
+  kalendarzowych (dni bez wpisu liczone jako 0, jak w typowych wykresach epidemiologicznych).
+**Dlaczego:** słupki dla 30/90 dni byłyby nieczytelne — liniowy wykres lepiej pokazuje trend,
+  a surowe dzienne wartości są zaszumione, więc średnia krocząca ułatwia odczyt kierunku.
+**Pliki:** `index.html`, `js/ui.js`, `js/app.js`, `css/style.css`, `sw.js` (bump v58→v60).
+**Uwagi:** `buildNutritionChart()` w `ui.js` wzorowana na istniejącej `buildWeightChart()`.
+  Dni bez wpisów są odfiltrowywane przed rysowaniem (po ewentualnym wyliczeniu średniej), oś X
+  mapowana po dacie (nie po indeksie), więc przerwy w danych tworzą realne odstępy na wykresie.
+  `computeMovingAverage()` liczy okno 7-dniowe na pełnej tablicy dni zakresu (z zerami dla
+  brakujących wpisów) — dopiero potem filtrowane są dni bez oryginalnego wpisu.
+
 ## [w toku — niezacommitowane] 2026-08-04 — Udostępnianie suplementów/leków partnerowi
 **Co:** Przycisk „Udostępnij" przy każdym suplemencie/leku na liście definicji. Wysyła kopię
   definicji (bez zapasu/harmonogramu aktywności — `active`/`stockBaseline` partner ustawia
