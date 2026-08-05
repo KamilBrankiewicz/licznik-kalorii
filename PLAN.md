@@ -46,6 +46,10 @@
     liście suplementów, ten sam mechanizm skrzynki odbiorczej co przy przepisach
     (`sharedSupplements` w Firestore, partner UID z Ustawień), odebrana pozycja trafia do
     listy suplementów partnera jako nowy, niezależny rekord
+  - Sekcje raportów AI w Dzienniku zwinięte pod jedną zwijaną sekcję „Raporty odżywcze"
+    (domyślnie zamkniętą, wzorzec `<details class="settings-accordion">`); przemianowane na
+    „Analiza wybranego celu" (jeden dzień vs jeden wybrany własny cel) i „Analiza wszystkich
+    celów" (tydzień/miesiąc/kwartał vs wszystkie liczbowe cele dzienne naraz)
 
 **Pozostało (świadomie odłożone):**
 - Wielojęzyczność — raczej bez sensu przy aplikacji dla jednego użytkownika

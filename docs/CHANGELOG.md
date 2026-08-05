@@ -15,6 +15,22 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku — niezacommitowane] 2026-08-05 — Zwinięta sekcja "Raporty odżywcze" w Dzienniku
+**Co:** Na karcie Dziennik dwie sekcje raportów AI ("Raport odżywczy" i "Analiza AI diety")
+  są teraz schowane pod jedną zwijaną sekcją "Raporty odżywcze" (domyślnie zwiniętą).
+  Przy okazji doprecyzowano ich nazwy: "Analiza wybranego celu" (dawniej "Raport odżywczy" —
+  analiza jednego dnia względem jednego wybranego własnego celu z Ustawień) i "Analiza
+  wszystkich celów" (dawniej "Analiza AI diety" — analiza tygodnia/miesiąca/kwartału względem
+  wszystkich liczbowych celów dziennych naraz).
+**Dlaczego:** karta Dziennik robiła się zatłoczona — obie sekcje raportów były zawsze widoczne
+  na dole, nawet gdy użytkownik ich w danej chwili nie potrzebował.
+**Pliki:** `index.html`, `js/ui.js`, `sw.js` (bump v60→v61).
+**Uwagi:** czysto strukturalna zmiana — użyto istniejącego wzorca `.settings-accordion`
+  (natywny `<details>/<summary>`, bez dodatkowego JS). Świadomie NIE dodano wyboru
+  tydzień/miesiąc do "Analizy wybranego celu" — wymagałoby to nowego formatu promptu/odpowiedzi
+  AI dla wielu dni naraz (obecny format w `ocr.js` analizuje posiłek-po-posiłku, nieskalowalne
+  na dłuższe okresy).
+
 ## [w toku — niezacommitowane] 2026-08-05 — Wykres liniowy historii (tydzień/miesiąc/kwartał) + średnia 7-dniowa
 **Co:** W widoku Historia dodano przełącznik zakresu Tydzień/Miesiąc/Kwartał. Tydzień to
   dotychczasowe 7 słupków. Miesiąc i kwartał to wykresy liniowe SVG (30/90 dni) z linią celu

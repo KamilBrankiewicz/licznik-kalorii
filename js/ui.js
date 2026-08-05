@@ -2227,7 +2227,7 @@ const UI = (() => {
 
     container.innerHTML = `
       <div class="section-header-row">
-        <h3 class="section-title">Raport odżywczy</h3>
+        <h3 class="section-title">Analiza wybranego celu</h3>
         <button class="btn btn-secondary" id="newAnalysisBtn" style="width:auto;padding:8px 14px;font-size:12px;">+ Nowa analiza</button>
       </div>
       <div id="dailyAnalysesList">${listHtml}</div>
@@ -3153,7 +3153,7 @@ const UI = (() => {
 
     container.innerHTML = `
       <div class="section-header-row">
-        <h3 class="section-title">Analiza AI diety</h3>
+        <h3 class="section-title">Analiza wszystkich celów</h3>
       </div>
       <div class="supp-analysis-scope-row">
         <button class="btn btn-secondary" data-scope="week">Tydzień</button>
