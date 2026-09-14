@@ -9,8 +9,16 @@ Zwróć WYŁĄCZNIE JSON w formacie:
     "carbs": number,
     "fat": number,
     "fiber": number lub null jeśli błonnik nie jest podany na etykiecie
-  }
+  },
+  "servingGrams": number lub null,
+  "perServing": { "kcal": number, "protein": number, "carbs": number, "fat": number, "fiber": number lub null } lub null
 }
+
+Zasady:
+- per100g ZAWSZE z kolumny "100 g" (lub "100 ml"). Nie mieszaj kolumn.
+- Jeśli etykieta ma osobną kolumnę "porcja" / "1 opakowanie" / "sztuka", przepisz jej wartości do perServing; w przeciwnym razie perServing = null.
+- servingGrams = waga porcji podana wprost na etykiecie (np. "porcja 250 g", "opakowanie 300 g"). Jeśli nie jest podana, zwróć null — NIE wyliczaj jej samodzielnie.
+- name = nazwa produktu (np. "Sałatka nicejska z tuńczykiem"), nie kategoria posiłku typu "Kolacja" ani nazwa producenta.
 Jeśli nie rozpoznajesz etykiety, zwróć: {"error": "nie rozpoznano etykiety"}`;
 
   const PROMPT_VOICE = `Jesteś asystentem do liczenia kalorii. Użytkownik podał głosowo opis posiłku, który właśnie zjadł: "%TRANSCRIPT%"

@@ -1520,6 +1520,17 @@ const UI = (() => {
     if (typeof result.fiber === 'number') document.getElementById('entryFiber').value = Math.round(result.fiber * 10) / 10;
   }
 
+  // Waga porcji z etykiety: podana wprost, a gdy jej brak — z proporcji kcal porcji do kcal/100g
+  // (etykiety gotowych dań często mają kolumnę "porcja" bez gramatury). Liczymy w kodzie, nie w modelu.
+  function labelServingGrams(result) {
+    const explicit = Number(result.servingGrams);
+    if (explicit > 0) return Math.round(explicit);
+    const per100 = Number(result.per100g?.kcal);
+    const serving = Number(result.perServing?.kcal);
+    if (per100 > 0 && serving > 0) return Math.round((serving / per100) * 100);
+    return null;
+  }
+
   async function handleLabelScan(file) {
     pendingSource = 'ocr';
     const settings = Storage.getSettings();
@@ -1535,7 +1546,7 @@ const UI = (() => {
       if (result.name) document.getElementById('entryName').value = result.name;
 
       if (!document.getElementById('entryGrams').value) {
-        document.getElementById('entryGrams').value = 100;
+        document.getElementById('entryGrams').value = labelServingGrams(result) || 100;
       }
 
       if (result.per100g) {

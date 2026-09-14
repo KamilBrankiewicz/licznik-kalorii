@@ -9,7 +9,7 @@
 ## Stan realizacji (2026-08-04)
 
 **Zrobione:**
-- ✅ Faza 1 (MVP) w całości: szkielet PWA, storage, widok dzienny, formularz ręczny, OCR etykiet (Gemini), ustawienia, nawigacja + historia
+- ✅ Faza 1 (MVP) w całości: szkielet PWA, storage, widok dzienny, formularz ręczny, OCR etykiet (Gemini; od v63 z gramaturą porcji z kolumny „porcja"), ustawienia, nawigacja + historia
 - ✅ Faza 2 w całości: eksport/import JSON, synchronizacja Firebase (Auth Google + Firestore)
 - ✅ Poza pierwotnym planem:
   - Wpis głosowy przez Gemini (dyktowanie makr lub opisu jedzenia) — `js/voice.js`
