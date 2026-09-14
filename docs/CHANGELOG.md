@@ -15,6 +15,18 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku — niezacommitowane] 2026-09-14 — Etykieta: gramatura porcji z kolumny „porcja"
+**Co:** Skan etykiety (📷 Etykieta) rozpoznaje teraz także kolumnę „porcja" i wagę porcji.
+  Gdy etykieta ma obie kolumny, pole gramów jest wypełniane wagą porcji (podaną wprost, a gdy
+  jej brak — wyliczoną z proporcji kcal porcja / kcal 100 g), więc makra od razu odpowiadają
+  całej porcji. Etykiety tylko „na 100 g" działają jak dotąd (100 g).
+**Dlaczego:** dla gotowych dań (np. Gastro Paczka) wpisywało się 100 g i trzeba było zgadywać
+  wagę opakowania, żeby wyjść na porcję.
+**Pliki:** `js/ocr.js` (PROMPT_LABEL: pola `servingGrams`, `perServing` + zasady), `js/ui.js`
+  (`labelServingGrams`), `sw.js` + `index.html` (bump v62→v63).
+**Uwagi:** model tylko przepisuje liczby z etykiety — dzielenie robi kod, nie LLM.
+  `pendingPer100g` nadal trzyma wartości na 100 g, więc zmiana gramów przelicza jak dotąd.
+
 ## [w toku — niezacommitowane] 2026-08-05 — Zwinięta sekcja "Raporty odżywcze" w Dzienniku
 **Co:** Na karcie Dziennik dwie sekcje raportów AI ("Raport odżywczy" i "Analiza AI diety")
   są teraz schowane pod jedną zwijaną sekcją "Raporty odżywcze" (domyślnie zwiniętą).
