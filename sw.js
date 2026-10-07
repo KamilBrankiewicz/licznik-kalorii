@@ -1,4 +1,4 @@
-const CACHE_NAME = 'licznik-kalorii-v63';
+const CACHE_NAME = 'licznik-kalorii-v64';
 const APP_SHELL = [
   './',
   './index.html',
@@ -17,7 +17,10 @@ const APP_SHELL = [
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL))
+    // cache: 'reload' omija HTTP cache przeglądarki (GitHub Pages: max-age=600) —
+    // inaczej nowa wersja cache mogła zostać wypełniona starymi plikami
+    caches.open(CACHE_NAME).then((cache) =>
+      cache.addAll(APP_SHELL.map((url) => new Request(url, { cache: 'reload' }))))
   );
   self.skipWaiting();
 });

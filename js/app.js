@@ -316,6 +316,9 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('suppLookupBtn').addEventListener('click', () => UI.handleSuppLookup());
 
+  // Prośba o trwały storage — bez niej przeglądarka może wyczyścić localStorage przy braku miejsca
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch((err) => {
       console.warn('Rejestracja service workera nieudana:', err);
@@ -333,6 +336,17 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
+// Pełny localStorage: Storage rzuca STORAGE_FULL z dowolnego handlera — jeden wspólny komunikat
+const onStorageFull = (err, ev) => {
+  if (err && err.message === 'STORAGE_FULL') {
+    ev.preventDefault();
+    UI.showToast('Brak miejsca w pamięci przeglądarki — nie zapisano. Wyeksportuj dane w Ustawieniach.', 6000);
+  }
+};
+window.addEventListener('error', (ev) => onStorageFull(ev.error, ev));
+window.addEventListener('unhandledrejection', (ev) => onStorageFull(ev.reason, ev));
+
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') UI.flushSupplementLogPush();
+  if (document.visibilityState === 'hidden') UI.flushMetaPush();
+  else UI.handleAppResume();
 });

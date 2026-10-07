@@ -15,7 +15,44 @@ Format wpisu — nowe na górze:
 
 ---
 
-## [w toku — niezacommitowane] 2026-09-14 — Etykieta: gramatura porcji z kolumny „porcja"
+## [w toku — niezacommitowane] 2026-10-07 — Przegląd kodu: sync, poprawki błędów, koszt zapytań Gemini (v64)
+**Co:**
+- Sync wysyła do Firestore tylko dokumenty, które po merge różnią się od chmury (wcześniej każde
+  otwarcie aplikacji przepisywało wszystkie dni i kolekcje). Każda kolekcja synchronizuje się we
+  własnym `try` — błąd jednej nie blokuje reszty, toast mówi która zawiodła.
+- Raporty AI (`dailyAnalyses`, `supplementAnalyses`, `dietAnalyses`) shardowane po miesiącach
+  w Firestore jak log suplementów (limit 1 MB na dokument). Stary dokument zbiorczy jest scalany
+  i opróżniany przy syncu.
+- Ustawienia mają `updatedAt` — wygrywa nowsza wersja (dawniej chmura zawsze nadpisywała lokalne,
+  np. zmienione offline). `firebaseConfig` nie trafia już do chmury.
+- Poprawki: wpis 0 kcal dało się dodać, ale nie edytować; aplikacja otwarta przez północ zapisywała
+  na wczoraj; ulubiony z modalu składnika nie szedł do chmury; daty UTC zamiast lokalnych
+  (`anchorDate`, `stockBaselineDate`, pokrycie zapasu); dane od partnera i z AI normalizowane przed
+  zapisem/renderem; odmiana „N przepisy/suplementy"; toast zawija tekst i nie chowa się pod FAB.
+- Analiza diety: `szacowany_deficyt_dzienny` dodatni = deficyt (był ujemny), pole `szacowana_tdee`
+  zgodne z formatem odpowiedzi. Stare zapisane raporty mają odwrotny znak deficytu.
+- Gemini: jedno `requestGemini` dla całego HTTP, `responseMimeType: application/json`, osobny
+  komunikat przy 429 (limit darmowego tieru), wspólne `UI.aiErrorText`/`UI.showAiError`.
+- **Koszt zapytania**: toast sukcesu akcji AI ma drugą, drobną linijkę „≈0,4 gr · 1,2k tok";
+  w Ustawieniach → Klucz Gemini API suma bieżącego miesiąca (per-urządzenie).
+- Odporność: pełny localStorage → komunikat zamiast cichej porażki (`Storage` rzuca
+  `STORAGE_FULL`, `app.js` łapie globalnie); `navigator.storage.persist()`; cofnięcie
+  odznaczenia wszystkich dawek suplementu.
+- Uproszczenia: 11 funkcji `merge*` → `mergeListBy` + `mergeMaps`; 20 par push/pull w
+  `firebase-sync.js` → `pushMeta`/`pullAllMeta` + tabela `META` w `ui.js`; recipes.js korzysta
+  z helperów `UI` zamiast kopii; usunięty martwy kod. SW pobiera shell z `cache: 'reload'`.
+- Dokumentacja: CHANGELOG z hashami commitów zamiast „niezacommitowane", poprawiony model danych
+  w CLAUDE.md/ARCHITECTURE.md, `firestore.rules` jako kopia referencyjna, zrealizowane plany
+  suplementów w `docs/archiwum/`.
+
+**Dlaczego:** przegląd repo — koszt synca rósł z historią i po 1–2 latach zjadałby darmowy limit
+Firestore; kilka błędów realnie gubiło lub przekłamywało dane.
+**Pliki:** `js/ui.js`, `js/storage.js`, `js/firebase-sync.js`, `js/ocr.js`, `js/recipes.js`,
+`js/app.js`, `css/style.css`, `index.html`, `sw.js` (bump v63→v64), `firestore.rules`, dokumentacja.
+**Uwagi:** cennik Gemini w `GEMINI_PRICES` (`ocr.js`) jest przepisany ręcznie — modele 3.7/3.8
+Flash drożeją 1.01.2027. Pierwszy sync po aktualizacji zapisze shardy raportów (jednorazowo).
+
+## [164450d] 2026-09-14 — Etykieta: gramatura porcji z kolumny „porcja"
 **Co:** Skan etykiety (📷 Etykieta) rozpoznaje teraz także kolumnę „porcja" i wagę porcji.
   Gdy etykieta ma obie kolumny, pole gramów jest wypełniane wagą porcji (podaną wprost, a gdy
   jej brak — wyliczoną z proporcji kcal porcja / kcal 100 g), więc makra od razu odpowiadają
@@ -27,7 +64,7 @@ Format wpisu — nowe na górze:
 **Uwagi:** model tylko przepisuje liczby z etykiety — dzielenie robi kod, nie LLM.
   `pendingPer100g` nadal trzyma wartości na 100 g, więc zmiana gramów przelicza jak dotąd.
 
-## [w toku — niezacommitowane] 2026-08-05 — Zwinięta sekcja "Raporty odżywcze" w Dzienniku
+## [e7de554] 2026-08-05 — Zwinięta sekcja "Raporty odżywcze" w Dzienniku
 **Co:** Na karcie Dziennik dwie sekcje raportów AI ("Raport odżywczy" i "Analiza AI diety")
   są teraz schowane pod jedną zwijaną sekcją "Raporty odżywcze" (domyślnie zwiniętą).
   Przy okazji doprecyzowano ich nazwy: "Analiza wybranego celu" (dawniej "Raport odżywczy" —
@@ -43,7 +80,7 @@ Format wpisu — nowe na górze:
   AI dla wielu dni naraz (obecny format w `ocr.js` analizuje posiłek-po-posiłku, nieskalowalne
   na dłuższe okresy).
 
-## [w toku — niezacommitowane] 2026-08-05 — Wykres liniowy historii (tydzień/miesiąc/kwartał) + średnia 7-dniowa
+## [c4c9542] 2026-08-05 — Wykres liniowy historii (tydzień/miesiąc/kwartał) + średnia 7-dniowa
 **Co:** W widoku Historia dodano przełącznik zakresu Tydzień/Miesiąc/Kwartał. Tydzień to
   dotychczasowe 7 słupków. Miesiąc i kwartał to wykresy liniowe SVG (30/90 dni) z linią celu
   i statystykami (średnia, min, max, dni w celu). Dla miesiąca/kwartału dodatkowo przełącznik
@@ -58,7 +95,7 @@ Format wpisu — nowe na górze:
   `computeMovingAverage()` liczy okno 7-dniowe na pełnej tablicy dni zakresu (z zerami dla
   brakujących wpisów) — dopiero potem filtrowane są dni bez oryginalnego wpisu.
 
-## [w toku — niezacommitowane] 2026-08-04 — Udostępnianie suplementów/leków partnerowi
+## [6fbb9ac] 2026-08-04 — Udostępnianie suplementów/leków partnerowi
 **Co:** Przycisk „Udostępnij" przy każdym suplemencie/leku na liście definicji. Wysyła kopię
   definicji (bez zapasu/harmonogramu aktywności — `active`/`stockBaseline` partner ustawia
   sam) na skrzynkę odbiorczą partnera; przy najbliższym syncu partnera pozycja trafia do jego
@@ -76,7 +113,7 @@ Format wpisu — nowe na górze:
 
 ---
 
-## [w toku — niezacommitowane] 2026-08-04 — Dodawanie suplementów/leków ze zdjęcia etykiety i po nazwie (AI)
+## [46768d2] 2026-08-04 — Dodawanie suplementów/leków ze zdjęcia etykiety i po nazwie (AI)
 **Co:** Dwa nowe sposoby wypełniania formularza suplementu/leku: „📷 Ze zdjęcia etykiety"
   (Gemini analizuje zdjęcie opakowania) i „🔍 Znajdź po nazwie" (Gemini z groundingiem
   Google Search). Oba tylko wypełniają formularz — zapis wymaga ręcznego zatwierdzenia.
@@ -92,12 +129,12 @@ Format wpisu — nowe na górze:
   nie zmieniło zachowania. Wyszukiwanie po nazwie ma jedną próbę ponowną bez groundingu przy
   błędzie HTTP. Model danych suplementu wstecznie zgodny — stare rekordy bez nowych pól
   działają bez zmian, bez migracji. `storage.js`, nagrobki, merge i sync nie wymagały zmian
-  (cały obiekt suplementu już podróżował w całości). Zob. `docs/PLAN-SUPLEMENTY-AI-DODAWANIE.md`.
+  (cały obiekt suplementu już podróżował w całości). Zob. `docs/archiwum/PLAN-SUPLEMENTY-AI-DODAWANIE.md`.
 
 ---
 
-## [w toku — niezacommitowane] 2026-08-04 — Usprawnienia modułu suplementów (6 poprawek)
-**Co:** Sześć poprawek modułu suplementów wg `docs/PLAN-USPRAWNIENIA-SUPLEMENTY.md`:
+## [c2a5371] 2026-08-04 — Usprawnienia modułu suplementów (6 poprawek)
+**Co:** Sześć poprawek modułu suplementów wg `docs/archiwum/PLAN-USPRAWNIENIA-SUPLEMENTY.md`:
   (1) `escapeHtml` escapuje też `"`/`'`, więc nazwy z cudzysłowem nie psują atrybutów HTML;
   (2) szybkie chipy leków doraźnych (`adhocQuickItems`) mają teraz nagrobki, merge po
   `updatedAt`, sync do Firestore (`meta/adhocQuickItems`) i obsługę w eksporcie/imporcie —
@@ -126,7 +163,7 @@ Format wpisu — nowe na górze:
   pierwszym pełnym syncu po tej zmianie; pull nadal go czyta (razem z shardami), żeby nie
   zgubić danych sprzed shardingu.
 
-## [w toku — niezacommitowane] 2026-08-04 — Analiza AI diety (tydzień/miesiąc/kwartał)
+## [8154aaf] 2026-08-04 — Analiza AI diety (tydzień/miesiąc/kwartał)
 **Co:** W Dzienniku, pod istniejącym raportem odżywczym dnia, doszła sekcja „Analiza AI diety"
   z trzema zakresami wielodniowymi (Tydzień/Miesiąc/Kwartał — celowo bez „Dnia", bo ten
   przypadek pokrywa już analiza względem celów). Raport zawiera bilans energetyczny
@@ -151,7 +188,7 @@ Format wpisu — nowe na górze:
 
 ---
 
-## [w toku — niezacommitowane] 2026-08-04 — Analiza AI suplementów i leków (Gemini)
+## [7751c9d] 2026-08-04 — Analiza AI suplementów i leków (Gemini)
 **Co:** W widoku suplementów doszła sekcja „Analiza AI" z trzema zakresami (Dzień/Tydzień/
   Miesiąc). Jedno wywołanie Gemini zwraca wielosekcyjny raport: interakcje między pozycjami,
   sumowanie substancji vs limity, pory dawek vs posiłki (tylko dzień), regularność przyjmowania
@@ -171,7 +208,7 @@ Format wpisu — nowe na górze:
 - Przy pierwszej analizie w ogóle (brak cache i brak zapisanych raportów) pokazuje się
   potwierdzenie wysyłki danych do Gemini API.
 
-## [w toku — niezacommitowane] 2026-08-03 — Suplementy: picker dni tygodnia, sekcja leków doraźnych
+## [4b56551] 2026-08-03 — Suplementy: picker dni tygodnia, sekcja leków doraźnych
 **Co:**
 - Picker dni tygodnia w formularzu suplementu przerobiony z prostych checkboxów na pełną
   siatkę 7 kolumn (Pn–Nd) z nazwą dnia na górze i okrągłym togglem pod spodem. Wypełnia
@@ -185,7 +222,7 @@ Format wpisu — nowe na górze:
 **Pliki:** `index.html`, `css/style.css`, `js/ui.js`, `js/storage.js`, `sw.js`
 **Uwagi:** Szybkie elementy doraźne przechowywane w `localStorage` pod kluczem `adhocQuickItems`.
 
-## [w toku — niezacommitowane] 2026-08-03 — Suplementy: redesign UI, prywatność, log dawek, zwijane sekcje
+## [8cdcf5b] 2026-08-03 — Suplementy: redesign UI, prywatność, log dawek, zwijane sekcje
 **Co:** Kompletny redesign widoku suplementów:
 - Karty w stylu posiłków (awatar z inicjałem, tło karty) zamiast prostej checklisty.
 - Nowe pole „Nazwa wyświetlana" (opcjonalne) — w całym UI widoczna jest nazwa wyświetlana,
@@ -216,7 +253,7 @@ potrzebne, bo `display: grid` na `.form-row-2` nadpisywał atrybut `hidden`.
 
 ---
 
-## [w toku — niezacommitowane] 2026-08-03 — Odblokowanie od razu prowadzi do "+ Nowy suplement"
+## [2378324] 2026-08-03 — Odblokowanie od razu prowadzi do "+ Nowy suplement"
 **Co:** Po odblokowaniu gestem `toggleSupplementsUnlocked` przełącza teraz widok na Ustawienia,
 rozwija akordeon „Suplementy i leki” (`acc.open = true`), przewija go w widok
 (`scrollIntoView`) i pokazuje toast „Moduł suplementów odblokowany”. Zablokowanie (drugie
@@ -231,7 +268,7 @@ nawigować nigdzie, użytkownik i tak zwykle jest wtedy na Dzienniku (tam żyje 
 
 ---
 
-## [w toku — niezacommitowane] 2026-08-03 — Triple-tap: touch-action:manipulation + szersze okno
+## [0748390] 2026-08-03 — Triple-tap: touch-action:manipulation + szersze okno
 **Co:** Po wdrożeniu potrójnego tapnięcia (patrz wpis niżej) użytkownik zgłosił, że nadal nic
 się nie dzieje na telefonie. Dodano `touch-action: manipulation` na nagłówku daty i poszerzono
 okno wykrywania z 600 ms do 800 ms.
@@ -283,13 +320,13 @@ zaznaczania nagłówka daty), `sw.js` (bump v40).
 **Uwagi:** ukrycie jest wyłącznie wizualne (świadoma decyzja, bez szyfrowania) — dane
 i tak trafiają do eksportu JSON i do Firestore jak każda inna kolekcja. Zakres celowo
 nie obejmuje powiadomień, doliczania kcal, statystyk compliance ani skanu etykiety —
-patrz `docs/PLAN-MODUL-SUPLEMENTY.md`, sekcja „Poza zakresem". `sessionStorage` NIE czyści
+patrz `docs/archiwum/PLAN-MODUL-SUPLEMENTY.md`, sekcja „Poza zakresem". `sessionStorage` NIE czyści
 się przy przeładowaniu strony (tylko przy zamknięciu karty) — plan pierwotnie zakładał
 inaczej, ale to świadomie zaakceptowana rozbieżność.
 
 ---
 
-## [w toku — niezacommitowane] 2026-08-01 — Nie powtarzaj wartości SMM/PBF w podpisie
+## [8197600] 2026-08-01 — Nie powtarzaj wartości SMM/PBF w podpisie
 **Co:** Podpis pod panelem body-comp (`bodyCompLastHint`) pokazywał pełne „SMM X kg ·
 PBF Y%" mimo że te same liczby są już widoczne jako placeholder w polach input tuż nad
 nim. Teraz podpis pokazuje tylko datę ostatniego pomiaru, tak jak analogiczny hint przy
@@ -299,7 +336,7 @@ samej wadze (`weightLastHint`).
 
 ---
 
-## [w toku — niezacommitowane] 2026-08-01 — Fix: panel body-comp nie zwijał się
+## [de824a8] 2026-08-01 — Fix: panel body-comp nie zwijał się
 **Co:** Panel SMM/PBF pod wierszem wagi był zawsze widoczny mimo atrybutu `hidden` —
 klasa `.body-comp-panel` ustawiała `display: flex` o tej samej specyficzności co domyślne
 `[hidden] { display: none }` przeglądarki, więc reguła autora wygrywała i `hidden` nie
@@ -314,7 +351,7 @@ polami input) — brakowało tylko poprawki CSS.
 
 ---
 
-## [w toku — niezacommitowane] 2026-08-01 — Pomiary składu ciała (InBody)
+## [1d2a8dd] 2026-08-01 — Pomiary składu ciała (InBody)
 **Co:** Kliknięcie wiersza wagi na głównej stronie rozwija panel z dwoma dodatkowymi
 polami: SMM (masa mięśni szkieletowych, kg) i PBF (% tłuszczu). Dane zapisują się
 razem z wagą. W sekcji Historia wykres wagi zyskał taby Waga/SMM/PBF — pojawiają się
@@ -335,7 +372,7 @@ obiektach wagi.
 
 ---
 
-## [w toku — niezacommitowane] 2026-08-01 — Usunięto zbiorcze „Skopiuj z wczoraj"
+## [5eeb99a] 2026-08-01 — Usunięto zbiorcze „Skopiuj z wczoraj"
 **Co:** Usunięty przycisk „Skopiuj z wczoraj (N)" pokazywany przy pustych kategoriach
 posiłków (kopiował całą kategorię z poprzedniego dnia naraz).
 **Dlaczego:** funkcja okazała się zbędna — przycisk „⟳" (relog, `Dodaj ponownie dziś`)
@@ -351,7 +388,7 @@ pokrywa przypadek użycia.
 
 ---
 
-## [w toku — niezacommitowane] 2026-07-31 — Fix: zmiana produktu po autouzupełnieniu nie odświeżała makr
+## [ce39456] 2026-07-31 — Fix: zmiana produktu po autouzupełnieniu nie odświeżała makr
 **Co:** W modalu „Dodaj posiłek", po wybraniu produktu z listy/dropdowna, wpisanie innej
 nazwy dokładnie pasującej do innego zapisanego produktu i opuszczenie pola (blur) nie
 odświeżało kcal/makro — zostawały wartości poprzednio wybranego produktu.
@@ -366,7 +403,7 @@ przed nadpisaniem — `lastAutoFilledName === null` traktowane jak "wartość r�
 
 ---
 
-## [w toku — niezacommitowane] 2026-07-31 — Autocomplete nazwy produktu przy dodawaniu posiłku
+## [e036587] 2026-07-31 — Autocomplete nazwy produktu przy dodawaniu posiłku
 **Co:** Wpisywanie nazwy produktu w modalu „Dodaj posiłek" podpowiada pasujące produkty
 z historii wpisów (substring match, debounce 200 ms, max 8 wyników). Kliknięcie podpowiedzi
 wypełnia formularz (nazwa, gramy, kcal, makro). Zastępuje natywny `<datalist>` (8 pozycji)
@@ -383,7 +420,7 @@ na itemach dropdowna zapobiega `blur` przed obsłużeniem kliknięcia.
 
 ---
 
-## [w toku — niezacommitowane] 2026-07-31 — Undo usunięcia, kopiowanie z wczoraj, szukaj w historii, kalendarz miesiąca, ekstrakcja przepisów do IIFE
+## [aa47c60] 2026-07-31 — Undo usunięcia, kopiowanie z wczoraj, szukaj w historii, kalendarz miesiąca, ekstrakcja przepisów do IIFE
 **Co:** (1) Po usunięciu wpisu z dziennika pojawia się toast z przyciskiem „Cofnij" (5 s) —
 kliknięcie przywraca wpis (tombstone z `deleted: false`).
 (2) Puste kategorie posiłków pokazują przycisk „Skopiuj z wczoraj (N)" — kopiuje wpisy
@@ -406,7 +443,7 @@ wczorajszych posiłków było uciążliwe; (3) brak sposobu na znalezienie dawne
 `app.js` zmienione: listenery przepisów `UI.*` → `Recipes.*`. Bump `CACHE_NAME` →
 `licznik-kalorii-v31`, wersja widoczna → v31.
 
-## [w toku — niezacommitowane] 2026-07-25 — Poprawki przepisów: merge składników, podgląd makro, zapamiętywanie
+## [cd903bb] 2026-07-25 — Poprawki przepisów: merge składników, podgląd makro, zapamiętywanie
 **Co:** (1) Analiza AI przepisu zachowuje ręcznie dodane składniki zamiast je nadpisywać —
 nowe składniki z AI są dołączane, istniejące (po nazwie) nie są duplikowane.
 (2) Pod polem gramów w modalu składnika wyświetla się podgląd przeliczonych makro na żywo
@@ -422,7 +459,7 @@ szybkie ponowne użycie składników przy nowych przepisach.
 **Uwagi:** zapamiętane składniki korzystają z istniejącego systemu `favoriteProducts` — pojawiają
 się też w formularzu dodawania wpisu do dziennika. Bump `CACHE_NAME` → `licznik-kalorii-v30`.
 
-## [w toku — niezacommitowane] 2026-07-20 — Przełącznik metryki (Kcal/Białko/Węgle/Tłuszcz) w Historii
+## [96a4357] 2026-07-20 — Przełącznik metryki (Kcal/Białko/Węgle/Tłuszcz) w Historii
 **Co:** nad wykresem tygodniowym w widoku Historia doszły 4 zakładki pozwalające przełączyć,
 którą wartość pokazują słupki, linia celu i lista dni: Kcal, Białko, Węgle lub Tłuszcz.
 **Dlaczego:** śledzenie samego kcal nie wystarcza — białko jest dla użytkownika ważniejszym
@@ -438,7 +475,7 @@ Bump `CACHE_NAME` → `licznik-kalorii-v28`.
 
 ---
 
-## [w toku — niezacommitowane] 2026-07-19 — Reorganizacja Ustawień w akordeon + ręczny motyw jasny/ciemny
+## [0a7b21f] 2026-07-19 — Reorganizacja Ustawień w akordeon + ręczny motyw jasny/ciemny
 **Co:** zakładka Ustawienia była jedną długą listą 7 sekcji od góry do dołu. Teraz: sekcja
 „Wygląd” z przełącznikiem Jasny/Ciemny/Auto na samej górze (zawsze widoczna), „Cele dzienne”
 rozwinięte domyślnie, reszta (Profil zdrowotny, Klucz Gemini API, Cele analizy dnia, Kopia
@@ -459,7 +496,7 @@ starcie w trybie ciemnym). Bump `CACHE_NAME` → `licznik-kalorii-v27`.
 
 ---
 
-## [w toku — niezacommitowane] 2026-07-19 — Zakładki Własne/Udostępnione w widoku Przepisy + kopiowanie UID
+## [e5a6220] 2026-07-19 — Zakładki Własne/Udostępnione w widoku Przepisy + kopiowanie UID
 **Co:** przycisk „Kopiuj” obok własnego UID w Ustawieniach (kopiuje do schowka, toast
 potwierdzenia). W widoku „Przepisy” doszły dwie zakładki nad listą, „Własne” i
 „Udostępnione” — przepisy zaimportowane od partnera (patrz wpis niżej) mają teraz osobną
@@ -486,7 +523,7 @@ wywołaniu „Udostępnij”, nie `recipe.id` nadawcy — każde udostępnienie 
 tworzy nowy, unikalny wpis w skrzynce odbiorcy, więc `seenSharedRecipeIds` już go nie myli
 z poprzednim.
 
-## [w toku — niezacommitowane] 2026-07-19 — Udostępnianie przepisów partnerowi (dwa konta Firebase)
+## [bd4c184] 2026-07-19 — Udostępnianie przepisów partnerowi (dwa konta Firebase)
 **Co:** przycisk „Udostępnij” na karcie przepisu w widoku „Przepisy” wysyła kopię przepisu
 (nazwa, składniki, waga po ugotowaniu, wartości na 100g) na konto partnera — osobne konto
 Google/Firebase drugiej osoby, skonfigurowane wcześniej w Ustawieniach polem „UID partnera”
@@ -507,7 +544,7 @@ tego samego użytkownika: dokument jest usuwany z Firestore od razu po imporcie,
 duplikatem, gdyby usunięcie się nie powiodło. Reguły bezpieczeństwa Firestore trzeba dopisać
 ręcznie w konsoli Firebase (repo nie zawiera pliku `.rules`) — patrz `docs/ARCHITECTURE.md`.
 
-## [w toku — niezacommitowane] 2026-07-19 — Raport odżywczy: analiza dnia względem własnych celów (AI)
+## [72125fe] 2026-07-19 — Raport odżywczy: analiza dnia względem własnych celów (AI)
 **Co:** nowa funkcja „Raport odżywczy” w widoku dnia — przycisk „+ Nowa analiza” wysyła
 listę posiłków z danego dnia do Gemini razem z wybranym, zapisanym wcześniej „celem
 analizy” (własny system prompt, np. ocena spożycia żelaza z uwzględnieniem czynników
@@ -536,7 +573,7 @@ przeładowaniu, usuwanie raportu, brak regresji w istniejącym dodawaniu/usuwani
 przy pustym dniu (wcześniejszy wczesny `return` w `renderDiary` pomijał renderowanie
 sekcji raportu przy braku wpisów — poprawione).
 
-## [w toku — niezacommitowane] 2026-07-18 — Edycja składnika przepisu po kliknięciu karty
+## [37bc4bf] 2026-07-18 — Edycja składnika przepisu po kliknięciu karty
 **Co:** kliknięcie karty składnika na liście w kreatorze przepisu otwiera teraz jego
 edycję (nazwa, gramatura, makra na 100g) — wcześniej karta miała tylko przycisk usuwania.
 **Dlaczego:** po dodaniu składników przez AI/dyktowanie/zrzut ekranu użytkownik często
@@ -550,7 +587,7 @@ usuwania woła `e.stopPropagation()`, więc klik w „×” nie otwiera przy oka
 Zweryfikowane w przeglądarce: klik w kartę wypełnia formularz poprawnymi danymi, zapis
 nadpisuje ten sam wpis (nie duplikuje), usuwanie działa niezależnie od edycji.
 
-## [w toku — niezacommitowane] 2026-07-18 — Dyktowanie przepisu: nagranie audio + transkrypcja Gemini zamiast Web Speech API
+## [dfd2e10] 2026-07-18 — Dyktowanie przepisu: nagranie audio + transkrypcja Gemini zamiast Web Speech API
 **Co:** „Dyktuj przepis" zastąpione „Nagraj przepis" — zamiast rozpoznawania mowy na żywo
 w przeglądarce, mikrofon teraz nagrywa dźwięk (można wstrzymać/wznowić w trakcie tego
 samego nagrania), a po kliknięciu „Wyślij nagranie do AI" całe nagranie trafia jednym
@@ -573,7 +610,7 @@ promptów w `ocr.js`). Zweryfikowane w przeglądarce mockiem `getUserMedia`/`Med
 `fetch` — pełny przepływ nagraj → pauza → wznów → wyślij → tekst w polu, oraz osobno
 „odrzuć nagranie".
 
-## [w toku — niezacommitowane] 2026-07-18 — Dyktowanie: rezygnacja z continuous=true (trzecia próba)
+## [ac527d1] 2026-07-18 — Dyktowanie: rezygnacja z continuous=true (trzecia próba)
 **Co:** dyktowanie przepisu na Androidzie nadal powielało tekst mimo dwóch wcześniejszych
 poprawek tego samego dnia — tym razem w jeszcze bardziej chaotyczny sposób, mieszając
 narastające pełne frazy z pojedynczymi słowami w nieprzewidywalnej kolejności
@@ -594,7 +631,7 @@ przeglądarce mockiem `SpeechRecognition` sterowanym krok po kroku (bez zagnież
 `setTimeout`, które w tym środowisku testowym nie odpalają się poprawnie) — dwie kolejne
 sesje po auto-restarcie dają poprawnie sklejony tekst bez duplikatów.
 
-## [w toku — niezacommitowane] 2026-07-18 — Fix powielania słów przy dyktowaniu na Androidzie
+## [96ba766] 2026-07-18 — Fix powielania słów przy dyktowaniu na Androidzie
 **Co:** dyktowanie przepisu na Androidzie nadal wstawiało powielony, narastający tekst
 (np. „25 25 25 g 25 g 25 g ryżu 25 g ryżu do sushi” zamiast „25 g ryżu do sushi”) mimo
 poprzedniej poprawki tego samego dnia.
@@ -614,7 +651,7 @@ worker serwował starą wersję `voice.js` z cache `CACHE_NAME` sprzed tej zmian
 że bump wersji musi iść w tym samym kroku co edycja JS, inaczej własne testy w przeglądarce
 łapią stary kod.
 
-## [w toku — niezacommitowane] 2026-07-18 — Fix powielania słów przy dyktowaniu przepisu
+## [83352f9] 2026-07-18 — Fix powielania słów przy dyktowaniu przepisu
 **Co:** dyktowanie przepisu głosem przestało wstawiać to samo słowo kilka razy pod rząd
 (np. „gruszka gruszka gruszka gruszka”).
 **Dlaczego:** `Voice.startContinuous` doklejał (`+=`) każdy finalny fragment mowy do
@@ -628,7 +665,7 @@ tablicy `event.results` (idempotentnie) zamiast doklejać przyrostowo, a przy `o
 nie zgubiło. Zweryfikowane w przeglądarce mockiem `SpeechRecognition` symulującym
 duplikaty zdarzeń oraz restart sesji.
 
-## [w toku — niezacommitowane] 2026-07-18 — Numer wersji w Ustawieniach
+## [7aeea90] 2026-07-18 — Numer wersji w Ustawieniach
 **Co:** obok nagłówka „Ustawienia" (od razu widoczny, bez przewijania) widać teraz „vN" —
 pozwala sprawdzić na telefonie, czy po wdrożeniu przeglądarka wczytała już nową wersję,
 czy jeszcze serwuje starą.
@@ -642,7 +679,7 @@ numeru z tym, co faktycznie jest teraz na ekranie. Numer trzeba bumpować ręczn
 mechanizmu automatycznego, żeby nie dodawać message-passing do service workera dla
 jednorazowej, personalnej apki.
 
-## [w toku — niezacommitowane] 2026-07-18 — Dyktowanie przepisu: mikrofon tylko nagrywa, wysyłka ręczna
+## [11da82a] 2026-07-18 — Dyktowanie przepisu: mikrofon tylko nagrywa, wysyłka ręczna
 **Co:** przycisk mikrofonu w kreatorze przepisu przełącza wyłącznie nasłuch (start/pauza/
 wznowienie) i dopisuje rozpoznaną mowę do pola tekstowego — nie wysyła nic do Gemini
 samoczynnie. Wysyłkę do AI wykonuje wyłącznie istniejący przycisk „Przeanalizuj przepis”,
@@ -677,7 +714,7 @@ użytkownik nie kliknął jawnie stop — dzięki temu pauzy w dyktowaniu są ni
 użytkownika. `Voice.listenOnce()` zostaje bez zmian, używany w innych miejscach
 (nazwa produktu, etykieta).
 
-## [w toku — niezacommitowane] 2026-07-18 — Przepisy z przeliczaniem porcji
+## [5ed7eb3] 2026-07-18 — Przepisy z przeliczaniem porcji
 **Co:** budowanie przepisów ze składników (skan etykiety, kod kreskowy, głos, AI, ulubione),
 przeliczanie makr na 100 g dania po ugotowaniu i dodawanie porcji do dziennika.
 **Dlaczego:** dania gotowane w domu wymagały ręcznego liczenia makr przy każdej porcji.

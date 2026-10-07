@@ -6,7 +6,7 @@
 > [docs/MAINTENANCE.md](docs/MAINTENANCE.md) — checklista wdrożenia ·
 > [docs/CHANGELOG.md](docs/CHANGELOG.md) — co i kiedy się zmieniło.
 
-## Stan realizacji (2026-08-04)
+## Stan realizacji (2026-10-07)
 
 **Zrobione:**
 - ✅ Faza 1 (MVP) w całości: szkielet PWA, storage, widok dzienny, formularz ręczny, OCR etykiet (Gemini; od v63 z gramaturą porcji z kolumny „porcja"), ustawienia, nawigacja + historia
@@ -29,11 +29,11 @@
   - Moduł suplementów i leków (ukryty domyślnie, patrz Faza 6 niżej)
   - Analiza AI suplementów i leków (interakcje, sumy dawek vs limity, pory dawek vs posiłki,
     regularność przyjmowania, wzorce leków doraźnych) w widoku suplementów, z lokalnym cache
-    sekcji statycznych — `docs/PLAN-ANALIZA-SUPLEMENTOW.md`
+    sekcji statycznych — `docs/archiwum/PLAN-ANALIZA-SUPLEMENTOW.md`
   - Analiza AI diety w Dzienniku (Tydzień/Miesiąc/Kwartał) — bilans energetyczny liczony w JS
     z pomiarów wagi (AI go tylko interpretuje), przegląd makro vs cele, wzorce i rekomendacje;
     bez cache'u statycznego, z guardem „za mało danych" przed wywołaniem API
-  - Usprawnienia modułu suplementów (6 poprawek, `docs/PLAN-USPRAWNIENIA-SUPLEMENTY.md`):
+  - Usprawnienia modułu suplementów (6 poprawek, `docs/archiwum/PLAN-USPRAWNIENIA-SUPLEMENTY.md`):
     nagrobki/merge/sync/eksport dla chipów leków doraźnych, zapas liczony z bazy + logu
     zamiast nadpisywanego pola, alarm zapasu w dniach pokrycia wg harmonogramu, sharding
     logu suplementów w Firestore po miesiącach z debounce'em pusha, edycja godziny dawki
@@ -41,7 +41,7 @@
   - Dodawanie suplementów/leków ze zdjęcia etykiety i wyszukiwania po nazwie (AI, z
     groundingiem Google Search), formularz rozszerzony o typ/formę/opakowanie/markę/skład/
     zalecenia/ostrzeżenia, skład wykorzystywany w analizie AI suplementów —
-    `docs/PLAN-SUPLEMENTY-AI-DODAWANIE.md`
+    `docs/archiwum/PLAN-SUPLEMENTY-AI-DODAWANIE.md`
   - Udostępnianie suplementów/leków partnerowi — przycisk „Udostępnij” przy definicji na
     liście suplementów, ten sam mechanizm skrzynki odbiorczej co przy przepisach
     (`sharedSupplements` w Firestore, partner UID z Ustawień), odebrana pozycja trafia do
@@ -50,6 +50,12 @@
     (domyślnie zamkniętą, wzorzec `<details class="settings-accordion">`); przemianowane na
     „Analiza wybranego celu" (jeden dzień vs jeden wybrany własny cel) i „Analiza wszystkich
     celów" (tydzień/miesiąc/kwartał vs wszystkie liczbowe cele dzienne naraz)
+  - Przegląd i poprawki v64: sync wysyła tylko zmiany (koszt nie rośnie z historią), raporty AI
+    shardowane po miesiącach w Firestore, ustawienia z `updatedAt`, odporność na błąd jednej
+    kolekcji; przejście przez północ w otwartej aplikacji, edycja wpisu 0 kcal, daty lokalne
+    zamiast UTC, walidacja danych od partnera; koszt każdego zapytania Gemini w toaście + suma
+    miesięczna w Ustawieniach, komunikat limitu 429, `responseMimeType` JSON; komunikat przy
+    pełnym localStorage, `storage.persist()`, cofnięcie odznaczenia dawek
 
 **Pozostało (świadomie odłożone):**
 - Wielojęzyczność — raczej bez sensu przy aplikacji dla jednego użytkownika
@@ -235,7 +241,7 @@ Payload:
 - **Raport odżywczy (analiza dnia względem własnych celów):** przycisk "+ Nowa analiza" pod listą wpisów w widoku dnia otwiera wybór zapisanego "celu analizy" i wysyła do Gemini listę posiłków tego dnia (nazwa, gramatura, pora, godzina, kcal/B/W/T/błonnik) razem z treścią celu i globalnym "Profilem zdrowotnym" z Ustawień. Cele to własne system prompty (nazwa + treść), zarządzane w Ustawieniach → "Cele analizy dnia" (`Storage.getGoals/addGoal/updateGoal/deleteGoal`, kolekcja `analysisGoals` z nagrobkami). Appka dokleja do każdego promptu użytkownika stały, generyczny fragment wymuszający jeden kształt odpowiedzi JSON (`meals[].flag` good/neutral/warning, `daily_summary`, `data_gaps`...) — dzięki temu jeden renderer (`renderAnalysisBody` w `js/ui.js`) obsługuje dowolny cel bez zmian w kodzie. Wynik zapisuje się per dzień+cel (`Storage.saveDailyAnalysis`, kolekcja `dailyAnalyses`, klucz `"YYYY-MM-DD__goalId"`, nadpisuje poprzedni przy ponownym uruchomieniu) i jest widoczny jako rozwijana karta z kolorowym oznaczeniem. Sync obu kolekcji przez Firestore (`meta/goals`, `meta/dailyAnalyses`). Moduł: `Ocr.analyzeDayAgainstGoal` w `js/ocr.js`.
 
 ## Faza 6 — moduł suplementów i leków (2026-08-03)
-- **Ukryty domyślnie:** potrójne tapnięcie (3 kliknięcia w ciągu 600 ms) nagłówka z datą
+- **Ukryty domyślnie:** potrójne tapnięcie (3 kliknięcia w ciągu 800 ms) nagłówka z datą
   w widoku dziennika odsłania/chowa cały moduł (pierwotnie długie przytrzymanie 1,5 s —
   zamienione, bo na telefonie zawodziło). Stan odblokowania żyje w `sessionStorage` — znika
   dopiero przy zamknięciu karty/aplikacji (przetrwa zwykłe przeładowanie strony), nie
@@ -248,13 +254,13 @@ Payload:
 - **Dziennik przyjęć** (`Storage.toggleSupplementTaken/addAdhocSupplementLog`, kolekcja
   `supplementLog`, klucz `"YYYY-MM-DD__id"`, z nagrobkami): checklista w widoku dnia
   pogrupowana wg pory dnia, tap = odhaczenie (zmniejsza zapas o 1, jeśli śledzony), drugi
-  tap = cofnięcie; osobno wpisy doraźne (lek wzięty bez definicji) przez prosty `prompt()`.
+  tap = cofnięcie; osobno wpisy doraźne (lek wzięty bez definicji) przez pole „Leki doraźne" z szybkimi chipami.
 - **Zarządzanie listą w Ustawieniach:** akordeon i modal edycji analogiczne do „Cele analizy
   dnia”, widoczne tylko przy odblokowanym module. Usunięcie definicji to nagrobek — historia
   przyjęć w dzienniku pozostaje.
 - **Sync:** `meta/supplements` i `meta/supplementLog` w Firestore, ten sam wzorzec
   pull→merge→zapis→push co reszta kolekcji.
-- Poza zakresem (świadomie, patrz `docs/PLAN-MODUL-SUPLEMENTY.md`): powiadomienia/przypomnienia,
+- Poza zakresem (świadomie, patrz `docs/archiwum/PLAN-MODUL-SUPLEMENTY.md`): powiadomienia/przypomnienia,
   doliczanie kcal z suplementów do sum dnia, statystyki compliance w Historii, skan etykiety
   przez Gemini, szyfrowanie danych (ukrycie jest tylko wizualne).
 

@@ -114,13 +114,69 @@ Jeśli na zdjęciu nie widać jedzenia, zwróć: {"error": "nie rozpoznano jedze
     });
   }
 
-  async function callGemini(parts, apiKey, extraPayload) {
-    if (!apiKey) {
-      throw new Error('NO_API_KEY');
-    }
+  // Cennik płatnego tieru Gemini, USD za 1M tokenów: [prefiks modelu, wejście, wejście audio, wyjście
+  // (z tokenami "myślenia")]. Kolejność ma znaczenie — "-flash-lite" przed "-flash" tej samej wersji.
+  // ponytail: ręcznie przepisany cennik (ai.google.dev/gemini-api/docs/pricing, stan 2026-10);
+  // 3.7/3.8 Flash drożeją 1.01.2027 do 1,50/7,50 — wtedy podmień liczby. Nieznany model →
+  // ostatni wiersz. Darmowy tier faktycznie kosztuje 0 zł — pokazujemy koszt "gdyby płacić".
+  const GEMINI_PRICES = [
+    ['gemini-3.8-flash', 0.75, 0.75, 3.75],
+    ['gemini-3.7-flash', 0.75, 0.75, 3.75],
+    ['gemini-3.5-flash-lite', 0.30, 0.30, 2.50],
+    ['gemini-3.5-flash', 1.50, 1.50, 9.00],
+    ['gemini-3.1-flash-lite', 0.25, 0.50, 1.50],
+    ['gemini-2.5-flash-lite', 0.10, 0.30, 0.40],
+    ['gemini-2.5-flash', 0.30, 1.00, 2.50],
+    ['', 0.75, 0.75, 3.75]
+  ];
+  const USD_PLN = 3.7; // ponytail: stały kurs, wystarczy do rzędu wielkości
+
+  function usageCostUsd(data) {
+    const u = data.usageMetadata || {};
+    const model = (data.modelVersion || '').replace(/^models\//, '');
+    const [, inPrice, audioPrice, outPrice] = GEMINI_PRICES.find(([prefix]) => model.startsWith(prefix));
+    const audioTokens = (u.promptTokensDetails || [])
+      .filter((d) => d.modality === 'AUDIO')
+      .reduce((s, d) => s + (d.tokenCount || 0), 0);
+    const inputTokens = (u.promptTokenCount || 0) + (u.toolUsePromptTokenCount || 0) - audioTokens;
+    const outputTokens = (u.candidatesTokenCount || 0) + (u.thoughtsTokenCount || 0);
+    return {
+      tokens: u.totalTokenCount || inputTokens + audioTokens + outputTokens,
+      usd: (inputTokens * inPrice + audioTokens * audioPrice + outputTokens * outPrice) / 1e6
+    };
+  }
+
+  // Koszt zapytań od ostatniego odczytu — UI dokleja go do najbliższego toastu sukcesu.
+  // Sumuje kilka wywołań jednej akcji (np. transkrypcja + analiza, ponowienie bez groundingu);
+  // po 60 s bez odczytu przepada, żeby nie przykleić się do niezwiązanego toastu.
+  let pendingUsage = null;
+
+  function recordUsage(data) {
+    const { tokens, usd } = usageCostUsd(data);
+    const now = Date.now();
+    if (!pendingUsage || now - pendingUsage.at > 60000) pendingUsage = { tokens: 0, usd: 0 };
+    pendingUsage = { tokens: pendingUsage.tokens + tokens, usd: pendingUsage.usd + usd, at: now };
+    Storage.addGeminiUsage(usd);
+  }
+
+  function takeUsage() {
+    const u = pendingUsage;
+    pendingUsage = null;
+    return u && Date.now() - u.at <= 60000 ? { tokens: u.tokens, pln: u.usd * USD_PLN } : null;
+  }
+
+  function usdToPln(usd) {
+    return usd * USD_PLN;
+  }
+
+  // Jedno miejsce dla HTTP do Gemini: błędy → kody, zapis zużycia, zwraca tekst odpowiedzi.
+  // jsonMode wymusza czysty JSON (responseMimeType) — nie działa razem z narzędziami (google_search).
+  async function requestGemini(parts, apiKey, extraPayload, jsonMode) {
+    if (!apiKey) throw new Error('NO_API_KEY');
 
     const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent';
     const payload = { contents: [{ parts }], ...(extraPayload || {}) };
+    if (jsonMode && !payload.tools) payload.generationConfig = { responseMimeType: 'application/json' };
 
     let response;
     try {
@@ -133,13 +189,23 @@ Jeśli na zdjęciu nie widać jedzenia, zwróć: {"error": "nie rozpoznano jedze
       throw new Error('NETWORK_ERROR');
     }
 
-    if (!response.ok) {
-      throw new Error('API_ERROR');
-    }
+    if (response.status === 429) throw new Error('QUOTA_EXCEEDED');
+    if (!response.ok) throw new Error('API_ERROR');
 
-    const data = await response.json();
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    let data;
+    try {
+      data = await response.json();
+    } catch (e) {
+      throw new Error('PARSE_ERROR');
+    }
+    recordUsage(data);
+    const text = (data?.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('').trim();
     if (!text) throw new Error('PARSE_ERROR');
+    return text;
+  }
+
+  async function callGemini(parts, apiKey, extraPayload) {
+    const text = await requestGemini(parts, apiKey, extraPayload, true);
 
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error('PARSE_ERROR');
@@ -373,40 +439,11 @@ Jeśli nie rozpoznajesz żadnego składnika w podanym tekście, zwróć: {"error
 
   async function transcribeAudio(blob, apiKey) {
     if (!apiKey) throw new Error('NO_API_KEY');
-
     const base64 = await blobToBase64(blob);
-    const mimeType = blob.type || 'audio/webm';
-
-    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent';
-    const payload = {
-      contents: [{
-        parts: [
-          { text: PROMPT_TRANSCRIBE },
-          { inline_data: { mime_type: mimeType, data: base64 } }
-        ]
-      }]
-    };
-
-    let response;
-    try {
-      response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-        body: JSON.stringify(payload)
-      });
-    } catch (e) {
-      throw new Error('NETWORK_ERROR');
-    }
-
-    if (!response.ok) {
-      throw new Error('API_ERROR');
-    }
-
-    const data = await response.json();
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-    if (!text) throw new Error('PARSE_ERROR');
-
-    return text;
+    return requestGemini([
+      { text: PROMPT_TRANSCRIBE },
+      { inline_data: { mime_type: blob.type || 'audio/webm', data: base64 } }
+    ], apiKey);
   }
 
   const GOAL_RESPONSE_FORMAT = `## Format odpowiedzi — WYŁĄCZNIE poniższy JSON, bez tekstu przed/po:
@@ -528,6 +565,7 @@ ${SUPP_RESPONSE_FORMAT}`;
 Pusta tablica jest poprawną odpowiedzią w każdej sekcji — NIE wymyślaj ustaleń, żeby wypełnić sekcje.
 Jeśli w danych wejściowych "bilans_wstepny" jest null, zwróć "weight_energy_balance": null i odnotuj brak wagi w data_gaps.
 Wartości liczbowe w weight_energy_balance PRZEPISZ z "bilans_wstepny" — nie licz ich samodzielnie.
+szacowany_deficyt_dzienny: wartość dodatnia = deficyt (spadek wagi), ujemna = nadwyżka.
 {
   "summary": "2-3 zdania podsumowania okresu",
   "weight_energy_balance": {
@@ -590,5 +628,5 @@ ${DIET_RESPONSE_FORMAT}`;
     return callGemini([{ text: prompt }], apiKey);
   }
 
-  return { analyzeLabel, analyzeVoiceEntry, analyzeScreenshot, analyzeMealPhoto, analyzeRecipeText, analyzeRecipeImage, analyzeIngredientLookup, transcribeAudio, analyzeDayAgainstGoal, analyzeSupplements, analyzeDiet, analyzeSupplementLabel, lookupSupplementByName };
+  return { takeUsage, usdToPln, analyzeLabel, analyzeVoiceEntry, analyzeScreenshot, analyzeMealPhoto, analyzeRecipeText, analyzeRecipeImage, analyzeIngredientLookup, transcribeAudio, analyzeDayAgainstGoal, analyzeSupplements, analyzeDiet, analyzeSupplementLabel, lookupSupplementByName };
 })();

@@ -1207,7 +1207,7 @@ h1.page-title {
 
 .toast {
   position: fixed;
-  bottom: 100px;
+  bottom: 156px; /* nad FAB (92px + 54px) */
   left: 50%;
   transform: translateX(-50%);
   background: var(--bg-card);
@@ -1220,7 +1220,16 @@ h1.page-title {
   pointer-events: none;
   transition: opacity 0.25s ease;
   border: 1px solid var(--border);
-  white-space: nowrap;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  text-align: center;
+}
+
+.toast-cost {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
 }
 
 .toast.show {
