@@ -15,7 +15,7 @@ Format wpisu — nowe na górze:
 
 ---
 
-## [w toku — niezacommitowane] 2026-10-07 — Przegląd kodu: sync, poprawki błędów, koszt zapytań Gemini (v64)
+## [f3c4d4e] 2026-10-07 — Przegląd kodu: sync, poprawki błędów, koszt zapytań Gemini (v64)
 **Co:**
 - Sync wysyła do Firestore tylko dokumenty, które po merge różnią się od chmury (wcześniej każde
   otwarcie aplikacji przepisywało wszystkie dni i kolekcje). Każda kolekcja synchronizuje się we
