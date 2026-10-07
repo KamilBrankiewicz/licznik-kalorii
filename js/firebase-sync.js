@@ -61,12 +61,6 @@ async function pushDay(date, entries) {
   await setDoc(doc(db, 'users', currentUser.uid, 'days', date), { entries });
 }
 
-async function pushSettings(settings) {
-  if (!currentUser) return;
-  const { doc, setDoc } = firestoreMod;
-  await setDoc(doc(db, 'users', currentUser.uid, 'meta', 'settings'), settings);
-}
-
 async function pullAllDays() {
   if (!currentUser) return {};
   const { collection, getDocs } = firestoreMod;
@@ -78,63 +72,21 @@ async function pullAllDays() {
   return result;
 }
 
-async function pullSettings() {
-  if (!currentUser) return null;
-  const { doc, getDoc } = firestoreMod;
-  const snap = await getDoc(doc(db, 'users', currentUser.uid, 'meta', 'settings'));
-  return snap.exists() ? snap.data() : null;
-}
-
-async function pushWeights(weights) {
+// Dokumenty users/{uid}/meta/* — jeden ogólny zapis; co w nich siedzi, opisuje META w ui.js
+async function pushMeta(docId, data) {
   if (!currentUser) return;
   const { doc, setDoc } = firestoreMod;
-  await setDoc(doc(db, 'users', currentUser.uid, 'meta', 'weights'), { map: weights });
+  await setDoc(doc(db, 'users', currentUser.uid, 'meta', docId), data);
 }
 
-async function pullWeights() {
+// Wszystkie dokumenty meta naraz (także shardy *-YYYY-MM) — jedno zapytanie na sync
+async function pullAllMeta() {
   if (!currentUser) return {};
-  const { doc, getDoc } = firestoreMod;
-  const snap = await getDoc(doc(db, 'users', currentUser.uid, 'meta', 'weights'));
-  return snap.exists() ? snap.data().map || {} : {};
-}
-
-async function pushFavorites(favorites) {
-  if (!currentUser) return;
-  const { doc, setDoc } = firestoreMod;
-  await setDoc(doc(db, 'users', currentUser.uid, 'meta', 'favorites'), { list: favorites });
-}
-
-async function pullFavorites() {
-  if (!currentUser) return [];
-  const { doc, getDoc } = firestoreMod;
-  const snap = await getDoc(doc(db, 'users', currentUser.uid, 'meta', 'favorites'));
-  return snap.exists() ? snap.data().list || [] : [];
-}
-
-async function pushRecipes(recipes) {
-  if (!currentUser) return;
-  const { doc, setDoc } = firestoreMod;
-  await setDoc(doc(db, 'users', currentUser.uid, 'meta', 'recipes'), { list: recipes });
-}
-
-async function pullRecipes() {
-  if (!currentUser) return [];
-  const { doc, getDoc } = firestoreMod;
-  const snap = await getDoc(doc(db, 'users', currentUser.uid, 'meta', 'recipes'));
-  return snap.exists() ? snap.data().list || [] : [];
-}
-
-async function pushGoals(goals) {
-  if (!currentUser) return;
-  const { doc, setDoc } = firestoreMod;
-  await setDoc(doc(db, 'users', currentUser.uid, 'meta', 'goals'), { list: goals });
-}
-
-async function pullGoals() {
-  if (!currentUser) return [];
-  const { doc, getDoc } = firestoreMod;
-  const snap = await getDoc(doc(db, 'users', currentUser.uid, 'meta', 'goals'));
-  return snap.exists() ? snap.data().list || [] : [];
+  const { collection, getDocs } = firestoreMod;
+  const snapshot = await getDocs(collection(db, 'users', currentUser.uid, 'meta'));
+  const result = {};
+  snapshot.forEach((docSnap) => { result[docSnap.id] = docSnap.data(); });
+  return result;
 }
 
 async function pushSharedRecipe(recipientUid, recipe) {
@@ -162,32 +114,6 @@ async function deleteSharedRecipe(id) {
   if (!currentUser) return;
   const { doc, deleteDoc } = firestoreMod;
   await deleteDoc(doc(db, 'sharedRecipes', currentUser.uid, 'inbox', id));
-}
-
-async function pushDailyAnalyses(map) {
-  if (!currentUser) return;
-  const { doc, setDoc } = firestoreMod;
-  await setDoc(doc(db, 'users', currentUser.uid, 'meta', 'dailyAnalyses'), { map });
-}
-
-async function pullDailyAnalyses() {
-  if (!currentUser) return {};
-  const { doc, getDoc } = firestoreMod;
-  const snap = await getDoc(doc(db, 'users', currentUser.uid, 'meta', 'dailyAnalyses'));
-  return snap.exists() ? snap.data().map || {} : {};
-}
-
-async function pushSupplements(list) {
-  if (!currentUser) return;
-  const { doc, setDoc } = firestoreMod;
-  await setDoc(doc(db, 'users', currentUser.uid, 'meta', 'supplements'), { list });
-}
-
-async function pullSupplements() {
-  if (!currentUser) return [];
-  const { doc, getDoc } = firestoreMod;
-  const snap = await getDoc(doc(db, 'users', currentUser.uid, 'meta', 'supplements'));
-  return snap.exists() ? snap.data().list || [] : [];
 }
 
 async function pushSharedSupplement(recipientUid, supplement) {
@@ -225,79 +151,6 @@ async function deleteSharedSupplement(id) {
   await deleteDoc(doc(db, 'sharedSupplements', currentUser.uid, 'inbox', id));
 }
 
-// Push wybranych miesięcy: months = ['2026-08', ...]; map = pełna lokalna mapa logu
-async function pushSupplementLogMonths(map, months) {
-  if (!currentUser) return;
-  const { doc, setDoc } = firestoreMod;
-  for (const month of months) {
-    const sub = {};
-    Object.entries(map).forEach(([key, rec]) => {
-      if (key.slice(0, 7) === month) sub[key] = rec;
-    });
-    await setDoc(doc(db, 'users', currentUser.uid, 'meta', `supplementLog-${month}`), { map: sub });
-  }
-}
-
-// Pull całości: wszystkie shardy + stary dokument zbiorczy (dane sprzed shardingu)
-async function pullSupplementLogAll() {
-  if (!currentUser) return {};
-  const { collection, getDocs } = firestoreMod;
-  const snapshot = await getDocs(collection(db, 'users', currentUser.uid, 'meta'));
-  const result = {};
-  snapshot.forEach((docSnap) => {
-    if (docSnap.id === 'supplementLog' || docSnap.id.startsWith('supplementLog-')) {
-      Object.assign(result, docSnap.data().map || {});
-    }
-  });
-  return result;
-}
-
-// Wyczyszczenie starego dokumentu zbiorczego po udanej migracji na shardy
-async function clearLegacySupplementLog() {
-  if (!currentUser) return;
-  const { doc, setDoc } = firestoreMod;
-  await setDoc(doc(db, 'users', currentUser.uid, 'meta', 'supplementLog'), { map: {} });
-}
-
-async function pushSupplementAnalyses(map) {
-  if (!currentUser) return;
-  const { doc, setDoc } = firestoreMod;
-  await setDoc(doc(db, 'users', currentUser.uid, 'meta', 'supplementAnalyses'), { map });
-}
-
-async function pullSupplementAnalyses() {
-  if (!currentUser) return {};
-  const { doc, getDoc } = firestoreMod;
-  const snap = await getDoc(doc(db, 'users', currentUser.uid, 'meta', 'supplementAnalyses'));
-  return snap.exists() ? snap.data().map || {} : {};
-}
-
-async function pushDietAnalyses(map) {
-  if (!currentUser) return;
-  const { doc, setDoc } = firestoreMod;
-  await setDoc(doc(db, 'users', currentUser.uid, 'meta', 'dietAnalyses'), { map });
-}
-
-async function pullDietAnalyses() {
-  if (!currentUser) return {};
-  const { doc, getDoc } = firestoreMod;
-  const snap = await getDoc(doc(db, 'users', currentUser.uid, 'meta', 'dietAnalyses'));
-  return snap.exists() ? snap.data().map || {} : {};
-}
-
-async function pushAdhocQuickItems(list) {
-  if (!currentUser) return;
-  const { doc, setDoc } = firestoreMod;
-  await setDoc(doc(db, 'users', currentUser.uid, 'meta', 'adhocQuickItems'), { list });
-}
-
-async function pullAdhocQuickItems() {
-  if (!currentUser) return [];
-  const { doc, getDoc } = firestoreMod;
-  const snap = await getDoc(doc(db, 'users', currentUser.uid, 'meta', 'adhocQuickItems'));
-  return snap.exists() ? snap.data().list || [] : [];
-}
-
 const FirebaseSync = {
   init,
   signIn,
@@ -306,30 +159,9 @@ const FirebaseSync = {
   isSignedIn,
   getCurrentUser,
   pushDay,
-  pushSettings,
   pullAllDays,
-  pullSettings,
-  pushWeights,
-  pullWeights,
-  pushFavorites,
-  pullFavorites,
-  pushRecipes,
-  pullRecipes,
-  pushGoals,
-  pullGoals,
-  pushDailyAnalyses,
-  pullDailyAnalyses,
-  pushSupplements,
-  pullSupplements,
-  pushSupplementLogMonths,
-  pullSupplementLogAll,
-  clearLegacySupplementLog,
-  pushSupplementAnalyses,
-  pullSupplementAnalyses,
-  pushDietAnalyses,
-  pullDietAnalyses,
-  pushAdhocQuickItems,
-  pullAdhocQuickItems,
+  pushMeta,
+  pullAllMeta,
   pushSharedRecipe,
   pullSharedRecipes,
   deleteSharedRecipe,

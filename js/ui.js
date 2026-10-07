@@ -1,4 +1,5 @@
 const UI = (() => {
+  const toDateStr = Storage.localDateStr;
   let currentDate = toDateStr(new Date());
   let editingEntryId = null;
   let pendingSource = 'manual';
@@ -41,13 +42,6 @@ const UI = (() => {
     return 'przekaska';
   }
 
-  function toDateStr(d) {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
-  }
-
   function formatDateLabel(dateStr) {
     const today = toDateStr(new Date());
     const yesterday = toDateStr(new Date(Date.now() - 86400000));
@@ -59,14 +53,53 @@ const UI = (() => {
     return `${d}.${m}.${y}`;
   }
 
-  function showToast(msg) {
+  function showToast(msg, duration = 2200) {
     const toast = document.getElementById('toast');
     toast.className = 'toast';
     toast.textContent = msg;
     toast.classList.add('show');
     clearTimeout(toastTimeout);
     clearTimeout(undoTimeout);
-    toastTimeout = setTimeout(() => toast.classList.remove('show'), 2200);
+    toastTimeout = setTimeout(() => toast.classList.remove('show'), duration);
+  }
+
+  // Toast sukcesu akcji AI z doklejonym kosztem zapytań(-a) Gemini, np. "… · ≈0,4 gr · 1,2k tok"
+  function showAiToast(msg) {
+    const usage = Ocr.takeUsage();
+    if (!usage) { showToast(msg); return; }
+    showToast(msg, 3500);
+    const cost = document.createElement('span');
+    cost.className = 'toast-cost';
+    cost.textContent = formatUsage(usage);
+    document.getElementById('toast').appendChild(cost);
+  }
+
+  function formatUsage({ tokens, pln }) {
+    const tok = tokens >= 1000 ? `${(tokens / 1000).toLocaleString('pl-PL', { maximumFractionDigits: 1 })}k tok` : `${tokens} tok`;
+    return `${formatPln(pln)} · ${tok}`;
+  }
+
+  function formatPln(pln) {
+    if (pln >= 1) return `≈${pln.toLocaleString('pl-PL', { maximumFractionDigits: 2 })} zł`;
+    const gr = pln * 100;
+    return gr < 0.01 ? '<0,01 gr' : `≈${gr.toLocaleString('pl-PL', { maximumFractionDigits: gr < 1 ? 2 : 1 })} gr`;
+  }
+
+  function pluralPl(n, one, few, many) {
+    if (n === 1) return one;
+    const d = n % 10, dd = n % 100;
+    return d >= 2 && d <= 4 && (dd < 12 || dd > 14) ? few : many;
+  }
+
+  // Wspólny tekst błędu dla wszystkich ścieżek AI; NOT_RECOGNIZED i ogólny błąd zależą od kontekstu
+  function aiErrorText(err, { notRecognized, failed }) {
+    switch (err && err.message) {
+      case 'NO_API_KEY': return 'Brak klucza Gemini API — dodaj go w Ustawieniach.';
+      case 'NETWORK_ERROR': return 'Błąd sieci — sprawdź połączenie z internetem.';
+      case 'QUOTA_EXCEEDED': return 'Wyczerpany limit darmowego Gemini — spróbuj za minutę albo jutro.';
+      case 'NOT_RECOGNIZED': return notRecognized || failed;
+      default: return failed;
+    }
   }
 
   function showUndoToast(msg, undoCallback) {
@@ -135,6 +168,22 @@ const UI = (() => {
     const d = new Date(currentDate + 'T00:00:00');
     d.setDate(d.getDate() + delta);
     currentDate = toDateStr(d);
+    renderCurrentDayView();
+  }
+
+  // PWA wraca z tła bez przeładowania — jeśli w międzyczasie minęła północ, a użytkownik
+  // był na „dziś", przenosimy go na nowy dzień (inaczej wpis trafiłby na wczoraj)
+  let lastKnownToday = currentDate;
+
+  function handleAppResume() {
+    const today = toDateStr(new Date());
+    if (today === lastKnownToday) return;
+    if (currentDate === lastKnownToday) currentDate = today;
+    lastKnownToday = today;
+    renderCurrentDayView();
+  }
+
+  function renderCurrentDayView() {
     const activeView = document.querySelector('.view.active');
     if (activeView && activeView.id === 'view-suplementy') {
       renderSupplementsView();
@@ -322,7 +371,7 @@ const UI = (() => {
     const rawBf = document.getElementById('bfInput').value.trim();
     if (raw === '' && rawSmm === '' && rawBf === '') {
       Storage.setWeight(currentDate, null);
-      pushWeightsToCloud();
+      pushMetaToCloud('weights');
       renderDiary();
       return;
     }
@@ -351,7 +400,7 @@ const UI = (() => {
     if (smm != null) body.smm = Math.round(smm * 10) / 10;
     if (bf != null) body.bf = Math.round(bf * 10) / 10;
     Storage.setWeight(currentDate, finalKg, body);
-    pushWeightsToCloud();
+    pushMetaToCloud('weights');
     renderDiary();
     showToast('Zapisano wagę');
   }
@@ -364,73 +413,92 @@ const UI = (() => {
     section.classList.toggle('expanded', !expanded);
   }
 
-  function pushWeightsToCloud() {
-    if (window.FirebaseSync && FirebaseSync.isSignedIn()) {
-      FirebaseSync.pushWeights(Storage.getWeights()).catch(() => showToast('Błąd synchronizacji wagi'));
+  // ── Synchronizowane kolekcje users/{uid}/meta/* ──
+  // Klucz = id dokumentu w Firestore. Kolekcje ze `shard` rosną bez końca (nagrobki się nie
+  // kompaktują), więc żyją w Firestore jako dokumenty per miesiąc `nazwa-YYYY-MM` (limit 1 MB
+  // na dokument); `shard(klucz rekordu)` zwraca miesiąc. Lokalnie to zawsze jedna mapa.
+  const monthOfDateKey = (key) => key.slice(0, 7);                      // "YYYY-MM-DD__id"
+  const monthOfEndDateKey = (key) => (key.split('__')[1] || '').slice(0, 7); // "scope__YYYY-MM-DD"
+  const META = {
+    weights: { field: 'map', label: 'waga', get: Storage.getWeights, save: Storage.saveWeights, merge: Storage.mergeWeights },
+    favorites: { field: 'list', label: 'ulubione', get: Storage.getRawFavoriteProducts, save: Storage.saveFavoriteProducts, merge: Storage.mergeFavoriteProducts },
+    recipes: { field: 'list', label: 'przepisy', get: Storage.getRawRecipes, save: Storage.saveRecipes, merge: Storage.mergeRecipes },
+    goals: { field: 'list', label: 'cele analizy', get: Storage.getRawGoals, save: Storage.saveGoals, merge: Storage.mergeGoals },
+    supplements: { field: 'list', label: 'suplementy', get: Storage.getRawSupplements, save: Storage.saveSupplements, merge: Storage.mergeSupplements },
+    adhocQuickItems: { field: 'list', label: 'leki doraźne', get: Storage.getRawAdhocQuickItems, save: Storage.saveAdhocQuickItems, merge: Storage.mergeAdhocQuickItems },
+    supplementLog: { field: 'map', shard: monthOfDateKey, label: 'log suplementów', get: Storage.getRawSupplementLog, save: Storage.saveRawSupplementLog, merge: Storage.mergeSupplementLog },
+    dailyAnalyses: { field: 'map', shard: monthOfDateKey, label: 'raporty dnia', get: Storage.getRawDailyAnalyses, save: Storage.saveRawDailyAnalyses, merge: Storage.mergeDailyAnalyses },
+    supplementAnalyses: { field: 'map', shard: monthOfEndDateKey, label: 'analizy suplementów', get: Storage.getRawSupplementAnalyses, save: Storage.saveRawSupplementAnalyses, merge: Storage.mergeSupplementAnalyses },
+    dietAnalyses: { field: 'map', shard: monthOfEndDateKey, label: 'analizy diety', get: Storage.getRawDietAnalyses, save: Storage.saveRawDietAnalyses, merge: Storage.mergeDietAnalyses }
+  };
+
+  // Porównanie niezależne od kolejności kluczy (Firestore zwraca mapy z posortowanymi kluczami)
+  function sameData(a, b) {
+    const stable = (v) => JSON.stringify(v, (k, val) =>
+      (val && typeof val === 'object' && !Array.isArray(val)
+        ? Object.fromEntries(Object.entries(val).sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0)))
+        : val));
+    return stable(a) === stable(b);
+  }
+
+  function filterShard(map, shard, month) {
+    return Object.fromEntries(Object.entries(map).filter(([key]) => shard(key) === month));
+  }
+
+  // Push w tle: debounce 2 s, zbiera dotknięte kolekcje (i miesiące dla shardowanych),
+  // żeby seria szybkich kliknięć nie odpaliła serii zapisów. recordKey = klucz zmienionego
+  // rekordu w kolekcji shardowanej; domyślnie miesiąc oglądanego dnia.
+  let metaPushTimer = null;
+  const pendingMetaPush = new Map();
+
+  function pushMetaToCloud(name, recordKey) {
+    const cfg = META[name];
+    if (!pendingMetaPush.has(name)) pendingMetaPush.set(name, new Set());
+    if (cfg.shard) pendingMetaPush.get(name).add(recordKey ? cfg.shard(recordKey) : currentDate.slice(0, 7));
+    clearTimeout(metaPushTimer);
+    metaPushTimer = setTimeout(flushMetaPush, 2000);
+  }
+
+  function flushMetaPush() {
+    clearTimeout(metaPushTimer);
+    metaPushTimer = null;
+    const pending = [...pendingMetaPush];
+    pendingMetaPush.clear();
+    if (pending.length === 0 || !(window.FirebaseSync && FirebaseSync.isSignedIn())) return;
+    pending.forEach(([name, months]) => {
+      const cfg = META[name];
+      const data = cfg.get();
+      const writes = cfg.shard
+        ? [...months].map((m) => FirebaseSync.pushMeta(`${name}-${m}`, { map: filterShard(data, cfg.shard, m) }))
+        : [FirebaseSync.pushMeta(name, { [cfg.field]: data })];
+      Promise.all(writes).catch(() => showToast(`Błąd synchronizacji: ${cfg.label}`));
+    });
+  }
+
+  // Pełny sync jednej kolekcji: merge z chmurą, zapis lokalny, push tylko tego, co się różni
+  async function syncMetaCollection(name, cfg, remoteMeta) {
+    if (!cfg.shard) {
+      const remote = remoteMeta[name]?.[cfg.field] ?? (cfg.field === 'map' ? {} : []);
+      const merged = cfg.merge(remote, cfg.get());
+      cfg.save(merged);
+      if (!sameData(merged, remote)) await FirebaseSync.pushMeta(name, { [cfg.field]: merged });
+      return;
     }
-  }
-
-  function pushFavoritesToCloud() {
-    if (window.FirebaseSync && FirebaseSync.isSignedIn()) {
-      FirebaseSync.pushFavorites(Storage.getRawFavoriteProducts()).catch(() => showToast('Błąd synchronizacji ulubionych'));
+    // shardy `nazwa-YYYY-MM` + ewentualny stary dokument zbiorczy `nazwa` sprzed shardingu
+    const legacy = remoteMeta[name]?.map || {};
+    const remoteShards = {};
+    Object.entries(remoteMeta).forEach(([id, doc]) => {
+      if (id.startsWith(`${name}-`)) remoteShards[id.slice(name.length + 1)] = doc.map || {};
+    });
+    const remoteAll = Object.assign({}, legacy, ...Object.values(remoteShards));
+    const merged = cfg.merge(remoteAll, cfg.get());
+    cfg.save(merged);
+    const months = new Set(Object.keys(merged).map(cfg.shard));
+    for (const m of months) {
+      const local = filterShard(merged, cfg.shard, m);
+      if (!sameData(local, remoteShards[m] || {})) await FirebaseSync.pushMeta(`${name}-${m}`, { map: local });
     }
-  }
-
-  function pushGoalsToCloud() {
-    if (window.FirebaseSync && FirebaseSync.isSignedIn()) {
-      FirebaseSync.pushGoals(Storage.getRawGoals()).catch(() => showToast('Błąd synchronizacji celów'));
-    }
-  }
-
-  function pushDailyAnalysesToCloud() {
-    if (window.FirebaseSync && FirebaseSync.isSignedIn()) {
-      FirebaseSync.pushDailyAnalyses(Storage.getRawDailyAnalyses()).catch(() => showToast('Błąd synchronizacji raportów'));
-    }
-  }
-
-  function pushSupplementsToCloud() {
-    if (window.FirebaseSync && FirebaseSync.isSignedIn()) {
-      FirebaseSync.pushSupplements(Storage.getRawSupplements()).catch(() => showToast('Błąd synchronizacji suplementów'));
-    }
-  }
-
-  // Push logu: debounce 2 s, zbiera dotknięte miesiące; month = 'YYYY-MM'
-  let suppLogPushTimer = null;
-  const suppLogPendingMonths = new Set();
-
-  function pushSupplementLogToCloud(month) {
-    suppLogPendingMonths.add(month || currentDate.slice(0, 7));
-    clearTimeout(suppLogPushTimer);
-    suppLogPushTimer = setTimeout(flushSupplementLogPush, 2000);
-  }
-
-  function flushSupplementLogPush() {
-    clearTimeout(suppLogPushTimer);
-    suppLogPushTimer = null;
-    if (suppLogPendingMonths.size === 0) return;
-    if (!(window.FirebaseSync && FirebaseSync.isSignedIn())) { suppLogPendingMonths.clear(); return; }
-    const months = [...suppLogPendingMonths];
-    suppLogPendingMonths.clear();
-    FirebaseSync.pushSupplementLogMonths(Storage.getRawSupplementLog(), months)
-      .catch(() => showToast('Błąd synchronizacji suplementów'));
-  }
-
-  function pushAdhocQuickItemsToCloud() {
-    if (window.FirebaseSync && FirebaseSync.isSignedIn()) {
-      FirebaseSync.pushAdhocQuickItems(Storage.getRawAdhocQuickItems()).catch(() => showToast('Błąd synchronizacji leków doraźnych'));
-    }
-  }
-
-  function pushSupplementAnalysesToCloud() {
-    if (window.FirebaseSync && FirebaseSync.isSignedIn()) {
-      FirebaseSync.pushSupplementAnalyses(Storage.getRawSupplementAnalyses()).catch(() => showToast('Błąd synchronizacji analiz suplementów'));
-    }
-  }
-
-  function pushDietAnalysesToCloud() {
-    if (window.FirebaseSync && FirebaseSync.isSignedIn()) {
-      FirebaseSync.pushDietAnalyses(Storage.getRawDietAnalyses()).catch(() => showToast('Błąd synchronizacji analiz diety'));
-    }
+    if (Object.keys(legacy).length > 0) await FirebaseSync.pushMeta(name, { map: {} });
   }
 
   function escapeHtml(str) {
@@ -938,6 +1006,10 @@ const UI = (() => {
     document.getElementById('firebaseConfigInput').value = s.firebaseConfig || '';
     document.getElementById('settingPartnerUid').value = s.partnerUid || '';
     document.getElementById('settingsToast').textContent = '';
+    const usage = Storage.getGeminiUsage();
+    document.getElementById('geminiUsageInfo').textContent = usage.calls
+      ? `Ten miesiąc (to urządzenie): ${usage.calls} ${pluralPl(usage.calls, 'zapytanie', 'zapytania', 'zapytań')}, ${formatPln(Ocr.usdToPln(usage.usd))} wg cennika płatnego (darmowy tier: 0 zł)`
+      : '';
     renderFirebaseAuthBlock();
     renderGoalsList();
     updateSupplementsSettingsVisibility();
@@ -1031,147 +1103,137 @@ const UI = (() => {
     }
   }
 
+  // Pełny sync przy logowaniu/starcie. Każda kolekcja we własnym try — błąd jednej (np. limit
+  // 1 MB dokumentu) nie blokuje pozostałych. Push tylko tam, gdzie wynik merge różni się od
+  // chmury: bez tego każde otwarcie aplikacji przepisywało całą historię (koszt O(historia)).
   async function syncWithCloud() {
     const statusEl = document.getElementById('firebaseStatus');
     statusEl.textContent = 'Synchronizowanie danych...';
-    try {
-      const remoteDays = await FirebaseSync.pullAllDays();
-      const localDates = new Set([...Storage.getAllDates(), ...Object.keys(remoteDays)]);
+    const failed = [];
+    const step = async (label, fn) => {
+      try { await fn(); } catch (e) { failed.push(label); }
+    };
 
-      for (const date of localDates) {
-        const merged = Storage.mergeEntryLists(remoteDays[date] || [], Storage.getRawEntries(date));
-        Storage.saveEntries(date, merged);
-        await FirebaseSync.pushDay(date, merged);
-      }
-
-      const remoteWeights = await FirebaseSync.pullWeights();
-      const mergedWeights = Storage.mergeWeights(remoteWeights, Storage.getWeights());
-      Storage.saveWeights(mergedWeights);
-      await FirebaseSync.pushWeights(mergedWeights);
-
-      const remoteFavorites = await FirebaseSync.pullFavorites();
-      const mergedFavorites = Storage.mergeFavoriteProducts(remoteFavorites, Storage.getRawFavoriteProducts());
-      Storage.saveFavoriteProducts(mergedFavorites);
-      await FirebaseSync.pushFavorites(mergedFavorites);
-
-      const incomingShared = await FirebaseSync.pullSharedRecipes();
-      const seenShared = new Set(Storage.getSeenSharedRecipeIds());
-      let importedSharedCount = 0;
-      for (const item of incomingShared) {
-        if (!seenShared.has(item.id)) {
-          Storage.addRecipe({
-            name: item.name,
-            ingredients: item.ingredients,
-            totalWeightCooked: item.totalWeightCooked,
-            per100g: item.per100g,
-            shared: true
-          });
-          Storage.addSeenSharedRecipeId(item.id);
-          importedSharedCount++;
-        }
-        await FirebaseSync.deleteSharedRecipe(item.id).catch(() => {});
-      }
-
-      const remoteRecipes = await FirebaseSync.pullRecipes();
-      const mergedRecipes = Storage.mergeRecipes(remoteRecipes, Storage.getRawRecipes());
-      Storage.saveRecipes(mergedRecipes);
-      await FirebaseSync.pushRecipes(mergedRecipes);
-
-      const remoteGoals = await FirebaseSync.pullGoals();
-      const mergedGoals = Storage.mergeGoals(remoteGoals, Storage.getRawGoals());
-      Storage.saveGoals(mergedGoals);
-      await FirebaseSync.pushGoals(mergedGoals);
-
-      const remoteAnalyses = await FirebaseSync.pullDailyAnalyses();
-      const mergedAnalyses = Storage.mergeDailyAnalyses(remoteAnalyses, Storage.getRawDailyAnalyses());
-      Storage.saveRawDailyAnalyses(mergedAnalyses);
-      await FirebaseSync.pushDailyAnalyses(mergedAnalyses);
-
-      const remoteSupplements = await FirebaseSync.pullSupplements();
-      const mergedSupplements = Storage.mergeSupplements(remoteSupplements, Storage.getRawSupplements());
-      Storage.saveSupplements(mergedSupplements);
-      await FirebaseSync.pushSupplements(mergedSupplements);
-
-      const remoteSuppLog = await FirebaseSync.pullSupplementLogAll();
-      const mergedSuppLog = Storage.mergeSupplementLog(remoteSuppLog, Storage.getRawSupplementLog());
-      Storage.saveRawSupplementLog(mergedSuppLog);
-      const allSuppLogMonths = [...new Set(Object.keys(mergedSuppLog).map((k) => k.slice(0, 7)))];
-      await FirebaseSync.pushSupplementLogMonths(mergedSuppLog, allSuppLogMonths);
-      await FirebaseSync.clearLegacySupplementLog();
-
-      const incomingSharedSupps = await FirebaseSync.pullSharedSupplements();
-      const seenSharedSupps = new Set(Storage.getSeenSharedSupplementIds());
-      let importedSharedSuppCount = 0;
-      for (const item of incomingSharedSupps) {
-        if (!seenSharedSupps.has(item.id)) {
-          Storage.addSupplement({
-            name: item.name,
-            displayName: item.displayName,
-            dose: item.dose,
-            notes: item.notes,
-            timing: item.timing,
-            scheduleType: item.scheduleType,
-            scheduleDays: item.scheduleDays,
-            scheduleN: item.scheduleN,
-            cycleOn: item.cycleOn,
-            cycleOff: item.cycleOff,
-            timesPerDay: item.timesPerDay,
-            type: item.type,
-            form: item.form,
-            servingSize: item.servingSize,
-            packageSize: item.packageSize,
-            brand: item.brand,
-            ingredients: item.ingredients,
-            instructions: item.instructions,
-            warnings: item.warnings,
-            shared: true
-          });
-          Storage.addSeenSharedSupplementId(item.id);
-          importedSharedSuppCount++;
-        }
-        await FirebaseSync.deleteSharedSupplement(item.id).catch(() => {});
-      }
-      if (importedSharedSuppCount > 0) {
-        pushSupplementsToCloud();
-      }
-
-      const remoteSuppAnalyses = await FirebaseSync.pullSupplementAnalyses();
-      const mergedSuppAnalyses = Storage.mergeSupplementAnalyses(remoteSuppAnalyses, Storage.getRawSupplementAnalyses());
-      Storage.saveRawSupplementAnalyses(mergedSuppAnalyses);
-      await FirebaseSync.pushSupplementAnalyses(mergedSuppAnalyses);
-
-      const remoteAdhocQuickItems = await FirebaseSync.pullAdhocQuickItems();
-      const mergedAdhocQuickItems = Storage.mergeAdhocQuickItems(remoteAdhocQuickItems, Storage.getRawAdhocQuickItems());
-      Storage.saveAdhocQuickItems(mergedAdhocQuickItems);
-      await FirebaseSync.pushAdhocQuickItems(mergedAdhocQuickItems);
-
-      const remoteDietAnalyses = await FirebaseSync.pullDietAnalyses();
-      const mergedDietAnalyses = Storage.mergeDietAnalyses(remoteDietAnalyses, Storage.getRawDietAnalyses());
-      Storage.saveRawDietAnalyses(mergedDietAnalyses);
-      await FirebaseSync.pushDietAnalyses(mergedDietAnalyses);
-
-      const remoteSettings = await FirebaseSync.pullSettings();
-      const localSettings = Storage.getSettings();
-      if (remoteSettings) {
-        Storage.saveSettings({ ...localSettings, ...remoteSettings, firebaseConfig: localSettings.firebaseConfig });
-      } else {
-        await FirebaseSync.pushSettings(localSettings);
-      }
-
-      renderDiary();
-      if (importedSharedCount > 0) {
-        Recipes.renderRecipeList();
-        showToast(importedSharedCount === 1 ? 'Otrzymano przepis od partnera' : `Otrzymano ${importedSharedCount} przepisy od partnera`);
-      }
-      if (importedSharedSuppCount > 0) {
-        renderSupplementsList();
-        renderSupplementsSection();
-        showToast(importedSharedSuppCount === 1 ? 'Otrzymano suplement od partnera' : `Otrzymano ${importedSharedSuppCount} suplementy od partnera`);
-      }
-      statusEl.textContent = 'Zsynchronizowano ✓';
-    } catch (e) {
-      statusEl.textContent = 'Błąd synchronizacji danych.';
+    let remoteMeta = null;
+    await step('pobieranie', async () => { remoteMeta = await FirebaseSync.pullAllMeta(); });
+    if (!remoteMeta) {
+      statusEl.textContent = 'Błąd synchronizacji danych — sprawdź połączenie.';
+      return;
     }
+
+    await step('dziennik', async () => {
+      const remoteDays = await FirebaseSync.pullAllDays();
+      const dates = new Set([...Storage.getAllDates(), ...Object.keys(remoteDays)]);
+      for (const date of dates) {
+        const remote = remoteDays[date] || [];
+        const merged = Storage.mergeEntryLists(remote, Storage.getRawEntries(date));
+        Storage.saveEntries(date, merged);
+        if (!sameData(merged, remote)) await FirebaseSync.pushDay(date, merged);
+      }
+    });
+
+    // Skrzynki od partnera przed merge kolekcji — nowe pozycje pójdą w tym samym pushu
+    let importedSharedCount = 0;
+    let importedSharedSuppCount = 0;
+    await step('przepisy od partnera', async () => { importedSharedCount = await importSharedRecipes(); });
+    await step('suplementy od partnera', async () => { importedSharedSuppCount = await importSharedSupplements(); });
+
+    for (const [name, cfg] of Object.entries(META)) {
+      await step(cfg.label, () => syncMetaCollection(name, cfg, remoteMeta));
+    }
+    await step('ustawienia', () => syncSettings(remoteMeta.settings));
+
+    renderDiary();
+    if (importedSharedCount > 0) {
+      Recipes.renderRecipeList();
+      showToast(importedSharedCount === 1 ? 'Otrzymano przepis od partnera' : `Otrzymano ${importedSharedCount} ${pluralPl(importedSharedCount, 'przepis', 'przepisy', 'przepisów')} od partnera`);
+    }
+    if (importedSharedSuppCount > 0) {
+      renderSupplementsList();
+      renderSupplementsSection();
+      showToast(importedSharedSuppCount === 1 ? 'Otrzymano suplement od partnera' : `Otrzymano ${importedSharedSuppCount} ${pluralPl(importedSharedSuppCount, 'suplement', 'suplementy', 'suplementów')} od partnera`);
+    }
+    if (failed.length > 0) {
+      statusEl.textContent = `Błąd synchronizacji: ${failed.join(', ')}.`;
+      showToast(`Błąd synchronizacji: ${failed.join(', ')}`);
+    } else {
+      statusEl.textContent = 'Zsynchronizowano ✓';
+    }
+  }
+
+  // Ustawienia: wygrywa nowszy updatedAt. Rekordy sprzed tej zmiany nie mają updatedAt —
+  // wtedy jak dawniej wygrywa chmura. firebaseConfig jest per-urządzenie i nie trafia do chmury.
+  async function syncSettings(remote) {
+    const local = Storage.getSettings();
+    const localTs = local.updatedAt || '';
+    const remoteTs = (remote && remote.updatedAt) || '';
+    if (remote && (remoteTs > localTs || !localTs)) {
+      Storage.saveSettings({ ...local, ...remote, firebaseConfig: local.firebaseConfig });
+    } else if (!remote || localTs > remoteTs) {
+      await FirebaseSync.pushMeta('settings', settingsForCloud(local));
+    }
+  }
+
+  function settingsForCloud(settings) {
+    const { firebaseConfig, ...rest } = settings;
+    return rest;
+  }
+
+  async function importSharedRecipes() {
+    const incoming = await FirebaseSync.pullSharedRecipes();
+    const seen = new Set(Storage.getSeenSharedRecipeIds());
+    let count = 0;
+    for (const item of incoming) {
+      if (!seen.has(item.id)) {
+        Storage.addRecipe({
+          name: String(item.name || 'Przepis'),
+          ingredients: (Array.isArray(item.ingredients) ? item.ingredients : []).map(Storage.normalizeRecipeIngredient),
+          totalWeightCooked: Number(item.totalWeightCooked) || null,
+          shared: true
+        });
+        Storage.addSeenSharedRecipeId(item.id);
+        count++;
+      }
+      // nieudane usunięcie ze skrzynki jest niegroźne — przed duplikatem chroni seenSharedRecipeIds
+      await FirebaseSync.deleteSharedRecipe(item.id).catch(() => {});
+    }
+    return count;
+  }
+
+  async function importSharedSupplements() {
+    const incoming = await FirebaseSync.pullSharedSupplements();
+    const seen = new Set(Storage.getSeenSharedSupplementIds());
+    let count = 0;
+    for (const item of incoming) {
+      if (!seen.has(item.id)) {
+        Storage.addSupplement({
+          name: String(item.name || 'Suplement'),
+          displayName: item.displayName,
+          dose: item.dose,
+          notes: item.notes,
+          timing: item.timing,
+          scheduleType: item.scheduleType,
+          scheduleDays: Array.isArray(item.scheduleDays) ? item.scheduleDays.map(Number) : undefined,
+          scheduleN: Number(item.scheduleN) || undefined,
+          cycleOn: Number(item.cycleOn) || undefined,
+          cycleOff: item.cycleOff != null ? Number(item.cycleOff) || 0 : undefined,
+          timesPerDay: Number(item.timesPerDay) || 1,
+          type: item.type,
+          form: item.form,
+          servingSize: item.servingSize,
+          packageSize: Number(item.packageSize) || null,
+          brand: item.brand,
+          ingredients: (Array.isArray(item.ingredients) ? item.ingredients : []).map(Storage.normalizeSuppIngredient),
+          instructions: item.instructions,
+          warnings: item.warnings,
+          shared: true
+        });
+        Storage.addSeenSharedSupplementId(item.id);
+        count++;
+      }
+      await FirebaseSync.deleteSharedSupplement(item.id).catch(() => {});
+    }
+    return count;
   }
 
   function saveSettingsFromForm() {
@@ -1184,7 +1246,8 @@ const UI = (() => {
       fiberGoal: Number(document.getElementById('settingFiberGoal').value) || 0,
       geminiApiKey: document.getElementById('settingApiKey').value.trim(),
       healthProfile: document.getElementById('settingHealthProfile').value.trim(),
-      partnerUid: document.getElementById('settingPartnerUid').value.trim()
+      partnerUid: document.getElementById('settingPartnerUid').value.trim(),
+      updatedAt: new Date().toISOString()
     };
     Storage.saveSettings(settings);
     pushSettingsToCloud(settings);
@@ -1194,7 +1257,7 @@ const UI = (() => {
 
   function pushSettingsToCloud(settings) {
     if (window.FirebaseSync && FirebaseSync.isSignedIn()) {
-      FirebaseSync.pushSettings(settings).catch(() => showToast('Błąd synchronizacji ustawień'));
+      FirebaseSync.pushMeta('settings', settingsForCloud(settings)).catch(() => showToast('Błąd synchronizacji ustawień'));
     }
   }
 
@@ -1212,7 +1275,7 @@ const UI = (() => {
   function fillFormFromProduct(p) {
     document.getElementById('entryName').value = p.name || '';
     document.getElementById('entryGrams').value = p.grams || '';
-    document.getElementById('entryKcal').value = p.kcal || '';
+    document.getElementById('entryKcal').value = p.kcal ?? '';
     document.getElementById('entryProtein').value = p.protein || '';
     document.getElementById('entryCarbs').value = p.carbs || '';
     document.getElementById('entryFat').value = p.fat || '';
@@ -1265,7 +1328,7 @@ const UI = (() => {
     products.forEach((p) => {
       container.appendChild(createProductChip(p, (product) => {
         Storage.toggleFavoriteProduct(product);
-        pushFavoritesToCloud();
+        pushMetaToCloud('favorites');
         renderRecentProducts(true);
         renderFavoriteProducts(true);
       }));
@@ -1285,7 +1348,7 @@ const UI = (() => {
     products.forEach((p) => {
       container.appendChild(createProductChip(p, (product) => {
         Storage.toggleFavoriteProduct(product);
-        pushFavoritesToCloud();
+        pushMetaToCloud('favorites');
         renderRecentProducts(true);
         renderFavoriteProducts(true);
       }));
@@ -1426,7 +1489,7 @@ const UI = (() => {
     document.getElementById('entryModalTitle').textContent = entry ? 'Edytuj posiłek' : 'Dodaj posiłek';
     document.getElementById('entryName').value = entry ? entry.name || '' : '';
     document.getElementById('entryGrams').value = entry ? entry.grams || '' : '';
-    document.getElementById('entryKcal').value = entry ? entry.kcal || '' : '';
+    document.getElementById('entryKcal').value = entry ? entry.kcal ?? '' : '';
     document.getElementById('entryProtein').value = entry ? entry.protein || '' : '';
     document.getElementById('entryCarbs').value = entry ? entry.carbs || '' : '';
     document.getElementById('entryFat').value = entry ? entry.fat || '' : '';
@@ -1494,19 +1557,16 @@ const UI = (() => {
     showToast(editingEntryId ? 'Zapisano zmiany' : 'Dodano posiłek');
   }
 
-  function showScanError(err, errorEl, messages) {
+  // Błąd AI w modalu; przy braku klucza link do Ustawień, który najpierw zamyka bieżący modal
+  function showAiError(err, errorEl, messages, closeModal = closeEntryModal) {
     if (err.message === 'NO_API_KEY') {
       errorEl.innerHTML = 'Brak klucza Gemini API. Dodaj go w <button type="button" class="link-btn go-settings">Ustawieniach</button>.';
       errorEl.querySelector('.go-settings').addEventListener('click', () => {
-        closeEntryModal();
+        closeModal();
         switchView('ustawienia');
       });
-    } else if (err.message === 'NETWORK_ERROR') {
-      errorEl.textContent = 'Błąd sieci — sprawdź połączenie z internetem.';
-    } else if (err.message === 'NOT_RECOGNIZED') {
-      errorEl.textContent = messages.notRecognized;
     } else {
-      errorEl.textContent = messages.failed;
+      errorEl.textContent = aiErrorText(err, messages);
     }
   }
 
@@ -1553,10 +1613,10 @@ const UI = (() => {
         pendingPer100g = result.per100g;
         recalcFromPer100g();
       }
-      showToast('Rozpoznano etykietę — sprawdź wartości');
+      showAiToast('Rozpoznano etykietę — sprawdź wartości');
     } catch (err) {
       statusEl.textContent = '';
-      showScanError(err, errorEl, {
+      showAiError(err, errorEl, {
         notRecognized: 'Nie rozpoznano etykiety. Wpisz wartości ręcznie.',
         failed: 'Nie udało się przeanalizować zdjęcia. Wpisz wartości ręcznie.'
       });
@@ -1575,10 +1635,10 @@ const UI = (() => {
       const result = await Ocr.analyzeScreenshot(file, settings.geminiApiKey);
       statusEl.textContent = '';
       fillFormFromAnalysis(result);
-      showToast('Rozpoznano dane ze zrzutu ekranu — sprawdź wartości');
+      showAiToast('Rozpoznano dane ze zrzutu ekranu — sprawdź wartości');
     } catch (err) {
       statusEl.textContent = '';
-      showScanError(err, errorEl, {
+      showAiError(err, errorEl, {
         notRecognized: 'Nie rozpoznano danych na zrzucie ekranu. Wpisz wartości ręcznie.',
         failed: 'Nie udało się przeanalizować zrzutu ekranu. Wpisz wartości ręcznie.'
       });
@@ -1597,10 +1657,10 @@ const UI = (() => {
       const result = await Ocr.analyzeMealPhoto(file, settings.geminiApiKey);
       statusEl.textContent = '';
       fillFormFromAnalysis(result);
-      showToast('Oszacowano wartości ze zdjęcia — sprawdź i popraw');
+      showAiToast('Oszacowano wartości ze zdjęcia — sprawdź i popraw');
     } catch (err) {
       statusEl.textContent = '';
-      showScanError(err, errorEl, {
+      showAiError(err, errorEl, {
         notRecognized: 'Nie rozpoznano jedzenia na zdjęciu. Wpisz wartości ręcznie.',
         failed: 'Nie udało się przeanalizować zdjęcia. Wpisz wartości ręcznie.'
       });
@@ -1711,10 +1771,10 @@ const UI = (() => {
       const result = await Ocr.analyzeVoiceEntry(transcript, settings.geminiApiKey);
       statusEl.textContent = '';
       fillFormFromAnalysis(result);
-      showToast('Rozpoznano posiłek — sprawdź wartości');
+      showAiToast('Rozpoznano posiłek — sprawdź wartości');
     } catch (err) {
       statusEl.textContent = '';
-      showScanError(err, errorEl, {
+      showAiError(err, errorEl, {
         notRecognized: 'Nie rozpoznano jedzenia w wypowiedzi. Wpisz wartości ręcznie.',
         failed: 'Nie udało się przeanalizować wypowiedzi. Wpisz wartości ręcznie.'
       });
@@ -1738,11 +1798,11 @@ const UI = (() => {
       <div class="ingredient-row">
         <input type="text" class="ing-name" placeholder="Nazwa składnika" value="${escapeHtml(ing.name || '')}">
         <div class="form-row ingredient-row-details">
-          <input type="number" class="ing-amount" placeholder="Ilość" value="${ing.amount != null ? ing.amount : ''}">
+          <input type="number" class="ing-amount" placeholder="Ilość" value="${escapeHtml(ing.amount ?? '')}">
           <select class="ing-unit">
             ${SUPP_ING_UNITS.map((u) => `<option value="${u}"${u === unit ? ' selected' : ''}>${u}</option>`).join('')}
           </select>
-          <input type="number" class="ing-rws" placeholder="%RWS" value="${ing.rws != null ? ing.rws : ''}">
+          <input type="number" class="ing-rws" placeholder="%RWS" value="${escapeHtml(ing.rws ?? '')}">
         </div>
         <input type="text" class="ing-unit-other ingredient-row-other" placeholder="jednostka" value="${escapeHtml(otherVal)}"${unit === 'inna' ? '' : ' hidden'}>
         <button type="button" class="btn btn-danger ingredient-row-remove">✕ Usuń składnik</button>
@@ -1819,7 +1879,7 @@ const UI = (() => {
       btn.addEventListener('click', () => {
         if (confirm('Usunąć ten cel? Zapisane wcześniej raporty pozostaną.')) {
           Storage.deleteGoal(btn.dataset.id);
-          pushGoalsToCloud();
+          pushMetaToCloud('goals');
           renderGoalsList();
           showToast('Usunięto cel');
         }
@@ -1854,7 +1914,7 @@ const UI = (() => {
     } else {
       Storage.addGoal({ name, systemPrompt });
     }
-    pushGoalsToCloud();
+    pushMetaToCloud('goals');
     closeGoalModal();
     renderGoalsList();
     showToast(editingGoalId ? 'Zapisano zmiany' : 'Cel zapisany');
@@ -1905,7 +1965,7 @@ const UI = (() => {
       btn.addEventListener('click', () => {
         if (confirm('Usunąć? Historia przyjęć pozostanie.')) {
           Storage.deleteSupplement(btn.dataset.id);
-          pushSupplementsToCloud();
+          pushMetaToCloud('supplements');
           renderSupplementsList();
           renderSupplementsSection();
           showToast('Usunięto suplement');
@@ -2039,7 +2099,7 @@ const UI = (() => {
       const remaining = existingSupp ? Storage.getRemainingStockMap()[existingSupp.id] : null;
       if (remaining == null || enteredStock !== remaining) {
         data.stockBaseline = enteredStock;
-        data.stockBaselineDate = new Date().toISOString().slice(0, 10);
+        data.stockBaselineDate = toDateStr(new Date());
         data.stock = null;
       }
     }
@@ -2066,7 +2126,7 @@ const UI = (() => {
     } else {
       Storage.addSupplement(data);
     }
-    pushSupplementsToCloud();
+    pushMetaToCloud('supplements');
     closeSupplementModal();
     renderSupplementsList();
     renderSupplementsSection();
@@ -2109,20 +2169,10 @@ const UI = (() => {
   }
 
   function showSuppAiError(err) {
-    const errorEl = document.getElementById('suppAiError');
-    if (err.message === 'NO_API_KEY') {
-      errorEl.innerHTML = 'Brak klucza Gemini API. Dodaj go w <button type="button" class="link-btn go-settings">Ustawieniach</button>.';
-      errorEl.querySelector('.go-settings').addEventListener('click', () => {
-        closeSupplementModal();
-        switchView('ustawienia');
-      });
-    } else if (err.message === 'NETWORK_ERROR') {
-      errorEl.textContent = 'Błąd sieci — sprawdź połączenie z internetem.';
-    } else if (err.message === 'NOT_RECOGNIZED') {
-      errorEl.textContent = 'Nie rozpoznano produktu — wypełnij dane ręcznie.';
-    } else {
-      errorEl.textContent = 'Nie udało się pobrać danych. Wypełnij dane ręcznie.';
-    }
+    showAiError(err, document.getElementById('suppAiError'), {
+      notRecognized: 'Nie rozpoznano produktu — wypełnij dane ręcznie.',
+      failed: 'Nie udało się pobrać danych. Wypełnij dane ręcznie.'
+    }, closeSupplementModal);
   }
 
   function setSuppAiButtonsDisabled(disabled) {
@@ -2143,7 +2193,7 @@ const UI = (() => {
       statusEl.textContent = '';
       fillSuppFormFromAiResult(result);
       pendingSuppSource = 'photo';
-      showToast('Rozpoznano etykietę — sprawdź dane');
+      showAiToast('Rozpoznano etykietę — sprawdź dane');
     } catch (err) {
       statusEl.textContent = '';
       showSuppAiError(err);
@@ -2168,7 +2218,7 @@ const UI = (() => {
       statusEl.textContent = '';
       fillSuppFormFromAiResult(result);
       pendingSuppSource = 'ai';
-      showToast('Znaleziono produkt — sprawdź dane');
+      showAiToast('Znaleziono produkt — sprawdź dane');
     } catch (err) {
       statusEl.textContent = '';
       showSuppAiError(err);
@@ -2258,7 +2308,7 @@ const UI = (() => {
         e.stopPropagation();
         if (confirm('Usunąć ten raport?')) {
           Storage.deleteDailyAnalysis(currentDate, btn.dataset.goalId);
-          pushDailyAnalysesToCloud();
+          pushMetaToCloud('dailyAnalyses');
           renderDailyAnalysesSection();
           showToast('Usunięto raport');
         }
@@ -2365,7 +2415,7 @@ const UI = (() => {
       <div class="supp-card taken adhoc" data-log-key="${r.key}">
         <div class="supp-card-avatar">+</div>
         <div class="supp-card-info">
-          <div class="supp-card-title">${escapeHtml(r.name)}${r.time ? ` <span class="supp-dose">${r.time}</span>` : ''}</div>
+          <div class="supp-card-title">${escapeHtml(r.name)}${r.time ? ` <span class="supp-dose">${escapeHtml(r.time)}</span>` : ''}</div>
         </div>
         <button class="entry-delete" data-action="delete-adhoc" aria-label="Usuń">×</button>
       </div>`).join('');
@@ -2424,7 +2474,7 @@ const UI = (() => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         Storage.deleteSupplementLogEntry(btn.closest('.supp-card').dataset.logKey);
-        pushSupplementLogToCloud();
+        pushMetaToCloud('supplementLog');
         renderSupplementsSection();
       });
     });
@@ -2438,7 +2488,7 @@ const UI = (() => {
         const currentTime = times[idx] || '';
         startInlineTimeEdit(el.querySelector('.supp-log-time'), currentTime, (newTime) => {
           Storage.updateSupplementDoseTime(currentDate, suppId, idx, newTime);
-          pushSupplementLogToCloud();
+          pushMetaToCloud('supplementLog');
           renderSupplementsSection();
         });
       });
@@ -2451,7 +2501,7 @@ const UI = (() => {
         const currentTime = el.querySelector('.supp-log-time').textContent.trim();
         startInlineTimeEdit(el.querySelector('.supp-log-time'), currentTime === '—' ? '' : currentTime, (newTime) => {
           Storage.updateSupplementLogEntryTime(logKey, newTime);
-          pushSupplementLogToCloud();
+          pushMetaToCloud('supplementLog');
           renderSupplementsSection();
         });
       });
@@ -2462,7 +2512,7 @@ const UI = (() => {
         const suppId = btn.dataset.suppId;
         const idx = Number(btn.dataset.doseIndex);
         Storage.removeSupplementDose(currentDate, suppId, idx);
-        pushSupplementLogToCloud();
+        pushMetaToCloud('supplementLog');
         renderSupplementsSection();
       });
     });
@@ -2470,7 +2520,7 @@ const UI = (() => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         Storage.deleteSupplementLogEntry(btn.closest('.supp-log-entry').dataset.logKey);
-        pushSupplementLogToCloud();
+        pushMetaToCloud('supplementLog');
         renderSupplementsSection();
       });
     });
@@ -2483,19 +2533,27 @@ const UI = (() => {
     const count = Storage.getSupplementTakenCount(currentDate, suppId);
 
     if (count >= target) {
-      Storage.toggleSupplementTaken(currentDate, suppId, nowTimeStr());
+      // tap w komplet kasuje wszystkie dawki dnia — z możliwością cofnięcia
+      const date = currentDate;
+      const prevTimes = Storage.getSupplementDoseTimes(date, suppId);
+      Storage.toggleSupplementTaken(date, suppId, nowTimeStr());
+      showUndoToast(`Odznaczono: ${escapeHtml(supp ? suppLabel(supp) : '')}`, () => {
+        Storage.setSupplementDoseTimes(date, suppId, prevTimes);
+        pushMetaToCloud('supplementLog', `${date}__${suppId}`);
+        renderSupplementsSection();
+      });
     } else if (count === 0) {
       Storage.toggleSupplementTaken(currentDate, suppId, nowTimeStr());
     } else {
       Storage.incrementSupplementDose(currentDate, suppId, nowTimeStr());
     }
-    pushSupplementLogToCloud();
+    pushMetaToCloud('supplementLog');
     renderSupplementsSection();
   }
 
   function incrementSupplementDose(suppId) {
     Storage.incrementSupplementDose(currentDate, suppId, nowTimeStr());
-    pushSupplementLogToCloud();
+    pushMetaToCloud('supplementLog');
     renderSupplementsSection();
   }
 
@@ -2531,8 +2589,8 @@ const UI = (() => {
       const name = input.value.trim();
       if (!name) return;
       Storage.addAdhocSupplementLog(currentDate, name, nowTimeStr());
-      pushSupplementLogToCloud();
-      pushAdhocQuickItemsToCloud();
+      pushMetaToCloud('supplementLog');
+      pushMetaToCloud('adhocQuickItems');
       input.value = '';
       renderSupplementsSection();
       showToast('Zapisano');
@@ -2548,8 +2606,8 @@ const UI = (() => {
         if (e.target.closest('[data-action="remove-quick"]')) return;
         const name = chip.dataset.adhocName;
         Storage.addAdhocSupplementLog(currentDate, name, nowTimeStr());
-        pushSupplementLogToCloud();
-        pushAdhocQuickItemsToCloud();
+        pushMetaToCloud('supplementLog');
+        pushMetaToCloud('adhocQuickItems');
         renderSupplementsSection();
         showToast(`${name} — zapisano`);
       });
@@ -2559,7 +2617,7 @@ const UI = (() => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         Storage.removeAdhocQuickItem(btn.dataset.name);
-        pushAdhocQuickItemsToCloud();
+        pushMetaToCloud('adhocQuickItems');
         renderAdhocSupplementsSection();
       });
     });
@@ -2746,10 +2804,10 @@ const UI = (() => {
       }
 
       Storage.saveSupplementAnalysis(scope, payload.startDate, payload.endDate, parsed);
-      pushSupplementAnalysesToCloud();
+      pushMetaToCloud('supplementAnalyses');
       statusEl.textContent = '';
       renderSupplementAnalysesSection();
-      showToast('Zapisano raport');
+      showAiToast('Zapisano raport');
     } catch (e) {
       statusEl.textContent = '';
       if (errorEl) errorEl.textContent = analysisErrorMessage(e.message);
@@ -2899,7 +2957,7 @@ const UI = (() => {
         e.stopPropagation();
         if (confirm('Usunąć ten raport?')) {
           Storage.deleteSupplementAnalysis(btn.dataset.key);
-          pushSupplementAnalysesToCloud();
+          pushMetaToCloud('supplementAnalyses', btn.dataset.key);
           renderSupplementAnalysesSection();
           showToast('Usunięto raport');
         }
@@ -2914,12 +2972,6 @@ const UI = (() => {
   function dietDayOfWeek(dateStr) {
     const [y, m, d] = dateStr.split('-').map(Number);
     return DIET_DAY_NAMES[new Date(y, m - 1, d).getDay()];
-  }
-
-  function daysBetweenDates(dateA, dateB) {
-    const [ya, ma, da] = dateA.split('-').map(Number);
-    const [yb, mb, db] = dateB.split('-').map(Number);
-    return Math.round((Date.UTC(yb, mb - 1, db) - Date.UTC(ya, ma - 1, da)) / 86400000);
   }
 
   function groupProductCounts(dates, limit) {
@@ -2940,7 +2992,7 @@ const UI = (() => {
     if (pomiaryWagi.length < 2) return null;
     const w0 = pomiaryWagi[0];
     const w1 = pomiaryWagi[pomiaryWagi.length - 1];
-    const okresPomiaruDni = daysBetweenDates(w0.data, w1.data);
+    const okresPomiaruDni = Storage.daysBetween(w0.data, w1.data);
     if (okresPomiaruDni < 5) return null;
     return { w0, w1, okresPomiaruDni };
   }
@@ -2991,11 +3043,12 @@ const UI = (() => {
     const balance = buildWeightBalance(pomiary_wagi);
     if (balance) {
       const zmiana = Math.round((balance.w1.kg - balance.w0.kg) * 10) / 10;
-      const deficyt = Math.round((zmiana * 7700) / balance.okresPomiaruDni);
+      // dodatni = deficyt (chudnięcie), ujemny = nadwyżka; TDEE = spożycie + deficyt
+      const deficyt = Math.round((-zmiana * 7700) / balance.okresPomiaruDni);
       bilans_wstepny = {
         zmiana_wagi_kg: zmiana,
         szacowany_deficyt_dzienny: deficyt,
-        szacowane_tdee: srKcalDniZWpisami - deficyt,
+        szacowana_tdee: srKcalDniZWpisami + deficyt,
         okres_pomiaru_dni: balance.okresPomiaruDni,
         sr_kcal_dni_z_wpisami: srKcalDniZWpisami,
         dni_z_wpisami: dniZWpisami,
@@ -3060,10 +3113,10 @@ const UI = (() => {
       );
 
       Storage.saveDietAnalysis(scope, payload.startDate, payload.endDate, parsed);
-      pushDietAnalysesToCloud();
+      pushMetaToCloud('dietAnalyses');
       statusEl.textContent = '';
       renderDietAnalysesSection();
-      showToast('Zapisano raport');
+      showAiToast('Zapisano raport');
     } catch (e) {
       statusEl.textContent = '';
       if (errorEl) {
@@ -3191,7 +3244,7 @@ const UI = (() => {
         e.stopPropagation();
         if (confirm('Usunąć ten raport?')) {
           Storage.deleteDietAnalysis(btn.dataset.key);
-          pushDietAnalysesToCloud();
+          pushMetaToCloud('dietAnalyses', btn.dataset.key);
           renderDietAnalysesSection();
           showToast('Usunięto raport');
         }
@@ -3222,13 +3275,10 @@ const UI = (() => {
   }
 
   function analysisErrorMessage(code) {
-    switch (code) {
-      case 'NO_API_KEY': return 'Brak klucza Gemini API — dodaj go w Ustawieniach.';
-      case 'NETWORK_ERROR': return 'Brak połączenia z siecią.';
-      case 'API_ERROR': return 'Błąd API Gemini. Spróbuj ponownie.';
-      case 'NOT_RECOGNIZED': return 'AI nie było w stanie przeanalizować danych z tego dnia pod kątem tego celu.';
-      default: return 'Nie udało się wykonać analizy.';
-    }
+    return aiErrorText({ message: code }, {
+      notRecognized: 'AI nie było w stanie przeanalizować danych z tego dnia pod kątem tego celu.',
+      failed: code === 'API_ERROR' ? 'Błąd API Gemini. Spróbuj ponownie.' : 'Nie udało się wykonać analizy.'
+    });
   }
 
   async function runGoalAnalysis(goalId) {
@@ -3264,11 +3314,11 @@ const UI = (() => {
     try {
       const result = await Ocr.analyzeDayAgainstGoal(currentDate, mealsForPrompt, goal.systemPrompt, healthProfile, apiKey);
       Storage.saveDailyAnalysis(currentDate, goal.id, goal.name, result);
-      pushDailyAnalysesToCloud();
+      pushMetaToCloud('dailyAnalyses');
       statusEl.textContent = '';
       closeGoalPickerModal();
       renderDailyAnalysesSection();
-      showToast('Zapisano raport');
+      showAiToast('Zapisano raport');
     } catch (e) {
       statusEl.textContent = '';
       errorEl.textContent = analysisErrorMessage(e.message);
@@ -3367,8 +3417,15 @@ const UI = (() => {
     searchProducts,
     hideAutocomplete,
     showToast,
+    escapeHtml,
+    mealFromTime,
+    nowTimeStr,
+    showAiToast,
+    showAiError,
+    formatUsage,
+    aiErrorText,
     pushDayToCloud,
-    pushFavoritesToCloud,
+    pushMetaToCloud,
     searchHistory,
     openGoalModal,
     closeGoalModal,
@@ -3386,7 +3443,8 @@ const UI = (() => {
     updateIngredientUnitOther,
     handleSuppLabelScan,
     handleSuppLookup,
-    flushSupplementLogPush,
+    flushMetaPush,
+    handleAppResume,
     getCurrentDate: () => currentDate
   };
 })();

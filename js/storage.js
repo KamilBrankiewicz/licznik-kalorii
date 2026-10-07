@@ -16,6 +16,19 @@ const Storage = (() => {
   const SEEN_SHARED_SUPPLEMENTS_KEY = 'seenSharedSupplementIds';
   const THEME_KEY = 'themePreference';
   const HISTORY_METRIC_KEY = 'historyMetricPreference';
+  const GEMINI_USAGE_KEY = 'geminiUsage';
+
+  // Każdy zapis JSON-a przez tę funkcję: pełny localStorage (~5 MB) zamieniamy na czytelny
+  // kod błędu STORAGE_FULL, który app.js pokazuje jako komunikat (zamiast cichej porażki).
+  // Wyjątek przerywa akcję przed zmianą stanu — nic nie zapisuje się połowicznie.
+  function setJSON(key, value) {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch (e) {
+      if (e && e.name === 'QuotaExceededError') throw new Error('STORAGE_FULL');
+      throw e;
+    }
+  }
 
   const DEFAULT_SETTINGS = {
     kcalGoal: 2000,
@@ -36,7 +49,7 @@ const Storage = (() => {
   }
 
   function saveSettings(settings) {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    setJSON(SETTINGS_KEY, settings);
   }
 
   // Preferencja motywu jest per-urządzenie — celowo nie wchodzi do settings/sync
@@ -57,6 +70,18 @@ const Storage = (() => {
     localStorage.setItem(HISTORY_METRIC_KEY, metric);
   }
 
+  // Zużycie Gemini w bieżącym miesiącu — per-urządzenie, statystyka poglądowa, poza sync/eksportem
+  function getGeminiUsage() {
+    const month = localDateStr().slice(0, 7);
+    const raw = JSON.parse(localStorage.getItem(GEMINI_USAGE_KEY) || 'null');
+    return raw && raw.month === month ? raw : { month, calls: 0, usd: 0 };
+  }
+
+  function addGeminiUsage(usd) {
+    const u = getGeminiUsage();
+    setJSON(GEMINI_USAGE_KEY, { month: u.month, calls: u.calls + 1, usd: u.usd + usd });
+  }
+
   // Surowa lista zawiera także nagrobki (deleted: true) potrzebne do synchronizacji
   function getRawEntries(date) {
     const raw = localStorage.getItem(ENTRY_PREFIX + date);
@@ -68,7 +93,7 @@ const Storage = (() => {
   }
 
   function saveEntries(date, entries) {
-    localStorage.setItem(ENTRY_PREFIX + date, JSON.stringify(entries));
+    setJSON(ENTRY_PREFIX + date, entries);
   }
 
   function addEntry(date, entry) {
@@ -95,16 +120,30 @@ const Storage = (() => {
     saveEntries(date, entries);
   }
 
-  // Scala dwie listy wpisów po id; przy konflikcie wygrywa nowszy updatedAt.
+  // ── Merge do synca/importu: przy konflikcie wygrywa nowszy updatedAt (string compare ISO).
   // Dzięki nagrobkom usunięcie na jednym urządzeniu nie "zmartwychwstaje" po syncu.
-  function mergeEntryLists(listA, listB) {
-    const byId = new Map();
-    [...listA, ...listB].forEach((e) => {
-      const prev = byId.get(e.id);
-      if (!prev || (e.updatedAt || '') > (prev.updatedAt || '')) byId.set(e.id, e);
+  // Kolejność: rekordy z listA zachowują pozycje, nowe z listB są dopisywane na końcu.
+  function mergeListBy(listA, listB, keyOf, tsOf = (r) => r.updatedAt || '') {
+    const byKey = new Map();
+    [...listA, ...listB].forEach((r) => {
+      const key = keyOf(r);
+      const prev = byKey.get(key);
+      if (!prev || tsOf(r) > tsOf(prev)) byKey.set(key, r);
     });
-    return [...byId.values()];
+    return [...byKey.values()];
   }
+
+  function mergeMaps(mapA, mapB) {
+    const merged = { ...mapA };
+    Object.entries(mapB).forEach(([key, r]) => {
+      const prev = merged[key];
+      if (!prev || (r.updatedAt || '') > (prev.updatedAt || '')) merged[key] = r;
+    });
+    return merged;
+  }
+
+  const byId = (r) => r.id;
+  const mergeEntryLists = (a, b) => mergeListBy(a, b, byId);
 
   function getDailySummary(date) {
     const entries = getEntries(date);
@@ -128,13 +167,9 @@ const Storage = (() => {
   }
 
   function saveWeights(map) {
-    localStorage.setItem(WEIGHTS_KEY, JSON.stringify(map));
+    setJSON(WEIGHTS_KEY, map);
   }
 
-  function getWeight(date) {
-    const w = getWeights()[date];
-    return w && !w.deleted ? w.kg : null;
-  }
 
   function getWeightFull(date) {
     const w = getWeights()[date];
@@ -182,14 +217,7 @@ const Storage = (() => {
       .sort((a, b) => a.date.localeCompare(b.date));
   }
 
-  function mergeWeights(mapA, mapB) {
-    const merged = { ...mapA };
-    Object.entries(mapB).forEach(([date, w]) => {
-      const prev = merged[date];
-      if (!prev || (w.updatedAt || '') > (prev.updatedAt || '')) merged[date] = w;
-    });
-    return merged;
-  }
+  const mergeWeights = mergeMaps;
 
   function getAllDatesWithEntries() {
     const dates = [];
@@ -254,7 +282,7 @@ const Storage = (() => {
   }
 
   function saveFavoriteProducts(list) {
-    localStorage.setItem(FAVORITES_KEY, JSON.stringify(list));
+    setJSON(FAVORITES_KEY, list);
   }
 
   function isFavoriteProduct(name) {
@@ -302,16 +330,7 @@ const Storage = (() => {
     return true;
   }
 
-  // Scala dwie listy ulubionych po key; przy konflikcie wygrywa nowszy updatedAt
-  // (ten sam mechanizm nagrobków co przy wpisach/wadze)
-  function mergeFavoriteProducts(listA, listB) {
-    const byKey = new Map();
-    [...listA, ...listB].forEach((p) => {
-      const prev = byKey.get(p.key);
-      if (!prev || (p.updatedAt || '') > (prev.updatedAt || '')) byKey.set(p.key, p);
-    });
-    return [...byKey.values()];
-  }
+  const mergeFavoriteProducts = (a, b) => mergeListBy(a, b, (p) => p.key);
 
   // ── Przepisy ──
 
@@ -325,7 +344,7 @@ const Storage = (() => {
   }
 
   function saveRecipes(list) {
-    localStorage.setItem(RECIPES_KEY, JSON.stringify(list));
+    setJSON(RECIPES_KEY, list);
   }
 
   function addRecipe(recipe) {
@@ -356,13 +375,32 @@ const Storage = (() => {
     return getRecipes().find((r) => r.id === id) || null;
   }
 
-  function mergeRecipes(listA, listB) {
-    const byId = new Map();
-    [...listA, ...listB].forEach((r) => {
-      const prev = byId.get(r.id);
-      if (!prev || (r.updatedAt || '') > (prev.updatedAt || '')) byId.set(r.id, r);
-    });
-    return [...byId.values()];
+  const mergeRecipes = (a, b) => mergeListBy(a, b, byId);
+
+  // Normalizacja składników z niezaufanych źródeł (odpowiedź AI, skrzynka od partnera) —
+  // liczby na pewno liczbami, żeby nie wstrzyknąć HTML ani nie wywalić renderu
+  function normalizeRecipeIngredient(ing) {
+    const p = (ing && ing.per100g) || {};
+    return {
+      name: String((ing && ing.name) || 'Składnik'),
+      grams: Number(ing && ing.grams) || 0,
+      per100g: {
+        kcal: Number(p.kcal) || 0,
+        protein: Number(p.protein) || 0,
+        carbs: Number(p.carbs) || 0,
+        fat: Number(p.fat) || 0,
+        fiber: p.fiber != null ? Number(p.fiber) || 0 : null
+      }
+    };
+  }
+
+  function normalizeSuppIngredient(ing) {
+    return {
+      name: String((ing && ing.name) || ''),
+      amount: Number(ing && ing.amount) || null,
+      unit: String((ing && ing.unit) || 'mg'),
+      rws: Number(ing && ing.rws) || null
+    };
   }
 
   // Lokalny guard przed duplikatem importu udostępnionego przepisu — czysto lokalny,
@@ -376,7 +414,7 @@ const Storage = (() => {
     const ids = getSeenSharedRecipeIds();
     if (!ids.includes(id)) {
       ids.push(id);
-      localStorage.setItem(SEEN_SHARED_RECIPES_KEY, JSON.stringify(ids));
+      setJSON(SEEN_SHARED_RECIPES_KEY, ids);
     }
   }
 
@@ -392,7 +430,7 @@ const Storage = (() => {
   }
 
   function saveGoals(list) {
-    localStorage.setItem(GOALS_KEY, JSON.stringify(list));
+    setJSON(GOALS_KEY, list);
   }
 
   function addGoal(goal) {
@@ -419,14 +457,7 @@ const Storage = (() => {
     saveGoals(list);
   }
 
-  function mergeGoals(listA, listB) {
-    const byId = new Map();
-    [...listA, ...listB].forEach((g) => {
-      const prev = byId.get(g.id);
-      if (!prev || (g.updatedAt || '') > (prev.updatedAt || '')) byId.set(g.id, g);
-    });
-    return [...byId.values()];
-  }
+  const mergeGoals = (a, b) => mergeListBy(a, b, byId);
 
   // ── Suplementy i leki — definicje; nagrobki + merge jak przy celach ──
 
@@ -440,14 +471,14 @@ const Storage = (() => {
   }
 
   function saveSupplements(list) {
-    localStorage.setItem(SUPPLEMENTS_KEY, JSON.stringify(list));
+    setJSON(SUPPLEMENTS_KEY, list);
   }
 
   function addSupplement(supp) {
     const list = getRawSupplements();
     const newSupp = {
       active: true,
-      anchorDate: new Date().toISOString().slice(0, 10),
+      anchorDate: localDateStr(),
       ...supp,
       id: crypto.randomUUID(),
       updatedAt: new Date().toISOString()
@@ -473,14 +504,7 @@ const Storage = (() => {
     saveSupplements(list);
   }
 
-  function mergeSupplements(listA, listB) {
-    const byId = new Map();
-    [...listA, ...listB].forEach((s) => {
-      const prev = byId.get(s.id);
-      if (!prev || (s.updatedAt || '') > (prev.updatedAt || '')) byId.set(s.id, s);
-    });
-    return [...byId.values()];
-  }
+  const mergeSupplements = (a, b) => mergeListBy(a, b, byId);
 
   // Lokalny guard przed duplikatem importu udostępnionego suplementu — jak przy przepisach
   function getSeenSharedSupplementIds() {
@@ -492,8 +516,14 @@ const Storage = (() => {
     const ids = getSeenSharedSupplementIds();
     if (!ids.includes(id)) {
       ids.push(id);
-      localStorage.setItem(SEEN_SHARED_SUPPLEMENTS_KEY, JSON.stringify(ids));
+      setJSON(SEEN_SHARED_SUPPLEMENTS_KEY, ids);
     }
+  }
+
+  // Data lokalna YYYY-MM-DD — NIE toISOString(), które daje datę UTC (w Polsce między
+  // 0:00 a 1:00/2:00 to jeszcze wczoraj)
+  function localDateStr(d = new Date()) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   }
 
   // Różnica pełnych dni między datami YYYY-MM-DD (UTC, odporne na zmianę czasu)
@@ -555,13 +585,13 @@ const Storage = (() => {
   function getStockCoverage(supp, remaining) {
     if (remaining == null) return null;
     const perDay = Math.max(1, Number(supp.timesPerDay) || 1);
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDateStr();
     let left = remaining;
     let lastDate = null;
     const d = new Date();
     for (let i = 1; i <= 365 && left > 0; i++) {
       d.setDate(d.getDate() + 1);
-      const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const iso = localDateStr(d);
       if (isSupplementDueOn(supp, iso)) {
         left -= perDay;
         lastDate = iso;
@@ -583,7 +613,7 @@ const Storage = (() => {
   }
 
   function saveRawDailyAnalyses(map) {
-    localStorage.setItem(DAILY_ANALYSES_KEY, JSON.stringify(map));
+    setJSON(DAILY_ANALYSES_KEY, map);
   }
 
   function getDailyAnalyses(date) {
@@ -607,14 +637,7 @@ const Storage = (() => {
     saveRawDailyAnalyses(map);
   }
 
-  function mergeDailyAnalyses(mapA, mapB) {
-    const merged = { ...mapA };
-    Object.entries(mapB).forEach(([key, a]) => {
-      const prev = merged[key];
-      if (!prev || (a.updatedAt || '') > (prev.updatedAt || '')) merged[key] = a;
-    });
-    return merged;
-  }
+  const mergeDailyAnalyses = mergeMaps;
 
   // ── Dziennik przyjęć suplementów — mapa { "YYYY-MM-DD__id": {...} },
   // nagrobki + merge jak przy raportach analizy dnia ──
@@ -629,7 +652,7 @@ const Storage = (() => {
   }
 
   function saveRawSupplementLog(map) {
-    localStorage.setItem(SUPPLEMENT_LOG_KEY, JSON.stringify(map));
+    setJSON(SUPPLEMENT_LOG_KEY, map);
   }
 
   // Wpisy z danego dnia (bez nagrobków)
@@ -656,9 +679,6 @@ const Storage = (() => {
     return getSupplementTimes(rec);
   }
 
-  function isSupplementTaken(date, suppId) {
-    return getSupplementTakenCount(date, suppId) > 0;
-  }
 
   function toggleSupplementTaken(date, suppId, time) {
     const map = getRawSupplementLog();
@@ -681,6 +701,13 @@ const Storage = (() => {
     map[key] = { date, suppId, taken: true, times, updatedAt: now };
     saveRawSupplementLog(map);
     return times.length;
+  }
+
+  // Przywrócenie listy godzin dawek (cofnięcie odznaczenia)
+  function setSupplementDoseTimes(date, suppId, times) {
+    const map = getRawSupplementLog();
+    map[supplementLogKey(date, suppId)] = { date, suppId, taken: true, times, updatedAt: new Date().toISOString() };
+    saveRawSupplementLog(map);
   }
 
   function updateSupplementDoseTime(date, suppId, index, newTime) {
@@ -728,7 +755,7 @@ const Storage = (() => {
   }
 
   function saveAdhocQuickItems(items) {
-    localStorage.setItem(ADHOC_QUICK_KEY, JSON.stringify(items));
+    setJSON(ADHOC_QUICK_KEY, items);
   }
 
   function addAdhocQuickItem(name) {
@@ -753,20 +780,9 @@ const Storage = (() => {
     saveAdhocQuickItems(items);
   }
 
-  // Scala dwie listy chipów po name (case-insensitive); przy konflikcie wygrywa nowszy
-  // updatedAt (fallback usedAt dla starych rekordów bez updatedAt) — ten sam mechanizm
-  // nagrobków co przy wpisach/ulubionych
-  function mergeAdhocQuickItems(listA, listB) {
-    const byName = new Map();
-    [...listA, ...listB].forEach((i) => {
-      const key = (i.name || '').toLowerCase();
-      const prev = byName.get(key);
-      const ts = i.updatedAt || i.usedAt || '';
-      const prevTs = prev ? (prev.updatedAt || prev.usedAt || '') : '';
-      if (!prev || ts > prevTs) byName.set(key, i);
-    });
-    return [...byName.values()];
-  }
+  // Chipy po name (bez wielkości liter); stare rekordy bez updatedAt mają tylko usedAt
+  const mergeAdhocQuickItems = (a, b) => mergeListBy(a, b,
+    (i) => (i.name || '').toLowerCase(), (i) => i.updatedAt || i.usedAt || '');
 
   function updateSupplementLogEntryTime(key, time) {
     const map = getRawSupplementLog();
@@ -782,14 +798,7 @@ const Storage = (() => {
     saveRawSupplementLog(map);
   }
 
-  function mergeSupplementLog(mapA, mapB) {
-    const merged = { ...mapA };
-    Object.entries(mapB).forEach(([key, r]) => {
-      const prev = merged[key];
-      if (!prev || (r.updatedAt || '') > (prev.updatedAt || '')) merged[key] = r;
-    });
-    return merged;
-  }
+  const mergeSupplementLog = mergeMaps;
 
   // ── Raporty analizy suplementów — mapa { "scope__endDate": {...} },
   // nagrobki + merge jak przy dailyAnalyses ──
@@ -800,7 +809,7 @@ const Storage = (() => {
   }
 
   function saveRawSupplementAnalyses(map) {
-    localStorage.setItem(SUPPLEMENT_ANALYSES_KEY, JSON.stringify(map));
+    setJSON(SUPPLEMENT_ANALYSES_KEY, map);
   }
 
   function getSupplementAnalyses() {
@@ -825,14 +834,7 @@ const Storage = (() => {
     saveRawSupplementAnalyses(map);
   }
 
-  function mergeSupplementAnalyses(mapA, mapB) {
-    const merged = { ...mapA };
-    Object.entries(mapB).forEach(([key, r]) => {
-      const prev = merged[key];
-      if (!prev || (r.updatedAt || '') > (prev.updatedAt || '')) merged[key] = r;
-    });
-    return merged;
-  }
+  const mergeSupplementAnalyses = mergeMaps;
 
   // ── Raporty analizy AI diety — mapa { "scope__endDate": {...} },
   // nagrobki + merge jak przy supplementAnalyses ──
@@ -843,7 +845,7 @@ const Storage = (() => {
   }
 
   function saveRawDietAnalyses(map) {
-    localStorage.setItem(DIET_ANALYSES_KEY, JSON.stringify(map));
+    setJSON(DIET_ANALYSES_KEY, map);
   }
 
   function getDietAnalyses() {
@@ -868,14 +870,7 @@ const Storage = (() => {
     saveRawDietAnalyses(map);
   }
 
-  function mergeDietAnalyses(mapA, mapB) {
-    const merged = { ...mapA };
-    Object.entries(mapB).forEach(([key, r]) => {
-      const prev = merged[key];
-      if (!prev || (r.updatedAt || '') > (prev.updatedAt || '')) merged[key] = r;
-    });
-    return merged;
-  }
+  const mergeDietAnalyses = mergeMaps;
 
   // ── Cache sekcji statycznych analizy (interakcje, sumy dawek) — lokalny, odtwarzalny ──
 
@@ -895,12 +890,12 @@ const Storage = (() => {
   }
 
   function saveSuppStaticCache(interactions, doseTotals) {
-    localStorage.setItem(SUPP_STATIC_CACHE_KEY, JSON.stringify({
+    setJSON(SUPP_STATIC_CACHE_KEY, {
       fingerprint: getSupplementsFingerprint(),
       interactions: interactions || [],
       dose_totals: doseTotals || [],
       updatedAt: new Date().toISOString()
-    }));
+    });
   }
 
   function exportData() {
@@ -1017,13 +1012,14 @@ const Storage = (() => {
     saveTheme,
     getHistoryMetric,
     saveHistoryMetric,
+    getGeminiUsage,
+    addGeminiUsage,
     getEntries,
     getRawEntries,
     saveEntries,
     mergeEntryLists,
     getWeights,
     saveWeights,
-    getWeight,
     getWeightFull,
     setWeight,
     getLatestWeight,
@@ -1053,6 +1049,8 @@ const Storage = (() => {
     deleteRecipe,
     getRecipeById,
     mergeRecipes,
+    normalizeRecipeIngredient,
+    normalizeSuppIngredient,
     getSeenSharedRecipeIds,
     addSeenSharedRecipeId,
     getSeenSharedSupplementIds,
@@ -1077,18 +1075,20 @@ const Storage = (() => {
     updateSupplement,
     deleteSupplement,
     mergeSupplements,
+    localDateStr,
+    daysBetween,
     isSupplementDueOn,
     getRemainingStockMap,
     getStockCoverage,
     getRawSupplementLog,
     saveRawSupplementLog,
     getSupplementLogForDate,
-    isSupplementTaken,
     getSupplementTakenCount,
     getSupplementDoseTimes,
     toggleSupplementTaken,
     incrementSupplementDose,
     updateSupplementDoseTime,
+    setSupplementDoseTimes,
     removeSupplementDose,
     addAdhocSupplementLog,
     updateSupplementLogEntryTime,

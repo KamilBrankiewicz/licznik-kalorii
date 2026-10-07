@@ -30,8 +30,9 @@ css/style.css       # style, zmienne CSS, dark/light
 js/app.js           # WYŁĄCZNIE podpięcie zdarzeń DOM → wywołania UI.*
 js/ui.js            # renderowanie widoków, obsługa formularzy (największy plik)
 js/storage.js       # localStorage: CRUD, merge do synca, eksport/import
-js/ocr.js           # wywołania Gemini API (etykieta, zrzut, zdjęcie, głos, przepis)
-js/voice.js         # Web Speech API
+js/recipes.js       # przepisy: kreator, składniki, porcje (moduł Recipes)
+js/ocr.js           # wywołania Gemini API (etykieta, zrzut, zdjęcie, głos, przepis, analizy) + koszt zapytań
+js/voice.js         # Web Speech API + nagrywanie audio
 js/barcode.js       # BarcodeDetector + Open Food Facts
 js/firebase-sync.js # push/pull do Firestore + logowanie Google
 sw.js               # service worker
@@ -48,21 +49,24 @@ w `ui.js`.
 1. **Nagrobki przy usuwaniu.** Usunięcie wpisu, wagi, ulubionego produktu czy przepisu
    NIE kasuje rekordu — zapisuje `{ id, deleted: true, updatedAt }`. Bez tego usunięcie na
    telefonie „zmartwychwstaje" po syncu z laptopa. Każda nowa kolekcja danych, która ma być
-   synchronizowana, musi mieć nagrobki i własną funkcję `merge*`.
+   synchronizowana, musi mieć nagrobki, funkcję `merge*` (zwykle `mergeListBy`/`mergeMaps`)
+   i wpis w tabeli `META` w `ui.js` (kolekcje rosnące bez końca — z `shard` po miesiącach).
 
 2. **`updatedAt` przy każdym zapisie.** Merge rozstrzyga konflikty przez porównanie
    `updatedAt` (ISO 8601, string compare). Rekord bez `updatedAt` przegrywa każdy konflikt.
 
-3. **Bump `CACHE_NAME` w `sw.js` przy każdej zmianie JS/CSS/HTML.** Obecnie `licznik-kalorii-v13`
-   → podnieś do `v14` itd. Service worker serwuje zasoby stale-while-revalidate, więc bez
+3. **Bump `CACHE_NAME` w `sw.js` przy każdej zmianie JS/CSS/HTML** (`licznik-kalorii-vN` → `vN+1`,
+   razem z tekstem „vN" obok nagłówka Ustawień w `index.html`). Service worker serwuje zasoby stale-while-revalidate, więc bez
    bumpu użytkownik dostanie stary JS przy nowym HTML — typowy objaw to „przycisk nic nie robi".
 
 4. **Nowy plik JS musi trafić do `APP_SHELL` w `sw.js`** oraz do `<script>` w `index.html`.
    Pominięcie = aplikacja działa online i wybucha offline.
 
-5. **Klucze API należą do użytkownika i zostają w localStorage.** Klucz Gemini i config
+5. **Klucze API należą do użytkownika i nigdy nie trafiają do repo.** Klucz Gemini i config
    Firebase wpisuje użytkownik w Ustawieniach. Nigdy nie commituj kluczy, nie wpisuj ich
-   w kod, nie loguj do konsoli.
+   w kod, nie loguj do konsoli. Klucz Gemini synchronizuje się razem z ustawieniami do
+   prywatnego Firestore użytkownika (`users/{uid}/meta/settings`); config Firebase jest
+   per-urządzenie i nie opuszcza localStorage.
 
 6. **Zmiana modelu danych musi być wstecznie zgodna.** W localStorage użytkownika leżą
    wpisy sprzed miesięcy. Nowe pole = wartość domyślna przy odczycie (wzorzec:
@@ -73,14 +77,17 @@ w `ui.js`.
 
 localStorage:
 - `entries_YYYY-MM-DD` → tablica wpisów
-- `settings` → cele, klucz Gemini, config Firebase
-- `weights` → mapa `{ "YYYY-MM-DD": { kg, updatedAt } }`
-- `favoriteProducts`, `recipes` → tablice
+- `settings` → cele, klucz Gemini, profil zdrowotny, UID partnera, config Firebase, `updatedAt`
+- `weights` → mapa `{ "YYYY-MM-DD": { kg, smm?, bf?, updatedAt } }`
+- `favoriteProducts`, `recipes`, `analysisGoals`, `supplements`, `adhocQuickItems` → tablice
+- `dailyAnalyses`, `supplementLog`, `supplementAnalyses`, `dietAnalyses` → mapy
+- per-urządzenie, poza syncem: `themePreference`, `historyMetricPreference`, `geminiUsage`
 
 Wpis posiłku: `{ id, date, name, kcal, protein, carbs, fat, fiber, meal, time, updatedAt }`,
-gdzie `meal` ∈ `breakfast|lunch|dinner|snack`.
+gdzie `meal` ∈ `sniadanie|obiad|kolacja|przekaska` (stare wpisy bez `meal` — kategoria wg godziny).
 
-Firestore: `users/{uid}/days/{YYYY-MM-DD}`, `users/{uid}/meta/{settings|weights|favorites|recipes}`.
+Firestore: `users/{uid}/days/{YYYY-MM-DD}`, `users/{uid}/meta/{nazwa}` (kolekcje z tabeli `META` w `ui.js` +
+`settings`; shardowane jako `meta/{nazwa}-YYYY-MM`), skrzynki `sharedRecipes`/`sharedSupplements`.
 
 Pełny opis w [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -88,10 +95,10 @@ Pełny opis w [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 | Integracja | Gdzie | Uwagi |
 |---|---|---|
-| Gemini API | `js/ocr.js` | model `gemini-flash-latest`, darmowy tier, klucz użytkownika. Odpowiedzi parsowane jako JSON — zawsze obsłuż błąd parsowania. |
+| Gemini API | `js/ocr.js` | model `gemini-flash-latest`, darmowy tier, klucz użytkownika. HTTP tylko przez `requestGemini` (kody błędów, zapis kosztu). Odpowiedzi JSON — zawsze obsłuż błąd parsowania; komunikat przez `UI.aiErrorText`/`UI.showAiError`, sukces przez `UI.showAiToast` (dokleja koszt). |
 | Open Food Facts | `js/barcode.js` | publiczne API, bez klucza, może nie znać kodu → fallback na ręczne wpisanie |
 | Firebase | `js/firebase-sync.js` | SDK ładowane dynamicznym `import()` z gstatic, wersja w stałej `FIREBASE_SDK_VERSION` |
-| Web Speech API | `js/voice.js` | tylko Chrome/Android, wymaga HTTPS |
+| Web Speech API | `js/voice.js` | Chrome/Android i Safari, wymaga HTTPS |
 
 Wszystkie cztery mogą zawieść (brak sieci, brak uprawnień, brak wsparcia przeglądarki).
 Każda ścieżka musi mieć czytelny polski komunikat błędu, nie cichy `catch`.

@@ -28,8 +28,11 @@ jedynym zabezpieczeniem przed regresją.
 - [ ] Wywołanie sieciowe → `try/catch` z polskim komunikatem w UI. Bez cichego `catch {}`.
 - [ ] Nowy plik JS → dopisany w **trzech** miejscach: `<script>` w `index.html`,
       `APP_SHELL` w `sw.js`, drzewko plików w `ARCHITECTURE.md`.
-- [ ] Nowa synchronizowana kolekcja → komplet: nagrobki, `merge*`, `push*`/`pull*`,
-      wywołanie w `syncWithCloud`, obsługa w eksporcie/imporcie JSON.
+- [ ] Nowa synchronizowana kolekcja → komplet: nagrobki, `merge*` (`mergeListBy`/`mergeMaps`),
+      wpis w tabeli `META` w `ui.js` (z `shard`, jeśli rośnie z czasem — limit 1 MB dokumentu),
+      `pushMetaToCloud(nazwa)` po każdym zapisie, obsługa w eksporcie/imporcie JSON.
+- [ ] Nowe wywołanie Gemini → przez `requestGemini`/`callGemini` w `ocr.js` (koszt liczy się sam),
+      sukces przez `UI.showAiToast`, błąd przez `UI.showAiError`/`UI.aiErrorText`.
 
 ## C. Przed uznaniem zadania za zrobione
 
@@ -63,10 +66,11 @@ i sprawdź:
 
 Zmiana w **modelu danych / storage**:
 - [ ] Otwórz aplikację z danymi sprzed zmiany (nie czyść localStorage) — stare wpisy renderują się poprawnie.
-- [ ] Eksport JSON → import JSON w trybie „scal" i „zastąp" → dane spójne.
+- [ ] Eksport JSON → import JSON (UI ma tylko tryb „scal"; `Storage.importData(data, 'replace')` jest dostępny z konsoli) → dane spójne.
 
 Zmiana w **synchronizacji**:
 - [ ] Zaloguj się, zsynchronizuj, przeładuj — dane się nie zdublowały.
+- [ ] Drugi sync bez zmian nie robi żadnych zapisów (DevTools → Network, brak żądań `Write`/`Commit`).
 - [ ] Usuń wpis, zsynchronizuj, przeładuj — wpis **nie wrócił** (test nagrobków).
 - [ ] Sprawdź dokumenty w konsoli Firestore.
 
@@ -111,10 +115,13 @@ Zmiana w **service workerze lub liście plików**:
 | Stare wpisy renderują się z `NaN` | nowe pole bez wartości domyślnej | miejsce odczytu w `ui.js` |
 | Logowanie Google nie działa na Pages | domena nieautoryzowana | konsola Firebase → Authentication → Settings |
 | Skan zwraca śmieci | zmiana formatu odpowiedzi Gemini | parser w `js/ocr.js` |
+| Toast „Brak miejsca w pamięci przeglądarki" | localStorage pełny (~5 MB) | eksport JSON, przegląd największych kluczy |
+| „Błąd synchronizacji: <kolekcja>" | np. limit 1 MB dokumentu Firestore | czy kolekcja ma `shard` w `META` |
 
 ## Rytm utrzymaniowy (co kilka miesięcy)
 
 - [ ] `FIREBASE_SDK_VERSION` w `firebase-sync.js` — czy nie jest mocno przestarzała.
 - [ ] Model Gemini w `ocr.js` (`gemini-flash-latest`) — czy endpoint i nazwa nadal aktualne.
+- [ ] Cennik `GEMINI_PRICES` i kurs `USD_PLN` w `ocr.js` — 1.01.2027 drożeją modele 3.7/3.8 Flash.
 - [ ] Zużycie darmowego tieru Firebase i Gemini.
 - [ ] Ręczny eksport JSON jako kopia zapasowa niezależna od Firestore.

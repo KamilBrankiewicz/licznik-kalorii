@@ -7,14 +7,8 @@ const Recipes = (() => {
   let recipeTabFilter = 'own';
   let recipeAudioRecorder = null;
   let recipeRecordingState = 'idle';
-  let ingredientPendingPer100g = null;
 
-  const MEALS = [
-    { key: 'sniadanie', label: 'Śniadanie' },
-    { key: 'obiad', label: 'Obiad' },
-    { key: 'kolacja', label: 'Kolacja' },
-    { key: 'przekaska', label: 'Przekąska' }
-  ];
+  const { escapeHtml, mealFromTime, nowTimeStr } = UI;
 
   function calcRecipeTotals(ingredients, cookedWeight) {
     const totals = { kcal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 };
@@ -37,12 +31,6 @@ const Recipes = (() => {
       fiber: Math.round((totals.fiber / effectiveWeight) * 100 * 10) / 10
     } : { kcal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 };
     return { totals, totalWeightRaw, effectiveWeight, per100g };
-  }
-
-  function escapeHtml(str) {
-    const div = document.createElement('div');
-    div.textContent = str || '';
-    return div.innerHTML;
   }
 
   function renderTotalsHtml(label, totals, effectiveWeight) {
@@ -154,7 +142,7 @@ const Recipes = (() => {
       Storage.addRecipe(recipeData);
     }
 
-    pushRecipesToCloud();
+    UI.pushMetaToCloud('recipes');
     closeRecipeModal();
     renderRecipeList();
     UI.showToast(editingRecipeId ? 'Zapisano zmiany' : 'Przepis zapisany');
@@ -163,11 +151,7 @@ const Recipes = (() => {
   function requireGeminiKeyOrPrompt(errorEl) {
     const settings = Storage.getSettings();
     if (settings.geminiApiKey) return settings;
-    errorEl.innerHTML = 'Brak klucza Gemini API. Dodaj go w <button type="button" class="link-btn go-settings-recipe">Ustawieniach</button>.';
-    errorEl.querySelector('.go-settings-recipe').addEventListener('click', () => {
-      closeRecipeModal();
-      UI.switchView('ustawienia');
-    });
+    UI.showAiError(new Error('NO_API_KEY'), errorEl, {}, closeRecipeModal);
     return null;
   }
 
@@ -178,26 +162,16 @@ const Recipes = (() => {
     }
 
     if (result.ingredients && result.ingredients.length > 0) {
-      const aiIngredients = result.ingredients.map((ing) => ({
-        name: ing.name || 'Składnik',
-        grams: Number(ing.grams) || 0,
-        per100g: {
-          kcal: Number(ing.per100g?.kcal) || 0,
-          protein: Number(ing.per100g?.protein) || 0,
-          carbs: Number(ing.per100g?.carbs) || 0,
-          fat: Number(ing.per100g?.fat) || 0,
-          fiber: ing.per100g?.fiber != null ? Number(ing.per100g.fiber) : null
-        }
-      }));
+      const aiIngredients = result.ingredients.map(Storage.normalizeRecipeIngredient);
 
       if (recipeIngredients.length > 0) {
         const existingNames = new Set(recipeIngredients.map((i) => i.name.trim().toLowerCase()));
         const newOnly = aiIngredients.filter((i) => !existingNames.has(i.name.trim().toLowerCase()));
         recipeIngredients = recipeIngredients.concat(newOnly);
-        UI.showToast(`Dodano ${newOnly.length} nowych składników (zachowano ${recipeIngredients.length - newOnly.length} istniejących)`);
+        UI.showAiToast(`Dodano ${newOnly.length} nowych składników (zachowano ${recipeIngredients.length - newOnly.length} istniejących)`);
       } else {
         recipeIngredients = aiIngredients;
-        UI.showToast(`Rozpoznano ${recipeIngredients.length} składników — sprawdź wartości`);
+        UI.showAiToast(`Rozpoznano ${recipeIngredients.length} składników — sprawdź wartości`);
       }
       renderRecipeIngredients();
     } else {
@@ -206,15 +180,10 @@ const Recipes = (() => {
   }
 
   function showRecipeAiError(err, errorEl) {
-    if (err.message === 'NO_API_KEY') {
-      errorEl.textContent = 'Brak klucza Gemini API.';
-    } else if (err.message === 'NETWORK_ERROR') {
-      errorEl.textContent = 'Błąd sieci — sprawdź połączenie.';
-    } else if (err.message === 'NOT_RECOGNIZED') {
-      errorEl.textContent = 'Nie rozpoznano przepisu. Spróbuj ponownie lub wpisz składniki ręcznie.';
-    } else {
-      errorEl.textContent = 'Nie udało się przeanalizować przepisu. Spróbuj ponownie.';
-    }
+    UI.showAiError(err, errorEl, {
+      notRecognized: 'Nie rozpoznano przepisu. Spróbuj ponownie lub wpisz składniki ręcznie.',
+      failed: 'Nie udało się przeanalizować przepisu. Spróbuj ponownie.'
+    }, closeRecipeModal);
   }
 
   async function parseRecipeWithAi() {
@@ -324,16 +293,12 @@ const Recipes = (() => {
       const textarea = document.getElementById('recipeTextInput');
       const baseText = textarea.value.trim();
       textarea.value = baseText ? `${baseText} ${transcript}`.trim() : transcript;
-      statusEl.textContent = 'Dodano przepisany tekst — sprawdź go i kliknij „Przeanalizuj przepis".';
+      const usage = Ocr.takeUsage();
+      statusEl.textContent = 'Dodano przepisany tekst — sprawdź go i kliknij „Przeanalizuj przepis".'
+        + (usage ? ` (${UI.formatUsage(usage)})` : '');
     } catch (err) {
       statusEl.textContent = '';
-      if (err.message === 'NO_API_KEY') {
-        errorEl.textContent = 'Brak klucza Gemini API.';
-      } else if (err.message === 'NETWORK_ERROR') {
-        errorEl.textContent = 'Błąd sieci — sprawdź połączenie.';
-      } else {
-        errorEl.textContent = 'Nie udało się przepisać nagrania. Spróbuj ponownie.';
-      }
+      errorEl.textContent = UI.aiErrorText(err, { failed: 'Nie udało się przepisać nagrania. Spróbuj ponownie.' });
     }
   }
 
@@ -382,7 +347,6 @@ const Recipes = (() => {
     document.getElementById('ingredientFormError').textContent = '';
     document.getElementById('ingredientScanStatus').textContent = '';
     document.getElementById('ingredientScanError').textContent = '';
-    ingredientPendingPer100g = null;
     updateIngredientMacroPreview();
 
     renderIngredientFavorites();
@@ -479,6 +443,7 @@ const Recipes = (() => {
       per100g: { kcal, protein, carbs, fat, fiber },
       source: 'ingredient'
     });
+    UI.pushFavoritesToCloud();
     renderIngredientFavorites();
     UI.showToast(`Zapamiętano: ${name}`);
   }
@@ -529,14 +494,10 @@ const Recipes = (() => {
         document.getElementById('ingredientFat').value = result.per100g.fat || '';
         document.getElementById('ingredientFiber').value = result.per100g.fiber || '';
       }
-      UI.showToast('Rozpoznano etykietę');
+      UI.showAiToast('Rozpoznano etykietę');
     } catch (err) {
       statusEl.textContent = '';
-      if (err.message === 'NO_API_KEY') {
-        errorEl.textContent = 'Brak klucza Gemini API.';
-      } else {
-        errorEl.textContent = 'Nie rozpoznano etykiety.';
-      }
+      UI.showAiError(err, errorEl, { failed: 'Nie rozpoznano etykiety.' }, closeIngredientModal);
     }
   }
 
@@ -552,11 +513,7 @@ const Recipes = (() => {
 
     const settings = Storage.getSettings();
     if (!settings.geminiApiKey) {
-      errorEl.innerHTML = 'Brak klucza Gemini API. Dodaj go w <button type="button" class="link-btn go-settings-ingredient">Ustawieniach</button>.';
-      errorEl.querySelector('.go-settings-ingredient').addEventListener('click', () => {
-        closeIngredientModal();
-        UI.switchView('ustawienia');
-      });
+      UI.showAiError(new Error('NO_API_KEY'), errorEl, {}, closeIngredientModal);
       return;
     }
 
@@ -600,11 +557,7 @@ const Recipes = (() => {
 
     const settings = Storage.getSettings();
     if (!settings.geminiApiKey) {
-      errorEl.innerHTML = 'Brak klucza Gemini API. Dodaj go w <button type="button" class="link-btn go-settings-ingredient">Ustawieniach</button>.';
-      errorEl.querySelector('.go-settings-ingredient').addEventListener('click', () => {
-        closeIngredientModal();
-        UI.switchView('ustawienia');
-      });
+      UI.showAiError(new Error('NO_API_KEY'), errorEl, {}, closeIngredientModal);
       return;
     }
 
@@ -629,19 +582,14 @@ const Recipes = (() => {
       document.getElementById('ingredientFat').value = result.per100g.fat || '';
       document.getElementById('ingredientFiber').value = result.per100g.fiber != null ? result.per100g.fiber : '';
     }
-    UI.showToast('Znaleziono wartości odżywcze — sprawdź i popraw');
+    UI.showAiToast('Znaleziono wartości odżywcze — sprawdź i popraw');
   }
 
   function showIngredientLookupError(err, errorEl) {
-    if (err.message === 'NO_API_KEY') {
-      errorEl.textContent = 'Brak klucza Gemini API.';
-    } else if (err.message === 'NETWORK_ERROR') {
-      errorEl.textContent = 'Błąd sieci — sprawdź połączenie.';
-    } else if (err.message === 'NOT_RECOGNIZED') {
-      errorEl.textContent = 'Nie rozpoznano składnika. Wpisz wartości ręcznie.';
-    } else {
-      errorEl.textContent = 'Nie udało się sprawdźić wartości. Wpisz je ręcznie.';
-    }
+    UI.showAiError(err, errorEl, {
+      notRecognized: 'Nie rozpoznano składnika. Wpisz wartości ręcznie.',
+      failed: 'Nie udało się sprawdzić wartości. Wpisz je ręcznie.'
+    }, closeIngredientModal);
   }
 
   function openIngredientBarcodeScanner() {
@@ -712,20 +660,6 @@ const Recipes = (() => {
   }
 
   // ── Logowanie porcji ──
-
-  function nowTimeStr() {
-    const now = new Date();
-    return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-  }
-
-  function mealFromTime(time) {
-    const h = Number((time || '').split(':')[0]);
-    if (!Number.isFinite(h)) return 'przekaska';
-    if (h >= 4 && h < 11) return 'sniadanie';
-    if (h >= 11 && h < 16) return 'obiad';
-    if (h >= 16 && h < 22) return 'kolacja';
-    return 'przekaska';
-  }
 
   function openPortionModal(preselectedRecipeId) {
     const recipes = Storage.getRecipes();
@@ -943,7 +877,7 @@ const Recipes = (() => {
         e.stopPropagation();
         if (confirm('Usunąć ten przepis?')) {
           Storage.deleteRecipe(btn.dataset.id);
-          pushRecipesToCloud();
+          UI.pushMetaToCloud('recipes');
           renderRecipeList();
           UI.showToast('Usunięto przepis');
         }
@@ -968,12 +902,6 @@ const Recipes = (() => {
       UI.showToast('Udostępniono przepis partnerowi');
     } catch (e) {
       UI.showToast('Błąd udostępniania przepisu');
-    }
-  }
-
-  function pushRecipesToCloud() {
-    if (window.FirebaseSync && FirebaseSync.isSignedIn()) {
-      FirebaseSync.pushRecipes(Storage.getRawRecipes()).catch(() => UI.showToast('Błąd synchronizacji przepisów'));
     }
   }
 
@@ -1006,7 +934,6 @@ const Recipes = (() => {
     updatePortionPreview,
     savePortionEntry,
     renderRecipeList,
-    setRecipeTab,
-    pushRecipesToCloud
+    setRecipeTab
   };
 })();

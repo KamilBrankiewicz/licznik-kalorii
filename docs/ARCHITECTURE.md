@@ -47,16 +47,20 @@ index.html  →  app.js  →  ui.js  →  storage.js  →  localStorage
 | Klucz | Typ | Opis |
 |---|---|---|
 | `entries_YYYY-MM-DD` | `Entry[]` | wpisy jednego dnia, wraz z nagrobkami |
-| `settings` | `Settings` | cele makro, klucz Gemini, config Firebase |
+| `settings` | `Settings` | cele makro, klucz Gemini, profil zdrowotny, UID partnera, config Firebase |
 | `weights` | `{ [date]: WeightRec }` | pomiary wagi ciała |
 | `favoriteProducts` | `Product[]` | przypięte produkty, z nagrobkami |
 | `recipes` | `Recipe[]` | przepisy z listą składników, z nagrobkami |
+| `analysisGoals` | `Goal[]` | cele analizy dnia (własne system prompty), z nagrobkami; w Firestore dokument `meta/goals` |
+| `dailyAnalyses` | `{ [YYYY-MM-DD__goalId]: AnalysisRec }` | raporty analizy dnia względem celu, z nagrobkami |
 | `supplements` | `Supplement[]` | definicje suplementów/leków, z nagrobkami |
 | `supplementLog` | `{ [YYYY-MM-DD__id]: LogRec }` | dziennik przyjęć (planowych i doraźnych), z nagrobkami; lokalnie zawsze jedna mapa — sharding dotyczy tylko Firestore, patrz niżej |
 | `supplementAnalyses` | `{ [scope__endDate]: AnalysisRec }` | zapisane raporty analizy AI suplementów (dzień/tydzień/miesiąc), z nagrobkami |
 | `suppAnalysisStaticCache` | `{ fingerprint, interactions, dose_totals, updatedAt }` | lokalny cache sekcji zależnych tylko od listy suplementów — **nie** synchronizowany, bez nagrobków, poza eksportem |
 | `dietAnalyses` | `{ [scope__endDate]: AnalysisRec }` | zapisane raporty analizy AI diety (tydzień/miesiąc/kwartał), z nagrobkami; bez cache'u statycznego — każda sekcja zależy od danych okresu |
 | `adhocQuickItems` | `AdhocQuickItem[]` | szybkie chipy leków doraźnych (nazwy ostatnio użyte), z nagrobkami |
+| `geminiUsage` | `{ month, calls, usd }` | licznik zapytań i kosztu Gemini w bieżącym miesiącu — per-urządzenie, poza syncem i eksportem |
+| `themePreference`, `historyMetricPreference` | string | preferencje per-urządzenie, poza syncem |
 
 ```javascript
 Entry = {
@@ -64,7 +68,8 @@ Entry = {
   date: "YYYY-MM-DD",
   name: string,
   kcal, protein, carbs, fat, fiber: number,
-  meal: "breakfast" | "lunch" | "dinner" | "snack",
+  meal: "sniadanie" | "obiad" | "kolacja" | "przekaska", // brak → kategoria wg godziny (mealFromTime)
+  grams?, source?, per100g?,
   time: "HH:MM",
   updatedAt: string    // ISO 8601
 }
@@ -73,10 +78,12 @@ Entry = {
 Settings = {
   kcalGoal, proteinGoal, carbsGoal, fatGoal, fiberGoal: number,
   geminiApiKey: string,
-  firebaseConfig: string   // wklejony obiekt konfiguracyjny jako tekst
+  healthProfile: string, partnerUid: string,
+  firebaseConfig: string,  // wklejony obiekt konfiguracyjny jako tekst — per-urządzenie, NIE trafia do chmury
+  updatedAt?: string       // ustawiany przy zapisie formularza; brak = rekord sprzed v64
 }
 
-WeightRec = { kg: number, updatedAt } | { deleted: true, updatedAt }
+WeightRec = { kg: number, smm?, bf?, updatedAt } | { deleted: true, updatedAt }
 
 Supplement = {
   id: string, name: string, displayName?, dose?, notes?,
@@ -135,34 +142,38 @@ makro, dodaj go do `DEFAULT_SETTINGS`, a nie tylko do formularza.**
 
 ```
 users/{uid}/days/{YYYY-MM-DD}   → { entries: Entry[] }
-users/{uid}/meta/settings       → Settings
+users/{uid}/meta/settings       → Settings bez firebaseConfig
 users/{uid}/meta/weights        → { map: {...} }
 users/{uid}/meta/favorites      → { list: [...] }
 users/{uid}/meta/recipes        → { list: [...] }
+users/{uid}/meta/goals          → { list: [...] }        // localStorage: analysisGoals
 users/{uid}/meta/supplements    → { list: [...] }
-users/{uid}/meta/supplementLog-YYYY-MM → { map: {...} }   // sharding po miesiącach, patrz niżej
-users/{uid}/meta/supplementLog  → { map: {} }              // legacy, zawsze pusty po pełnym syncu
-users/{uid}/meta/supplementAnalyses → { map: {...} }
-users/{uid}/meta/dietAnalyses   → { map: {...} }
 users/{uid}/meta/adhocQuickItems → { list: [...] }
+// kolekcje shardowane po miesiącach (patrz niżej):
+users/{uid}/meta/supplementLog-YYYY-MM      → { map: {...} }   // miesiąc z daty w kluczu
+users/{uid}/meta/dailyAnalyses-YYYY-MM      → { map: {...} }   // miesiąc z daty w kluczu
+users/{uid}/meta/supplementAnalyses-YYYY-MM → { map: {...} }   // miesiąc z endDate w kluczu
+users/{uid}/meta/dietAnalyses-YYYY-MM       → { map: {...} }   // miesiąc z endDate w kluczu
+users/{uid}/meta/{nazwa}        → { map: {} }   // legacy dokument zbiorczy sprzed shardingu, opróżniany przy syncu
 
 sharedRecipes/{recipientUid}/inbox/{itemId} → kopia Recipe + { sharedBy: uid, sharedAt }
 sharedSupplements/{recipientUid}/inbox/{itemId} → kopia pól definicji Supplement (bez
   active/stockBaseline/stockBaselineDate/anchorDate) + { sharedBy: uid, sharedAt }
 ```
 
-**Sharding logu suplementów:** `supplementLog` rośnie bez końca (nagrobki się nie
-kompaktują), więc jeden dokument ryzykował limit 1 MB Firestore. Wpisy są teraz pushowane
-per-miesiąc do `meta/supplementLog-YYYY-MM` (miesiąc = pierwsze 7 znaków klucza
-`YYYY-MM-DD__id`), `FirebaseSync.pushSupplementLogMonths(map, months)`. Push jest
-debounce'owany 2 s w `ui.js` (`pushSupplementLogToCloud`/`flushSupplementLogPush`) i zbiera
-tylko dotknięte miesiące, żeby seria szybkich odhaczeń nie odpaliła serii zapisów. Pull przy
-pełnym syncu (`FirebaseSync.pullSupplementLogAll`) czyta wszystkie shardy **oraz** stary
-dokument zbiorczy `meta/supplementLog` (dane sprzed shardingu), po czym
-`clearLegacySupplementLog()` nadpisuje go pustą mapą. Lokalnie nic się nie zmienia —
-`localStorage['supplementLog']` zawsze trzyma jedną pełną mapę; sharding istnieje tylko po
-stronie Firestore. `document.visibilitychange` w `app.js` wywołuje
-`UI.flushSupplementLogPush()`, żeby chowanie karty tuż po odhaczeniu nie zgubiło debounce'owanego zapisu.
+**Tabela `META` i sharding (`ui.js`):** każda synchronizowana kolekcja w `meta/` ma wpis w
+`META` (`field` list/map, `get`/`save`/`merge` ze `Storage`, `label` do komunikatów). Firestore
+ma limit 1 MB na dokument, a kolekcje z nagrobkami rosną bez końca — te, które rosną z czasem
+(log suplementów i trzy rodzaje raportów AI), mają funkcję `shard(klucz) → 'YYYY-MM'` i żyją
+jako dokumenty `nazwa-YYYY-MM`. Lokalnie to zawsze jedna mapa. `firebase-sync.js` zna tylko
+ogólne `pushMeta(docId, data)` i `pullAllMeta()` (wszystkie dokumenty meta jednym zapytaniem).
+
+Push w trakcie pracy: `UI.pushMetaToCloud(nazwa, kluczRekordu?)` — debounce 2 s, zbiera
+dotknięte kolekcje i miesiące (domyślnie miesiąc oglądanego dnia; przy usuwaniu raportu z innego
+miesiąca podaj jego klucz). `visibilitychange → hidden` w `app.js` woła `UI.flushMetaPush()`, żeby
+chowanie aplikacji tuż po zmianie nie zgubiło zapisu. Pull przy pełnym syncu czyta shardy **oraz**
+stary dokument zbiorczy `nazwa` (dane sprzed shardingu / ze starej wersji na drugim urządzeniu),
+scala i opróżnia dokument zbiorczy — bez utraty danych przy mieszanych wersjach.
 
 Dane dnia trzymane per-dokument, żeby push jednego dnia nie przepisywał całej historii.
 Kolekcje globalne (waga, ulubione, przepisy) siedzą w `meta/` jako pojedyncze dokumenty —
@@ -175,14 +186,26 @@ tego samego użytkownika. Patrz sekcja 7.
 
 ## 4. Synchronizacja i rozwiązywanie konfliktów
 
-Sync jest **na żądanie**, nie realtime: uruchamia się przy logowaniu i po zapisie danych.
+Sync jest **na żądanie**, nie realtime: pełny sync przy logowaniu/starcie aplikacji, a każdy zapis
+wypycha w tle tylko zmienioną kolekcję/dzień.
 Świadomie zrezygnowano z nasłuchiwania na żywo — jeden użytkownik, rzadko dwa urządzenia naraz.
 
 Algorytm (`syncWithCloud` w `ui.js`):
-1. `pull*` — pobierz stan z Firestore.
+1. `pullAllMeta` + `pullAllDays` — pobierz stan z Firestore.
 2. `merge*` z `storage.js` — połącz po `id`/dacie, przy konflikcie wygrywa wyższy `updatedAt`.
 3. Zapisz wynik lokalnie.
-4. `push*` — odeślij scalony stan do Firestore.
+4. Push **tylko** dokumentów, w których wynik merge różni się od chmury (`sameData`, porównanie
+   niezależne od kolejności kluczy). Bez tego każde otwarcie aplikacji przepisywało całą historię —
+   koszt rósł z liczbą dni i zjadał darmowy limit Firestore (20 tys. zapisów/dzień).
+5. Każda kolekcja we własnym `try` — błąd jednej (np. limit 1 MB) nie blokuje reszty; status
+   i toast wymieniają, co się nie udało.
+
+**Ustawienia** nie są listą rekordów, więc mają osobną regułę (`syncSettings`): wygrywa nowszy
+`updatedAt`; gdy lokalnie go brak (dane sprzed v64), wygrywa chmura jak dawniej.
+`firebaseConfig` nigdy nie idzie do chmury (`settingsForCloud`).
+
+Merge jest w dwóch ogólnych funkcjach: `mergeListBy(a, b, keyOf, tsOf?)` dla list i `mergeMaps`
+dla map; nazwane `merge*` to aliasy/jednolinijkowce na nich.
 
 ```javascript
 function mergeEntryLists(listA, listB) {
@@ -212,7 +235,9 @@ obsługi w eksporcie/imporcie JSON.
 - **zasoby** (JS/CSS/ikony) → stale-while-revalidate. Odpowiedź z cache, aktualizacja w tle.
 
 Konsekwencja: po deployu użytkownik dostaje **nowy HTML ze starym JS** przy pierwszym
-otwarciu, a poprawną kombinację dopiero przy drugim. Dlatego `CACHE_NAME` musi rosnąć przy
+otwarciu, a poprawną kombinację dopiero przy drugim. `install` pobiera shell z
+`cache: 'reload'`, żeby nowa wersja cache nie została wypełniona plikami z HTTP cache przeglądarki
+(GitHub Pages: `max-age=600`). Dlatego `CACHE_NAME` musi rosnąć przy
 każdej zmianie — `activate` kasuje wtedy stare cache i wymusza świeży pobór całego shella.
 
 Objaw zapomnianego bumpu: przyciski nie reagują, w konsoli `UI.costamNowego is not a function`.
@@ -220,11 +245,22 @@ Objaw zapomnianego bumpu: przyciski nie reagują, w konsoli `UI.costamNowego is 
 ## 6. Integracje zewnętrzne
 
 ### Gemini (`js/ocr.js`)
-Endpoint `v1beta/models/gemini-flash-latest:generateContent`. Pięć zastosowań: OCR etykiety,
+Endpoint `v1beta/models/gemini-flash-latest:generateContent`. Zastosowania: OCR etykiety,
 zrzut ekranu z innej aplikacji, zdjęcie posiłku (szacowanie porcji), transkrypcja głosowa,
-parsowanie przepisu. Model proszony o czysty JSON; parser musi znieść otoczenie ` ```json `
-i odpowiedź niebędącą JSON-em. Brak klucza → czytelny komunikat kierujący do Ustawień,
-nie cichy błąd.
+parsowanie przepisu, analizy (dzień/dieta/suplementy), dane suplementu. Całe HTTP idzie przez
+`requestGemini`: kody błędów (`NO_API_KEY`, `NETWORK_ERROR`, `QUOTA_EXCEEDED` dla 429,
+`API_ERROR`, `PARSE_ERROR`), `responseMimeType: 'application/json'` dla wywołań JSON-owych (poza
+groundingiem `google_search`, który go nie obsługuje) i zapis zużycia. Parser nadal znosi tekst wokół
+JSON-a. Tekst błędu dla użytkownika zawsze z `UI.aiErrorText` / `UI.showAiError` (brak klucza →
+link do Ustawień).
+
+**Koszt zapytań:** z `usageMetadata` i `modelVersion` odpowiedzi `ocr.js` liczy koszt wg tabeli
+`GEMINI_PRICES` (cennik płatnego tieru, USD/1M tokenów; audio osobno, tokeny „myślenia" jako
+wyjście) i kursu `USD_PLN`. `UI.showAiToast(msg)` dokleja do toastu sukcesu drugą, drobną linijkę
+„≈0,4 gr · 1,2k tok" (sumuje wywołania jednej akcji, wygasa po 60 s). Suma miesięczna
+per-urządzenie (`Storage.getGeminiUsage`) jest w Ustawieniach → Klucz Gemini API. W darmowym
+tierze faktyczny koszt to 0 zł — to koszt „gdyby płacić". Cennik trzeba aktualizować ręcznie
+(komentarz `ponytail:` przy tabeli).
 
 ### Open Food Facts (`js/barcode.js`)
 Skan przez natywny `BarcodeDetector` (brak wsparcia → ręczne wpisanie kodu). Produkt
@@ -237,8 +273,9 @@ npm, brak bundlera. Config użytkownika parsowany z wklejonego tekstu przez `par
 Logowanie: Google popup. Na GitHub Pages domena musi być na liście autoryzowanych w konsoli Firebase.
 
 ### Web Speech API (`js/voice.js`)
-Chrome/Android, wymaga HTTPS i zgody na mikrofon. Safari/iOS nie wspiera — ścieżka głosowa
-musi degradować się łagodnie.
+Chrome/Android i Safari (`webkitSpeechRecognition`), wymaga HTTPS i zgody na mikrofon. Firefox
+nie wspiera — ścieżka głosowa musi degradować się łagodnie. Dyktowanie przepisu nie używa Web Speech
+API, tylko nagrania audio (`MediaRecorder`) + transkrypcji Gemini.
 
 ## 7. Świadome ograniczenia
 
@@ -261,7 +298,7 @@ dalej żyje wg normalnych zasad tej kolekcji; suplement dodatkowo dostaje świe�
 Ochronę przed podwójnym importem (gdyby usunięcie ze skrzynki się nie powiodło) daje czysto
 lokalny, niesynchronizowany `seenSharedRecipeIds`/`seenSharedSupplementIds` w `storage.js`.
 Reguły bezpieczeństwa Firestore dla tych kolekcji trzeba dopisać ręcznie w konsoli Firebase
-(repo nie zawiera pliku `.rules`):
+(kopia referencyjna całości: `firestore.rules` w katalogu głównym repo):
 ```
 match /sharedRecipes/{recipientUid}/inbox/{itemId} {
   allow create: if request.auth != null && request.auth.uid == request.resource.data.sharedBy;
