@@ -15,6 +15,77 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku] 2026-10-10 — Skróty na ikonie aplikacji (Android) (v65)
+**Co:** przytrzymanie ikony zainstalowanej aplikacji pokazuje „Dodaj posiłek” (otwiera formularz)
+i „Skanuj kod kreskowy” (formularz + skaner od razu). Działa też w PWA zainstalowanej na Windows
+(prawy przycisk na ikonie); iOS nie obsługuje.
+**Dlaczego:** etap 5 planu nawyków — krótsza droga od zamiaru do wpisu.
+**Pliki:** `manifest.json`, `js/app.js`, `js/ui.js`.
+**Uwagi:** URL-e `./?action=…` (nie `index.html?action=…` — lokalny `npx serve` przekierowuje
+`/index.html` i gubi parametr). `handleLaunchAction` czyści parametr przez `history.replaceState`,
+żeby przeładowanie nie powtarzało akcji. Bez skrótu „Zdjęcie posiłku”: przeglądarka nie otworzy
+wyboru pliku/aparatu bez tapnięcia, więc byłby identyczny jak „Dodaj posiłek”. Skróty pojawiają się
+dopiero po ponownej instalacji PWA lub aktualizacji manifestu przez Chrome (może potrwać do doby).
+
+## [w toku] 2026-10-10 — Podsumowanie poprzedniego tygodnia (v65)
+**Co:** na górze Historii karta zamkniętego tygodnia Pn–Nd: kropki logowania i X/7, średnie kcal i
+białka wobec celów z liczbą dni w celu (wg trybu celu), średnia waga; obok neutralna (bez kolorów
+dobrze/źle) zmiana względem tygodnia wcześniej. W poniedziałek pasek podpowiedzi w Dzienniku:
+„Podsumowanie poprzedniego tygodnia jest gotowe. [Zobacz]” — kliknięcie otwiera Historię i ukrywa pasek.
+**Dlaczego:** etap 4 planu nawyków — samo zapisywanie działa słabiej niż zapisywanie + przegląd
+wyników; poniedziałek jako moment „nowego startu”. Karta w Historii, w Dzienniku tylko zajawka,
+żeby nie dokładać stałych elementów do głównego widoku.
+**Pliki:** `js/ui.js`, `index.html`, `css/style.css`.
+**Uwagi:** bez AI i bez nowych danych. Pasek podpowiedzi ma teraz listę `NUDGES` (kolejność =
+priorytet: uzupełnianie dni > zajawka tygodnia), każda zwraca `{ kind, text, actions:[{label, run}] }`.
+
+## [w toku] 2026-10-10 — Pasek podpowiedzi: uzupełnianie wczoraj/przedwczoraj (v65)
+**Co:**
+- Nad kartą podsumowania (tylko na „dziś”) pasek „Uzupełnisz z pamięci niepełne dni?” z przyciskami
+  dni (wczoraj i/lub przedwczoraj, jeśli są niezaliczone — próg jak w serii). × ukrywa do jutra.
+- Po przerwie ≥3 dni zamiast wyliczania braków: „Dobrze, że wracasz — zaczynamy od dziś.” (z
+  przyciskiem tylko do wczoraj); znika po zalogowaniu dzisiejszego dnia. Bez historii — brak paska.
+- Dodawanie na miniony dzień (formularz i porcja z przepisu): domyślnie pierwszy niewypełniony
+  posiłek (śniadanie → obiad → kolacja) i jego typowa godzina; zmiana posiłku zmienia godzinę.
+  Wcześniej godzina „teraz” wrzucała np. wczorajszy obiad do kolacji.
+**Dlaczego:** etap 3 planu nawyków — luki w logowaniu łatwiej zamknąć od razu niż po tygodniu;
+starszych dni nie proponujemy (z pamięci za trudne, decyzja użytkownika).
+**Pliki:** `js/ui.js`, `js/storage.js`, `js/recipes.js`, `index.html`, `css/style.css`.
+**Uwagi:** `#nudgeSlot` to jeden slot na podpowiedzi — `renderNudge` bierze pierwszą niepustą z
+listy funkcji (kolejność = priorytet); kolejne podpowiedzi dopisywać tam, nie dokładać nowych
+pasków. Ukrycie per-urządzenie w `nudgeDismissed` (`{ rodzaj: data }`), poza sync/eksportem.
+
+## [w toku] 2026-10-10 — Regularność logowania: kropki tygodnia i seria (v65)
+**Co:** na górze karty podsumowania w Dzienniku 7 kropek Pn–Nd tygodnia oglądanego dnia (pełna =
+dzień zaliczony, przerywana = brak, obwódka = dziś jeszcze niezaliczony) i tekst „X/Y · seria N dni”.
+Kropka jest klikalna — przenosi na ten dzień.
+**Dlaczego:** etap 2 planu nawyków — widoczna, wyrozumiała miara regularności („5/7”) zamiast
+zero-jedynkowej serii, która po jednym potknięciu zniechęca.
+**Pliki:** `js/ui.js`, `index.html`, `css/style.css`.
+**Uwagi:** dzień zaliczony = zalogowane ≥50% celu kcal (`LOGGED_DAY_SHARE`). Seria liczona wstecz
+od dziś: dziś niezaliczone nie przerywa, 1 brak na tydzień kalendarzowy to „dzień zapasu” (nie
+dolicza się, nie zrywa), drugi brak w tym samym tygodniu kończy serię. Wszystko wyliczane z
+`entries_*` przy renderze — brak nowych danych i synca, uzupełnienie wstecz samo naprawia serię.
+
+## [w toku] 2026-10-10 — Tryb celu Redukcja/Utrzymanie/Masa, łagodniejsza ocena dnia (v65)
+**Co:**
+- W „Cele dzienne” przełącznik trybu (zapis od razu po kliknięciu, jak motyw). Redukcja: poza celem
+  = powyżej celu kcal; Masa: poniżej; Utrzymanie: odejście w którąkolwiek stronę.
+- Tolerancja ±5% (2060 przy celu 2000 to wciąż „w celu”), także dla białka.
+- „Za mało” oceniane tylko dla minionych dni — dziś niedobór to normalny stan, nie porażka.
+- Dzień poza celem pomarańczowy (`--off-goal`) zamiast czerwonego: pasek kcal, słupki tygodnia,
+  kropki kalendarza i listy historii.
+- Obok celu kcal w Dzienniku tekst: „zostało 420”, „350 ponad cel”, „brakuje 900”, „cel osiągnięty ✓”.
+- Tryb celu przekazywany do analizy diety AI (`cele.tryb_celu`).
+**Dlaczego:** pierwszy etap zmian budujących nawyk logowania (analiza 2026-10-10, plan w `PLAN.md`):
+czerwony stan „porażki” i ocena zero-jedynkowa sprzyjają efektowi „a, co tam” i porzucaniu
+logowania; przy masie kierunek oceny był odwrócony.
+**Pliki:** `js/ui.js`, `js/app.js`, `js/storage.js`, `index.html`, `css/style.css`, `sw.js`.
+**Uwagi:** cała ocena dnia przechodzi przez `isBadHistoryDay(summary, metric, date)` +
+`metricWithGoal()` — wcześniej była skopiowana w `buildNutritionChart` i w `renderDiary`. Kolejne
+etapy (seria, karta tygodniowa) mają korzystać z tej samej funkcji. Pomarańcz zamiast `--warning`,
+bo `--warning` = kolor paska węglowodanów.
+
 ## [f3c4d4e] 2026-10-07 — Przegląd kodu: sync, poprawki błędów, koszt zapytań Gemini (v64)
 **Co:**
 - Sync wysyła do Firestore tylko dokumenty, które po merge różnią się od chmury (wcześniej każde

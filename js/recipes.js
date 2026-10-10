@@ -8,7 +8,7 @@ const Recipes = (() => {
   let recipeAudioRecorder = null;
   let recipeRecordingState = 'idle';
 
-  const { escapeHtml, mealFromTime, nowTimeStr } = UI;
+  const { escapeHtml } = UI;
 
   function calcRecipeTotals(ingredients, cookedWeight) {
     const totals = { kcal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 };
@@ -680,8 +680,7 @@ const Recipes = (() => {
     document.getElementById('portionValue').value = '';
     document.getElementById('portionFormError').textContent = '';
 
-    const time = nowTimeStr();
-    portionMeal = mealFromTime(time);
+    portionMeal = UI.defaultEntryTiming().meal;
     document.querySelectorAll('#portionMealSelect button').forEach((b) => {
       b.classList.toggle('active', b.dataset.meal === portionMeal);
     });
@@ -799,7 +798,7 @@ const Recipes = (() => {
       portionGrams = Math.round(effectiveWeight * factor);
     }
 
-    const time = nowTimeStr();
+    const time = UI.entryTimeForMeal(portionMeal);
     const currentDate = UI.getCurrentDate();
     const entryData = {
       name: recipe.name,

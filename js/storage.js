@@ -17,6 +17,7 @@ const Storage = (() => {
   const THEME_KEY = 'themePreference';
   const HISTORY_METRIC_KEY = 'historyMetricPreference';
   const GEMINI_USAGE_KEY = 'geminiUsage';
+  const NUDGE_DISMISSED_KEY = 'nudgeDismissed';
 
   // Każdy zapis JSON-a przez tę funkcję: pełny localStorage (~5 MB) zamieniamy na czytelny
   // kod błędu STORAGE_FULL, który app.js pokazuje jako komunikat (zamiast cichej porażki).
@@ -36,6 +37,7 @@ const Storage = (() => {
     carbsGoal: 200,
     fatGoal: 70,
     fiberGoal: 30,
+    goalMode: 'cut', // 'cut' (redukcja) | 'maintain' (utrzymanie) | 'bulk' (masa) — kierunek oceny kcal
     geminiApiKey: '',
     firebaseConfig: '',
     healthProfile: '',
@@ -68,6 +70,19 @@ const Storage = (() => {
 
   function saveHistoryMetric(metric) {
     localStorage.setItem(HISTORY_METRIC_KEY, metric);
+  }
+
+  // Ukryte podpowiedzi w Dzienniku { rodzaj: 'YYYY-MM-DD' ukrycia } — per-urządzenie, poza sync/eksportem
+  function getNudgeDismissed() {
+    try {
+      return JSON.parse(localStorage.getItem(NUDGE_DISMISSED_KEY) || '{}') || {};
+    } catch {
+      return {};
+    }
+  }
+
+  function dismissNudge(kind) {
+    localStorage.setItem(NUDGE_DISMISSED_KEY, JSON.stringify({ ...getNudgeDismissed(), [kind]: localDateStr() }));
   }
 
   // Zużycie Gemini w bieżącym miesiącu — per-urządzenie, statystyka poglądowa, poza sync/eksportem
@@ -1012,6 +1027,8 @@ const Storage = (() => {
     saveTheme,
     getHistoryMetric,
     saveHistoryMetric,
+    getNudgeDismissed,
+    dismissNudge,
     getGeminiUsage,
     addGeminiUsage,
     getEntries,

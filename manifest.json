@@ -15,5 +15,19 @@
       "type": "image/svg+xml",
       "purpose": "any maskable"
     }
+  ],
+  "shortcuts": [
+    {
+      "name": "Dodaj posiłek",
+      "short_name": "Dodaj",
+      "url": "./?action=add",
+      "icons": [{ "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "Skanuj kod kreskowy",
+      "short_name": "Skanuj",
+      "url": "./?action=barcode",
+      "icons": [{ "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+    }
   ]
 }
