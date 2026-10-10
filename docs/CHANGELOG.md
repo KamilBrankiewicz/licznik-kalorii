@@ -15,7 +15,7 @@ Format wpisu — nowe na górze:
 
 ---
 
-## [w toku] 2026-10-10 — Skróty na ikonie aplikacji (Android) (v65)
+## [cfb2dc4] 2026-10-10 — Skróty na ikonie aplikacji (Android) (v65)
 **Co:** przytrzymanie ikony zainstalowanej aplikacji pokazuje „Dodaj posiłek” (otwiera formularz)
 i „Skanuj kod kreskowy” (formularz + skaner od razu). Działa też w PWA zainstalowanej na Windows
 (prawy przycisk na ikonie); iOS nie obsługuje.
@@ -27,7 +27,7 @@ i „Skanuj kod kreskowy” (formularz + skaner od razu). Działa też w PWA zai
 wyboru pliku/aparatu bez tapnięcia, więc byłby identyczny jak „Dodaj posiłek”. Skróty pojawiają się
 dopiero po ponownej instalacji PWA lub aktualizacji manifestu przez Chrome (może potrwać do doby).
 
-## [w toku] 2026-10-10 — Podsumowanie poprzedniego tygodnia (v65)
+## [cfb2dc4] 2026-10-10 — Podsumowanie poprzedniego tygodnia (v65)
 **Co:** na górze Historii karta zamkniętego tygodnia Pn–Nd: kropki logowania i X/7, średnie kcal i
 białka wobec celów z liczbą dni w celu (wg trybu celu), średnia waga; obok neutralna (bez kolorów
 dobrze/źle) zmiana względem tygodnia wcześniej. W poniedziałek pasek podpowiedzi w Dzienniku:
@@ -39,7 +39,7 @@ wyników; poniedziałek jako moment „nowego startu”. Karta w Historii, w Dzi
 **Uwagi:** bez AI i bez nowych danych. Pasek podpowiedzi ma teraz listę `NUDGES` (kolejność =
 priorytet: uzupełnianie dni > zajawka tygodnia), każda zwraca `{ kind, text, actions:[{label, run}] }`.
 
-## [w toku] 2026-10-10 — Pasek podpowiedzi: uzupełnianie wczoraj/przedwczoraj (v65)
+## [cfb2dc4] 2026-10-10 — Pasek podpowiedzi: uzupełnianie wczoraj/przedwczoraj (v65)
 **Co:**
 - Nad kartą podsumowania (tylko na „dziś”) pasek „Uzupełnisz z pamięci niepełne dni?” z przyciskami
   dni (wczoraj i/lub przedwczoraj, jeśli są niezaliczone — próg jak w serii). × ukrywa do jutra.
@@ -55,7 +55,7 @@ starszych dni nie proponujemy (z pamięci za trudne, decyzja użytkownika).
 listy funkcji (kolejność = priorytet); kolejne podpowiedzi dopisywać tam, nie dokładać nowych
 pasków. Ukrycie per-urządzenie w `nudgeDismissed` (`{ rodzaj: data }`), poza sync/eksportem.
 
-## [w toku] 2026-10-10 — Regularność logowania: kropki tygodnia i seria (v65)
+## [cfb2dc4] 2026-10-10 — Regularność logowania: kropki tygodnia i seria (v65)
 **Co:** na górze karty podsumowania w Dzienniku 7 kropek Pn–Nd tygodnia oglądanego dnia (pełna =
 dzień zaliczony, przerywana = brak, obwódka = dziś jeszcze niezaliczony) i tekst „X/Y · seria N dni”.
 Kropka jest klikalna — przenosi na ten dzień.
@@ -67,7 +67,7 @@ od dziś: dziś niezaliczone nie przerywa, 1 brak na tydzień kalendarzowy to �
 dolicza się, nie zrywa), drugi brak w tym samym tygodniu kończy serię. Wszystko wyliczane z
 `entries_*` przy renderze — brak nowych danych i synca, uzupełnienie wstecz samo naprawia serię.
 
-## [w toku] 2026-10-10 — Tryb celu Redukcja/Utrzymanie/Masa, łagodniejsza ocena dnia (v65)
+## [cfb2dc4] 2026-10-10 — Tryb celu Redukcja/Utrzymanie/Masa, łagodniejsza ocena dnia (v65)
 **Co:**
 - W „Cele dzienne” przełącznik trybu (zapis od razu po kliknięciu, jak motyw). Redukcja: poza celem
   = powyżej celu kcal; Masa: poniżej; Utrzymanie: odejście w którąkolwiek stronę.
