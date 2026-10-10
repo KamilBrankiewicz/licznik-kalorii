@@ -6,7 +6,7 @@
 > [docs/MAINTENANCE.md](docs/MAINTENANCE.md) — checklista wdrożenia ·
 > [docs/CHANGELOG.md](docs/CHANGELOG.md) — co i kiedy się zmieniło.
 
-## Stan realizacji (2026-10-07)
+## Stan realizacji (2026-10-10)
 
 **Zrobione:**
 - ✅ Faza 1 (MVP) w całości: szkielet PWA, storage, widok dzienny, formularz ręczny, OCR etykiet (Gemini; od v63 z gramaturą porcji z kolumny „porcja"), ustawienia, nawigacja + historia
@@ -56,10 +56,38 @@
     zamiast UTC, walidacja danych od partnera; koszt każdego zapytania Gemini w toaście + suma
     miesięczna w Ustawieniach, komunikat limitu 429, `responseMimeType` JSON; komunikat przy
     pełnym localStorage, `storage.persist()`, cofnięcie odznaczenia dawek
+  - v65: tryb celu Redukcja/Utrzymanie/Masa, tolerancja ±5%, pomarańcz zamiast czerwieni dla dnia
+    poza celem, tekst „zostało / ponad cel / brakuje” w Dzienniku (etap 1 planu nawyków niżej)
+  - v65: kropki tygodnia Pn–Nd i seria logowania w Dzienniku (dzień zaliczony przy ≥50% celu kcal,
+    1 dzień zapasu na tydzień) — etap 2 planu nawyków
+  - v65: pasek podpowiedzi w Dzienniku — zachęta do uzupełnienia wczoraj/przedwczoraj, „nowy start”
+    po przerwie; domyślny posiłek i godzina przy dodawaniu na miniony dzień — etap 3
+  - v65: podsumowanie poprzedniego tygodnia na górze Historii + poniedziałkowa zajawka w Dzienniku — etap 4
+  - v65: skróty na ikonie aplikacji (Android): Dodaj posiłek, Skanuj kod kreskowy — etap 5
 
 **Pozostało (świadomie odłożone):**
 - Wielojęzyczność — raczej bez sensu przy aplikacji dla jednego użytkownika
 - Realtime sync (nasłuchiwanie zmian na żywo między urządzeniami) — obecnie sync przy logowaniu/zapisie
+
+**Zaplanowane — budowanie nawyku** (ustalone 2026-10-10, wdrażane etapami, każdy testowany osobno):
+1. ✅ (v65) Tryb celu Redukcja / Utrzymanie / Masa (`settings.goalMode`, domyślnie redukcja) — jedna funkcja
+   oceny dnia zamiast trzech kopii (`isBadHistoryDay`, `buildNutritionChart`, pasek w Dzienniku),
+   tolerancja ±5%, przy masie „poniżej celu” oceniane dopiero dla minionych dni, pomarańcz
+   (`--off-goal`) zamiast czerwieni, tekst „zostało / ponad cel / brakuje”, tryb przekazywany do AI
+2. ✅ (v65) Seria i regularność — dzień zaliczony przy ≥50% celu kcal; 7 kropek Pn–Nd + „X/Y · seria N dni”
+   w karcie podsumowania; 1 dzień zapasu na tydzień kalendarzowy; liczone z `entries_*`, bez nowych danych
+3. ✅ (v65) Pasek podpowiedzi w Dzienniku (jeden slot): zachęta do uzupełnienia wczoraj/przedwczoraj; przy
+   przerwie ≥3 dni ton „zaczynamy od dziś”; × ukrywa do jutra (per-urządzenie); przy okazji poprawka
+   godziny/posiłku przy dodawaniu wpisu na miniony dzień
+4. ✅ (v65) Karta tygodniowa w Historii (zamknięty tydzień Pn–Nd, bez AI) + zajawka w pasku podpowiedzi w poniedziałek
+5. ✅ (v65) Skróty w `manifest.json` (Android): Dodaj posiłek, Skanuj kod (bez „Zdjęcie posiłku” — patrz CHANGELOG) — obsługa `?action=` w `app.js`
+
+**Pomysły na później — budowanie nawyku** (z analizy 2026-10-10; odłożone, nie odrzucone):
+- Chipy „Ostatnie” w modalu dodawania rozwinięte domyślnie — najczęstsza ścieżka 4 → 3 tapnięcia
+- Kotwice rutyny (intencje implementacyjne): w Ustawieniach „po obiedzie w pracy → loguję”;
+  przy otwarciu aplikacji po porze danego posiłku, jeśli go brak, delikatna podpowiedź w
+  Dzienniku (bez powiadomień — kontekst rutyny buduje automatyzm lepiej niż przypomnienia)
+- Pauza / „dzień niewliczany” (choroba, urlop) — nie zrywa serii ani statystyk regularności
 
 ## Opis projektu
 Osobista aplikacja PWA do śledzenia dziennego spożycia kalorii i makroskładników (białko, węglowodany, tłuszcze). Interfejs w języku polskim. Aplikacja dla jednego użytkownika, zero kosztów.

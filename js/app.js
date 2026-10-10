@@ -1,5 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
   UI.renderDiary();
+  UI.handleLaunchAction();
   UI.updateSupplementsNavVisibility();
 
   // Potrójne tapnięcie daty (w ciągu 800 ms) odsłania/chowa moduł suplementów.
@@ -231,6 +232,10 @@ document.addEventListener('DOMContentLoaded', () => {
     } else if (document.getElementById('suppModalOverlay').classList.contains('active')) {
       UI.closeSupplementModal();
     }
+  });
+
+  document.querySelectorAll('#goalModeSelect button').forEach((btn) => {
+    btn.addEventListener('click', () => UI.setGoalMode(btn.dataset.goalMode));
   });
 
   document.querySelectorAll('#themeSelect button').forEach((btn) => {

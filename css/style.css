@@ -10,6 +10,7 @@
   --accent-text: #062018;
   --danger: #f87171;
   --warning: #fbbf24;
+  --off-goal: #fb923c; /* dzień poza celem — inny niż żółty pasek węglowodanów */
   --border: #33334d;
   --radius: 18px;
   color-scheme: dark;
@@ -116,6 +117,97 @@ html, body {
   box-shadow: 0 1px 2px rgba(0,0,0,0.08);
 }
 
+/* Pasek podpowiedzi nad kartą podsumowania (uzupełnianie dni, podsumowanie tygodnia) */
+.nudge {
+  display: flex;
+  align-items: flex-start;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: 14px;
+  padding: 8px 6px 8px 14px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+.nudge-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+}
+.nudge-text { flex: 1 1 140px; }
+.nudge-actions { display: flex; gap: 6px; }
+.nudge-btn {
+  background: none;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  border-radius: 10px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.nudge-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 18px;
+  line-height: 1;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+/* Regularność: kropki tygodnia Pn–Nd + seria */
+.habit-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: -6px 0 6px;
+}
+.habit-dots { display: flex; }
+.habit-dot {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.habit-dot::before {
+  content: '';
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  border: 1.5px dashed var(--text-muted);
+}
+.habit-dot.done::before { background: var(--accent); border: 1.5px solid var(--accent); }
+.habit-dot.today::before { border: 1.5px solid var(--accent); }
+.habit-dot.future { cursor: default; }
+.habit-dot.future::before { border: 1.5px solid var(--border); }
+.habit-dot.current::before { box-shadow: 0 0 0 2px var(--bg-card), 0 0 0 3.5px var(--text-muted); }
+.habit-text { font-size: 12px; color: var(--text-muted); }
+
+/* Podsumowanie poprzedniego tygodnia w Historii */
+.review-row {
+  display: grid;
+  grid-template-columns: 74px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+}
+.review-row:first-of-type { border-top: none; }
+.review-label { color: var(--text-muted); }
+.review-value { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.review-value .habit-dot { width: 18px; height: 22px; }
+.review-delta { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+.review-hint { margin-top: 6px; }
+
 .kcal-row {
   display: flex;
   justify-content: space-between;
@@ -150,7 +242,7 @@ html, body {
 }
 
 .progress-bar.over > div {
-  background: var(--danger);
+  background: var(--off-goal);
 }
 
 .macros-grid {
@@ -982,7 +1074,7 @@ html, body {
 }
 
 .week-bar.over {
-  background: var(--danger);
+  background: var(--off-goal);
 }
 
 .week-labels {
@@ -1720,5 +1812,5 @@ h1.page-title {
   background: var(--accent);
 }
 .cal-dot.bad {
-  background: var(--danger);
+  background: var(--off-goal);
 }

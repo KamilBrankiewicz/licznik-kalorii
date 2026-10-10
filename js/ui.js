@@ -16,8 +16,9 @@ const UI = (() => {
   let autocompleteDebounce = null;
   let lastAutoFilledName = null;
 
-  // judge: 'max' = przekroczenie celu jest złe (czerwono), 'min' = nieosiągnięcie celu jest złe,
-  // 'none' = wykres tylko poglądowy, bez oceniania dobre/złe
+  // judge: 'max' = przekroczenie celu jest złe, 'min' = nieosiągnięcie celu jest złe,
+  // 'range' = złe odejście od celu w obie strony, 'none' = wykres tylko poglądowy.
+  // Kcal nie ma stałego kierunku — zależy od trybu celu (metricWithGoal).
   const HISTORY_METRICS = {
     kcal: { label: 'Kcal', unit: 'kcal', goalKey: 'kcalGoal', judge: 'max' },
     protein: { label: 'Białko', unit: 'g', goalKey: 'proteinGoal', judge: 'min' },
@@ -213,10 +214,14 @@ const UI = (() => {
     const summary = Storage.getDailySummary(currentDate);
 
     document.getElementById('kcalValue').textContent = Math.round(summary.kcal);
-    document.getElementById('kcalGoalLabel').textContent = `/ ${settings.kcalGoal} kcal`;
+    renderNudge(settings);
+    renderHabitRow(settings);
+    const kcalMetric = metricWithGoal('kcal', settings);
+    const kcalStatus = kcalStatusText(summary, kcalMetric, currentDate);
+    document.getElementById('kcalGoalLabel').textContent = `/ ${settings.kcalGoal} kcal${kcalStatus ? ' · ' + kcalStatus : ''}`;
     const kcalPct = pct(summary.kcal, settings.kcalGoal);
     document.getElementById('kcalBarFill').style.width = kcalPct + '%';
-    document.getElementById('kcalBar').classList.toggle('over', summary.kcal > settings.kcalGoal);
+    document.getElementById('kcalBar').classList.toggle('over', isBadHistoryDay(summary, kcalMetric, currentDate));
 
     document.getElementById('proteinValue').textContent = `${Math.round(summary.protein)} / ${settings.proteinGoal} g`;
     document.getElementById('proteinBarFill').style.width = pct(summary.protein, settings.proteinGoal) + '%';
@@ -510,11 +515,150 @@ const UI = (() => {
       .replace(/'/g, '&#39;');
   }
 
-  function isBadHistoryDay(summary, metric) {
-    if (!summary.kcal) return false; // dzień bez wpisów — nie oceniamy
-    if (metric.judge === 'max') return summary[metricKeyOf(metric)] > metric.goal;
-    if (metric.judge === 'min') return summary[metricKeyOf(metric)] < metric.goal;
+  const GOAL_TOLERANCE = 0.05; // ±5% celu liczy się jako „w celu"
+  const KCAL_JUDGE_BY_MODE = { cut: 'max', maintain: 'range', bulk: 'min' };
+
+  function metricWithGoal(metricKey, settings) {
+    const base = HISTORY_METRICS[metricKey];
+    const judge = metricKey === 'kcal' ? (KCAL_JUDGE_BY_MODE[settings.goalMode] || 'max') : base.judge;
+    return { ...base, judge, goal: settings[base.goalKey] };
+  }
+
+  // Jedyne miejsce oceny dnia (Dziennik, słupki, wykres, kalendarz, lista historii).
+  // „Za mało" oceniamy dopiero dla minionych dni — w trakcie dnia to normalny stan.
+  function isBadHistoryDay(summary, metric, date) {
+    if (!summary.kcal || !metric.goal) return false; // dzień bez wpisów / brak celu — nie oceniamy
+    const value = summary[metricKeyOf(metric)];
+    const tol = metric.goal * GOAL_TOLERANCE;
+    const over = value > metric.goal + tol;
+    const under = value < metric.goal - tol && date < toDateStr(new Date());
+    if (metric.judge === 'max') return over;
+    if (metric.judge === 'min') return under;
+    if (metric.judge === 'range') return over || under;
     return false;
+  }
+
+  // Tekst obok celu kcal w Dzienniku: „zostało 420", „350 ponad cel", „cel osiągnięty ✓"
+  function kcalStatusText(summary, metric, date) {
+    if (!summary.kcal || !metric.goal) return '';
+    const d = Math.round(summary.kcal - metric.goal);
+    if (isBadHistoryDay(summary, metric, date)) return d > 0 ? `${d} ponad cel` : `${-d} poniżej celu`;
+    if (Math.abs(d) <= metric.goal * GOAL_TOLERANCE) return d === 0 ? 'w celu' : `w celu (${d > 0 ? '+' : '−'}${Math.abs(d)})`;
+    if (d > 0) return 'cel osiągnięty ✓'; // tylko masa: nadwyżka nie jest zła
+    if (date < toDateStr(new Date())) return `${-d} poniżej celu`;
+    return metric.judge === 'min' ? `brakuje ${-d}` : `zostało ${-d}`;
+  }
+
+  // ── Regularność logowania: dzień „zaliczony", seria, kropki tygodnia ──
+  // Liczone wyłącznie z wpisów — uzupełnienie dnia wstecz samo naprawia serię.
+
+  const LOGGED_DAY_SHARE = 0.5; // dzień zaliczony = zalogowane ≥50% celu kcal
+
+  function isLoggedDay(date, settings) {
+    const kcal = Storage.getDailySummary(date).kcal;
+    return kcal > 0 && kcal >= (settings.kcalGoal || 0) * LOGGED_DAY_SHARE;
+  }
+
+  function weekStartOf(dateStr) {
+    const dow = new Date(dateStr + 'T00:00:00').getDay(); // 0 = niedziela
+    return shiftDateStr(dateStr, -((dow + 6) % 7));
+  }
+
+  // Seria wstecz od dziś. Dziś niezaliczone nie przerywa (dzień trwa); 1 brak na tydzień
+  // kalendarzowy to „dzień zapasu" — nie dolicza się, ale też nie zrywa serii.
+  function computeLoggingStreak(settings) {
+    const today = toDateStr(new Date());
+    let streak = isLoggedDay(today, settings) ? 1 : 0;
+    const reserveUsed = new Set();
+    for (let i = 1; i <= 730; i++) { // ponytail: pełny skan przy każdym renderze, cache gdyby zwalniało
+      const date = shiftDateStr(today, -i);
+      if (isLoggedDay(date, settings)) { streak++; continue; }
+      const week = weekStartOf(date);
+      if (reserveUsed.has(week)) break;
+      reserveUsed.add(week);
+    }
+    return streak;
+  }
+
+  // ── Pasek podpowiedzi w Dzienniku: jeden slot, naraz najwyżej jedna podpowiedź, tylko na „dziś" ──
+
+  const WEEKDAY_NAMES = ['Niedziela', 'Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota'];
+
+  // Zachęta do uzupełnienia wczoraj/przedwczoraj; starszych dni nie ruszamy (z pamięci za trudne).
+  // Po przerwie ≥3 dni ton „nowego startu" zamiast wyliczania braków.
+  function backfillNudge(settings, today) {
+    const missing = [shiftDateStr(today, -2), shiftDateStr(today, -1)].filter((d) => !isLoggedDay(d, settings));
+    if (!missing.length) return null;
+    let lastLoggedAgo = 0;
+    for (let i = 1; i <= 60 && !lastLoggedAgo; i++) if (isLoggedDay(shiftDateStr(today, -i), settings)) lastLoggedAgo = i;
+    if (!lastLoggedAgo) return null; // brak historii — nie ma czego uzupełniać
+    const yesterday = shiftDateStr(today, -1);
+    const dayAction = (d) => ({
+      label: d === yesterday ? 'Wczoraj' : WEEKDAY_NAMES[new Date(d + 'T00:00:00').getDay()],
+      run: () => goToDate(d)
+    });
+    if (lastLoggedAgo > 3) {
+      if (isLoggedDay(today, settings)) return null;
+      return { kind: 'backfill', text: 'Dobrze, że wracasz — zaczynamy od dziś.', actions: [dayAction(yesterday)] };
+    }
+    return { kind: 'backfill', text: 'Uzupełnisz z pamięci niepełne dni?', actions: missing.map(dayAction) };
+  }
+
+  const NUDGES = [backfillNudge, weeklyNudge]; // kolejność = priorytet, pokazujemy pierwszą niepustą
+
+  function renderNudge(settings) {
+    const slot = document.getElementById('nudgeSlot');
+    const today = toDateStr(new Date());
+    const dismissed = Storage.getNudgeDismissed();
+    let nudge = null;
+    if (currentDate === today) {
+      for (const fn of NUDGES) {
+        const n = fn(settings, today);
+        if (n && dismissed[n.kind] !== today) { nudge = n; break; }
+      }
+    }
+    if (!nudge) {
+      slot.innerHTML = '';
+      return;
+    }
+    const buttons = nudge.actions.map((a, i) => `<button type="button" class="nudge-btn" data-i="${i}">${a.label}</button>`).join('');
+    slot.innerHTML = `<div class="nudge">
+      <div class="nudge-body"><span class="nudge-text">${nudge.text}</span><span class="nudge-actions">${buttons}</span></div>
+      <button type="button" class="nudge-close" aria-label="Ukryj do jutra">×</button>
+    </div>`;
+    slot.querySelectorAll('.nudge-btn').forEach((btn) => btn.addEventListener('click', () => nudge.actions[btn.dataset.i].run()));
+    slot.querySelector('.nudge-close').addEventListener('click', () => {
+      Storage.dismissNudge(nudge.kind);
+      renderNudge(settings);
+    });
+  }
+
+  function renderHabitRow(settings) {
+    const row = document.getElementById('habitRow');
+    const today = toDateStr(new Date());
+    const start = weekStartOf(currentDate);
+    const dayNames = ['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'So', 'Nd'];
+    let done = 0, counted = 0;
+    const dots = dayNames.map((name, i) => {
+      const date = shiftDateStr(start, i);
+      const logged = date <= today && isLoggedDay(date, settings);
+      let cls = 'missed';
+      if (date > today) cls = 'future';
+      else if (logged) cls = 'done';
+      else if (date === today) cls = 'today';
+      if (logged) done++;
+      if (date < today || logged) counted++;
+      const [, m, d] = date.split('-');
+      return `<button type="button" class="habit-dot ${cls}${date === currentDate ? ' current' : ''}" data-date="${date}" aria-label="${name} ${d}.${m}"${cls === 'future' ? ' disabled' : ''}></button>`;
+    }).join('');
+    const streak = computeLoggingStreak(settings);
+    const parts = [];
+    if (counted) parts.push(`${done}/${counted}`);
+    if (streak) parts.push(`seria ${streak} ${pluralPl(streak, 'dzień', 'dni', 'dni')}`);
+    row.innerHTML = `<div class="habit-dots">${dots}</div><span class="habit-text">${parts.join(' · ')}</span>`;
+    row.querySelectorAll('.habit-dot:not(.future)').forEach((btn) => {
+      btn.addEventListener('click', () => goToDate(btn.dataset.date));
+    });
   }
 
   function metricKeyOf(metric) {
@@ -536,7 +680,7 @@ const UI = (() => {
     const dayNames = ['Nd', 'Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'So'];
     const todayStr = toDateStr(new Date());
     const metricKey = historyMetric;
-    const metric = { ...HISTORY_METRICS[metricKey], goal: settings[HISTORY_METRICS[metricKey].goalKey] };
+    const metric = metricWithGoal(metricKey, settings);
     const valueOf = (summary) => summary[metricKeyOf(metric)];
 
     const days = [];
@@ -557,7 +701,7 @@ const UI = (() => {
     const goalPct = Math.round((metric.goal / maxVal) * 100);
     const avg = (key) =>
       Math.round(daysWithEntries.reduce((s, d) => s + d.summary[key], 0) / daysWithEntries.length);
-    const inGoal = daysWithEntries.filter((d) => !isBadHistoryDay(d.summary, metric)).length;
+    const inGoal = daysWithEntries.filter((d) => !isBadHistoryDay(d.summary, metric, d.date)).length;
 
     container.innerHTML = `
       <div class="summary-card">
@@ -566,7 +710,7 @@ const UI = (() => {
           <div class="goal-line" style="bottom:${goalPct}%"></div>
           ${days
             .map(
-              (d) => `<div class="week-bar ${isBadHistoryDay(d.summary, metric) ? 'over' : ''}" data-date="${d.date}" style="height:${Math.round((valueOf(d.summary) / maxVal) * 100)}%"></div>`
+              (d) => `<div class="week-bar ${isBadHistoryDay(d.summary, metric, d.date) ? 'over' : ''}" data-date="${d.date}" style="height:${Math.round((valueOf(d.summary) / maxVal) * 100)}%"></div>`
             )
             .join('')}
         </div>
@@ -596,7 +740,8 @@ const UI = (() => {
     });
   }
 
-  function buildNutritionChart(days, metricKey, goal, unit, judge) {
+  function buildNutritionChart(days, metric) {
+    const metricKey = metricKeyOf(metric), goal = metric.goal, unit = metric.unit, judge = metric.judge;
     const W = 300, H = 100, PAD = 6;
     const vals = days.map((d) => d.summary[metricKey]);
     const min = Math.min(...vals, goal);
@@ -619,8 +764,7 @@ const UI = (() => {
     const avg = Math.round(vals.reduce((s, v) => s + v, 0) / vals.length);
     const min2 = Math.round(Math.min(...vals));
     const max2 = Math.round(Math.max(...vals));
-    const isBad = (v) => (judge === 'max' ? v > goal : judge === 'min' ? v < goal : false);
-    const inGoal = days.filter((d) => !isBad(d.summary[metricKey])).length;
+    const inGoal = days.filter((d) => !isBadHistoryDay(d.summary, metric, d.date)).length;
 
     return {
       svg: `<svg class="nutrition-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
@@ -647,7 +791,7 @@ const UI = (() => {
   function renderNutritionRangeChart(container, range) {
     const settings = Storage.getSettings();
     const metricKey = historyMetric;
-    const metric = { ...HISTORY_METRICS[metricKey], goal: settings[HISTORY_METRICS[metricKey].goalKey] };
+    const metric = metricWithGoal(metricKey, settings);
     const key = metricKeyOf(metric);
     const daysCount = range === 'month' ? 30 : 90;
 
@@ -669,7 +813,7 @@ const UI = (() => {
       ? computeMovingAverage(days, key, 7).filter((d, i) => days[i].summary.kcal > 0)
       : daysWithEntries;
 
-    const chart = buildNutritionChart(chartDays, key, metric.goal, metric.unit, metric.judge);
+    const chart = buildNutritionChart(chartDays, metric);
     const title = range === 'month' ? 'Ostatnie 30 dni' : 'Ostatnie 90 dni';
 
     container.innerHTML = `
@@ -795,12 +939,83 @@ const UI = (() => {
     });
   }
 
+  // ── Podsumowanie zamkniętego tygodnia (Pn–Nd) — liczone w JS, bez AI ──
+
+  function weekReviewStats(start, settings) {
+    const dates = dateRangeEnding(shiftDateStr(start, 6), 7);
+    const kcalMetric = metricWithGoal('kcal', settings);
+    const proteinMetric = metricWithGoal('protein', settings);
+    const days = dates.map((date) => ({ date, summary: Storage.getDailySummary(date) }));
+    const withEntries = days.filter((d) => d.summary.kcal > 0);
+    const avg = (key) => (withEntries.length ? withEntries.reduce((s, d) => s + d.summary[key], 0) / withEntries.length : null);
+    const kgs = Storage.getWeightHistory().filter((w) => w.date >= dates[0] && w.date <= dates[6] && w.kg != null).map((w) => Number(w.kg));
+    return {
+      dates,
+      logged: dates.map((d) => isLoggedDay(d, settings)),
+      withEntries: withEntries.length,
+      kcal: avg('kcal'),
+      protein: avg('protein'),
+      kcalInGoal: withEntries.filter((d) => !isBadHistoryDay(d.summary, kcalMetric, d.date)).length,
+      proteinInGoal: withEntries.filter((d) => !isBadHistoryDay(d.summary, proteinMetric, d.date)).length,
+      kg: kgs.length ? kgs.reduce((s, v) => s + v, 0) / kgs.length : null
+    };
+  }
+
+  function lastClosedWeekStart() {
+    return shiftDateStr(weekStartOf(toDateStr(new Date())), -7);
+  }
+
+  function renderWeekReview() {
+    const container = document.getElementById('weekReview');
+    const settings = Storage.getSettings();
+    const start = lastClosedWeekStart();
+    const week = weekReviewStats(start, settings);
+    if (!week.withEntries) {
+      container.innerHTML = '';
+      return;
+    }
+    const prev = weekReviewStats(shiftDateStr(start, -7), settings);
+    const signed = (v, unit, digits = 0) => {
+      const r = Number(v.toFixed(digits));
+      return r === 0 ? 'bez zmian' : `${r > 0 ? '+' : '−'}${Math.abs(r).toFixed(digits)} ${unit}`;
+    };
+    const loggedCount = week.logged.filter(Boolean).length;
+    const prevLogged = prev.logged.filter(Boolean).length;
+    const fmtDate = (d) => `${d.slice(8)}.${d.slice(5, 7)}`;
+    const dots = week.dates.map((d, i) => `<button type="button" class="habit-dot ${week.logged[i] ? 'done' : 'missed'}" data-date="${d}" aria-label="${fmtDate(d)}"></button>`).join('');
+    const row = (label, value, delta) => `<div class="review-row"><span class="review-label">${label}</span><span class="review-value">${value}</span><span class="review-delta">${delta || ''}</span></div>`;
+    const hasPrev = prev.withEntries > 0;
+
+    container.innerHTML = `
+      <div class="summary-card week-review">
+        <h3 class="section-title">Poprzedni tydzień · ${fmtDate(week.dates[0])}–${fmtDate(week.dates[6])}</h3>
+        ${row('Logowanie', `<span class="habit-dots">${dots}</span> ${loggedCount}/7`, hasPrev ? signed(loggedCount - prevLogged, pluralPl(Math.abs(loggedCount - prevLogged), 'dzień', 'dni', 'dni')) : '')}
+        ${row('Kcal', `śr. ${Math.round(week.kcal)} / ${settings.kcalGoal} · w celu ${week.kcalInGoal}/${week.withEntries}`, hasPrev ? signed(week.kcal - prev.kcal, 'kcal') : '')}
+        ${row('Białko', `śr. ${Math.round(week.protein)} / ${settings.proteinGoal} g · w celu ${week.proteinInGoal}/${week.withEntries}`, hasPrev ? signed(week.protein - prev.protein, 'g') : '')}
+        ${week.kg != null ? row('Waga', `śr. ${week.kg.toFixed(1)} kg`, prev.kg != null ? signed(week.kg - prev.kg, 'kg', 1) : '') : ''}
+        ${hasPrev ? '<div class="hint review-hint">Zmiany względem tygodnia wcześniej.</div>' : ''}
+      </div>`;
+    container.querySelectorAll('.habit-dot').forEach((btn) => btn.addEventListener('click', () => goToDate(btn.dataset.date)));
+  }
+
+  // Zajawka w Dzienniku: w poniedziałek, jeśli poprzedni tydzień ma wpisy (moment „nowego startu")
+  function weeklyNudge(settings, today) {
+    if (new Date(today + 'T00:00:00').getDay() !== 1) return null;
+    if (!dateRangeEnding(shiftDateStr(today, -1), 7).some((d) => Storage.getDailySummary(d).kcal > 0)) return null;
+    return {
+      kind: 'weekly',
+      text: 'Podsumowanie poprzedniego tygodnia jest gotowe.',
+      actions: [{ label: 'Zobacz', run: () => { Storage.dismissNudge('weekly'); renderDiary(); switchView('historia'); } }]
+    };
+  }
+
   function renderHistory() {
     document.querySelectorAll('#historyMetricTabs button').forEach((btn) => {
       btn.classList.toggle('active', btn.dataset.metric === historyMetric);
     });
     document.getElementById('historySearchInput').value = '';
     document.getElementById('historySearchResults').hidden = true;
+    renderWeekReview();
     renderWeeklyStats();
     renderWeightStats();
     renderMonthCalendar();
@@ -814,11 +1029,11 @@ const UI = (() => {
     }
 
     const settings = Storage.getSettings();
-    const metric = { ...HISTORY_METRICS[historyMetric], goal: settings[HISTORY_METRICS[historyMetric].goalKey] };
+    const metric = metricWithGoal(historyMetric, settings);
     dates.forEach((date) => {
       const summary = Storage.getDailySummary(date);
       const value = summary[metricKeyOf(metric)];
-      const bad = isBadHistoryDay(summary, metric);
+      const bad = isBadHistoryDay(summary, metric, date);
       const item = document.createElement('div');
       item.className = 'history-item';
       item.innerHTML = `
@@ -827,7 +1042,7 @@ const UI = (() => {
           <div class="hint" style="margin-top:2px;">cel ${metric.goal} ${metric.unit}</div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;">
-          <div class="history-dot" style="background:${bad ? 'var(--danger)' : 'var(--accent)'};"></div>
+          <div class="history-dot" style="background:${bad ? 'var(--off-goal)' : 'var(--accent)'};"></div>
           <div class="kcal">${Math.round(value)} ${metric.unit}</div>
         </div>
       `;
@@ -848,7 +1063,7 @@ const UI = (() => {
   function doSearchHistory() {
     const query = (document.getElementById('historySearchInput').value || '').trim().toLowerCase();
     const resultsContainer = document.getElementById('historySearchResults');
-    const normalSections = ['weeklyStats', 'weightStats', 'monthCalendar', 'historyList'];
+    const normalSections = ['weekReview', 'weeklyStats', 'weightStats', 'monthCalendar', 'historyList'];
 
     if (query.length < 2) {
       resultsContainer.hidden = true;
@@ -903,7 +1118,7 @@ const UI = (() => {
     const todayStr = toDateStr(new Date());
 
     const settings = Storage.getSettings();
-    const metric = { ...HISTORY_METRICS[historyMetric], goal: settings[HISTORY_METRICS[historyMetric].goalKey] };
+    const metric = metricWithGoal(historyMetric, settings);
 
     const firstDay = new Date(year, month, 1);
     let startDow = firstDay.getDay();
@@ -929,7 +1144,7 @@ const UI = (() => {
     const cellsHtml = cells.map((c) => {
       const summary = Storage.getDailySummary(c.dateStr);
       const hasEntries = summary.kcal > 0;
-      const bad = hasEntries ? isBadHistoryDay(summary, metric) : false;
+      const bad = hasEntries ? isBadHistoryDay(summary, metric, c.dateStr) : false;
       const isToday = c.dateStr === todayStr;
       const classes = ['cal-day'];
       if (c.otherMonth) classes.push('other-month');
@@ -993,9 +1208,34 @@ const UI = (() => {
     });
   }
 
+  const GOAL_MODE_HINTS = {
+    cut: 'Poza celem: dzień powyżej celu kcal (tolerancja ±5%).',
+    maintain: 'Poza celem: dzień ponad 5% powyżej lub poniżej celu kcal.',
+    bulk: 'Poza celem: miniony dzień poniżej celu kcal (tolerancja ±5%).'
+  };
+
+  function renderGoalModeSelect() {
+    const mode = Storage.getSettings().goalMode;
+    document.querySelectorAll('#goalModeSelect button').forEach((b) => {
+      b.classList.toggle('active', b.dataset.goalMode === mode);
+    });
+    document.getElementById('goalModeHint').textContent = GOAL_MODE_HINTS[mode] || '';
+  }
+
+  // Zapis od razu po kliknięciu (jak motyw) — pozostałe pola formularza zostają nietknięte
+  function setGoalMode(mode) {
+    if (!GOAL_MODE_HINTS[mode]) return;
+    const settings = { ...Storage.getSettings(), goalMode: mode, updatedAt: new Date().toISOString() };
+    Storage.saveSettings(settings);
+    pushSettingsToCloud(settings);
+    renderGoalModeSelect();
+    renderDiary();
+  }
+
   function renderSettings() {
     const s = Storage.getSettings();
     renderThemeSelect();
+    renderGoalModeSelect();
     document.getElementById('settingKcalGoal').value = s.kcalGoal;
     document.getElementById('settingProteinGoal').value = s.proteinGoal;
     document.getElementById('settingCarbsGoal').value = s.carbsGoal;
@@ -1494,10 +1734,11 @@ const UI = (() => {
     document.getElementById('entryCarbs').value = entry ? entry.carbs || '' : '';
     document.getElementById('entryFat').value = entry ? entry.fat || '' : '';
     document.getElementById('entryFiber').value = entry ? entry.fiber || '' : '';
-    document.getElementById('entryTime').value = entry ? entry.time || nowTimeStr() : nowTimeStr();
+    const timing = entry ? { time: entry.time || nowTimeStr(), meal: entry.meal || mealFromTime(entry.time) } : defaultEntryTiming();
+    document.getElementById('entryTime').value = timing.time;
     pendingSource = entry ? entry.source || 'manual' : 'manual';
     pendingPer100g = entry ? (entry.per100g || derivePer100gFromEntry(entry)) : null;
-    selectMeal(entry ? entry.meal || mealFromTime(entry.time) : mealFromTime(nowTimeStr()));
+    selectMeal(timing.meal);
     renderRecentProducts(!entry);
     renderFavoriteProducts(!entry);
     buildProductCache();
@@ -1510,6 +1751,28 @@ const UI = (() => {
     document.querySelectorAll('#mealSelect button').forEach((b) => {
       b.classList.toggle('active', b.dataset.meal === pendingMeal);
     });
+    if (!editingEntryId && isPastCurrentDate()) document.getElementById('entryTime').value = MEAL_DEFAULT_TIME[pendingMeal];
+  }
+
+  // Uzupełnianie minionego dnia: „teraz" nie ma sensu — pierwszy niewypełniony posiłek i jego typowa godzina
+  const MEAL_DEFAULT_TIME = { sniadanie: '08:00', obiad: '13:00', kolacja: '19:00', przekaska: '16:00' };
+
+  function isPastCurrentDate() {
+    return currentDate < toDateStr(new Date());
+  }
+
+  function defaultEntryTiming() {
+    if (!isPastCurrentDate()) {
+      const time = nowTimeStr();
+      return { time, meal: mealFromTime(time) };
+    }
+    const filled = new Set(Storage.getEntries(currentDate).map((e) => e.meal || mealFromTime(e.time)));
+    const meal = ['sniadanie', 'obiad', 'kolacja'].find((m) => !filled.has(m)) || 'przekaska';
+    return { meal, time: MEAL_DEFAULT_TIME[meal] };
+  }
+
+  function entryTimeForMeal(meal) {
+    return isPastCurrentDate() ? MEAL_DEFAULT_TIME[meal] : nowTimeStr();
   }
 
   function closeEntryModal() {
@@ -1686,6 +1949,15 @@ const UI = (() => {
       video.style.display = 'none';
       statusEl.textContent = 'Skanowanie aparatem nie jest obsługiwane w tej przeglądarce. Wpisz kod ręcznie.';
     }
+  }
+
+  // Skróty z manifest.json (przytrzymanie ikony na Androidzie) otwierają index.html?action=…
+  function handleLaunchAction() {
+    const action = new URLSearchParams(location.search).get('action');
+    if (!action) return;
+    history.replaceState(null, '', location.pathname); // przeładowanie nie powtarza akcji
+    if (action === 'add' || action === 'barcode') openEntryModal();
+    if (action === 'barcode') openBarcodeScanner();
   }
 
   function closeBarcodeScanner() {
@@ -3019,7 +3291,8 @@ const UI = (() => {
     const settings = Storage.getSettings();
     const cele = {
       kcal: settings.kcalGoal, bialko_g: settings.proteinGoal,
-      wegle_g: settings.carbsGoal, tluszcz_g: settings.fatGoal, blonnik_g: settings.fiberGoal
+      wegle_g: settings.carbsGoal, tluszcz_g: settings.fatGoal, blonnik_g: settings.fiberGoal,
+      tryb_celu: { cut: 'redukcja (deficyt kaloryczny)', maintain: 'utrzymanie wagi', bulk: 'masa (nadwyżka kaloryczna)' }[settings.goalMode] || 'redukcja (deficyt kaloryczny)'
     };
 
     const allWeights = Storage.getWeightHistory();
@@ -3388,6 +3661,7 @@ const UI = (() => {
     setHistoryRange,
     renderSettings,
     setTheme,
+    setGoalMode,
     saveSettingsFromForm,
     openEntryModal,
     closeEntryModal,
@@ -3402,6 +3676,7 @@ const UI = (() => {
     handleMealPhoto,
     handleVoiceEntry,
     openBarcodeScanner,
+    handleLaunchAction,
     closeBarcodeScanner,
     lookupBarcode,
     clearAllData,
@@ -3420,6 +3695,8 @@ const UI = (() => {
     escapeHtml,
     mealFromTime,
     nowTimeStr,
+    defaultEntryTiming,
+    entryTimeForMeal,
     showAiToast,
     showAiError,
     formatUsage,

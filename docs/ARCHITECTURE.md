@@ -77,6 +77,7 @@ Entry = {
 
 Settings = {
   kcalGoal, proteinGoal, carbsGoal, fatGoal, fiberGoal: number,
+  goalMode: 'cut'|'maintain'|'bulk',  // kierunek oceny kcal (od v65); brak = 'cut'
   geminiApiKey: string,
   healthProfile: string, partnerUid: string,
   firebaseConfig: string,  // wklejony obiekt konfiguracyjny jako tekst — per-urządzenie, NIE trafia do chmury
