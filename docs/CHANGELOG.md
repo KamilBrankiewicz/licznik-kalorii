@@ -15,6 +15,16 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku] 2026-10-31 — Automatyczne przeładowanie po aktualizacji (v67)
+**Co:** gdy nowy service worker przejmie stronę, aplikacja raz się przeładowuje.
+**Dlaczego:** po wdrożeniu v66 przycisk eksportu „nic nie robił”. Nawigacja idzie przez sieć
+(network-first), więc HTML był nowy, ale JS pochodził jeszcze ze starego cache.
+**Pliki:** `js/app.js`, `sw.js`, `index.html`.
+**Uwagi:** listener `controllerchange` działa tylko wtedy, gdy strona miała już controllera przy
+starcie. Przy pierwszej instalacji SW nie ma więc przeładowania. Pomaga od następnego wdrożenia,
+bo ten JS musi najpierw trafić do cache. Przeładowanie następuje kilka sekund po otwarciu, więc
+w praktyce nie przerywa wpisywania.
+
 ## [cd1c205] 2026-10-31 — Eksport podsumowania żywieniowego do Markdown (v66)
 **Co:** w Ustawieniach → Kopia zapasowa przycisk „Eksport podsumowania (Markdown)”. Modal z zakresem
 dat (domyślnie poprzedni miesiąc kalendarzowy) i notatką generuje plik `RRRR-MM-DD_dane_zywienie.md`

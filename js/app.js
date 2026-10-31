@@ -334,6 +334,17 @@ document.addEventListener('DOMContentLoaded', () => {
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 
   if ('serviceWorker' in navigator) {
+    // Nowy SW (po bumpie CACHE_NAME) przejmuje stronę przez clients.claim() — do tego momentu
+    // działa stary JS z cache przy nowym HTML („przycisk nic nie robi"). Jedno przeładowanie
+    // to naprawia. Pierwsza instalacja (brak controllera) nie przeładowuje.
+    if (navigator.serviceWorker.controller) {
+      let reloading = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (reloading) return;
+        reloading = true;
+        location.reload();
+      });
+    }
     navigator.serviceWorker.register('sw.js').catch((err) => {
       console.warn('Rejestracja service workera nieudana:', err);
     });
