@@ -15,7 +15,7 @@ Format wpisu — nowe na górze:
 
 ---
 
-## [w toku] 2026-10-31 — Eksport podsumowania żywieniowego do Markdown (v66)
+## [cd1c205] 2026-10-31 — Eksport podsumowania żywieniowego do Markdown (v66)
 **Co:** w Ustawieniach → Kopia zapasowa przycisk „Eksport podsumowania (Markdown)”. Modal z zakresem
 dat (domyślnie poprzedni miesiąc kalendarzowy) i notatką generuje plik `RRRR-MM-DD_dane_zywienie.md`
 (data = koniec zakresu). Plik ma YAML front matter, a pod nim sekcje: nagłówek, cele, tabela dzienna,
