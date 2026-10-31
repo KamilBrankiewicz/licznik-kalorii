@@ -1476,9 +1476,33 @@ const UI = (() => {
     return count;
   }
 
+  // Historia celów — źródło sekcji „Cele" w eksporcie podsumowania. Pierwszy wpis to stan
+  // z chwili pierwszego zapisu Ustawień (= początek historii); kolejne tylko przy zmianie celu.
+  const HISTORY_GOAL_KEYS = ['kcalGoal', 'proteinGoal', 'fatGoal', 'carbsGoal'];
+
+  function goalSnapshot(settings, date) {
+    const snap = { date };
+    HISTORY_GOAL_KEYS.forEach((k) => { snap[k] = Number(settings[k]) || 0; });
+    return snap;
+  }
+
+  function nextGoalHistory(prev, next) {
+    const today = toDateStr(new Date());
+    const history = Array.isArray(prev.goalHistory) ? [...prev.goalHistory] : [];
+    if (!history.length) history.push(goalSnapshot(prev, today));
+    const last = history[history.length - 1];
+    if (HISTORY_GOAL_KEYS.some((k) => last[k] !== (Number(next[k]) || 0))) {
+      // Kilka zmian jednego dnia = jedna zmiana (wpis początkowy zostaje nietknięty)
+      if (history.length > 1 && last.date === today) history.pop();
+      history.push(goalSnapshot(next, today));
+    }
+    return history;
+  }
+
   function saveSettingsFromForm() {
+    const prevSettings = Storage.getSettings();
     const settings = {
-      ...Storage.getSettings(),
+      ...prevSettings,
       kcalGoal: Number(document.getElementById('settingKcalGoal').value) || 0,
       proteinGoal: Number(document.getElementById('settingProteinGoal').value) || 0,
       carbsGoal: Number(document.getElementById('settingCarbsGoal').value) || 0,
@@ -1489,6 +1513,7 @@ const UI = (() => {
       partnerUid: document.getElementById('settingPartnerUid').value.trim(),
       updatedAt: new Date().toISOString()
     };
+    settings.goalHistory = nextGoalHistory(prevSettings, settings);
     Storage.saveSettings(settings);
     pushSettingsToCloud(settings);
     document.getElementById('settingsToast').textContent = 'Zapisano ✓';
@@ -3613,6 +3638,273 @@ const UI = (() => {
     showToast('Wyeksportowano dane');
   }
 
+  // ── Eksport podsumowania żywieniowego (Markdown) — dla zewnętrznej aplikacji ──
+  // Celowo bez pól meal/time (kategorie i godziny są nierzetelne) i bez błonnika.
+
+  const SUMMARY_MIN_ENTRIES = 3;
+  const SUMMARY_MIN_KCAL = 1000;
+  const SUMMARY_FAT_ENTRY_G = 20;
+  const GOAL_MODE_LABELS = { cut: 'redukcja', maintain: 'utrzymanie', bulk: 'masa' };
+  const SUMMARY_MACROS = [
+    { key: 'kcal', goalKey: 'kcalGoal', yaml: 'kcal' },
+    { key: 'protein', goalKey: 'proteinGoal', yaml: 'bialko_g' },
+    { key: 'fat', goalKey: 'fatGoal', yaml: 'tluszcz_g' },
+    { key: 'carbs', goalKey: 'carbsGoal', yaml: 'wegle_g' }
+  ];
+
+  function previousMonthRange(now = new Date()) {
+    return {
+      from: toDateStr(new Date(now.getFullYear(), now.getMonth() - 1, 1)),
+      to: toDateStr(new Date(now.getFullYear(), now.getMonth(), 0))
+    };
+  }
+
+  function isoWeekLabel(dateStr) {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    dt.setUTCDate(dt.getUTCDate() + 4 - (dt.getUTCDay() || 7)); // czwartek tego tygodnia
+    const week = Math.ceil(((dt - Date.UTC(dt.getUTCFullYear(), 0, 1)) / 86400000 + 1) / 7);
+    return `${dt.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
+  }
+
+  function buildNutritionSummary(from, to, note, now = new Date()) {
+    const settings = Storage.getSettings();
+    const history = Array.isArray(settings.goalHistory) ? settings.goalHistory : [];
+    const historyStart = history.length ? history[0].date : null;
+    // Cele obowiązujące danego dnia; przed początkiem historii — cele aktualne
+    const goalsOn = (date) => history.filter((h) => h.date <= date).pop() || settings;
+
+    const kc = (n) => String(Math.round(n));
+    const gr = (n) => (Math.round(n * 10) / 10).toFixed(1);
+    const cell = (s) => String(s).replace(/\|/g, '\\|').replace(/\s+/g, ' ').trim();
+    const fmt = (key, n) => (n == null ? '—' : key === 'kcal' ? kc(n) : gr(n));
+    const avg = (list, fn) => (list.length ? list.reduce((s, x) => s + fn(x), 0) / list.length : null);
+
+    const days = [];
+    for (let date = from; date <= to; date = shiftDateStr(date, 1)) {
+      const entries = Storage.getEntries(date);
+      const sum = { kcal: 0, protein: 0, fat: 0, carbs: 0 };
+      entries.forEach((e) => SUMMARY_MACROS.forEach((m) => { sum[m.key] += Number(e[m.key]) || 0; }));
+      const dow = new Date(date + 'T00:00:00').getDay();
+      days.push({
+        date, entries, sum, dow,
+        complete: entries.length >= SUMMARY_MIN_ENTRIES && sum.kcal >= SUMMARY_MIN_KCAL
+      });
+    }
+    const logged = days.filter((d) => d.entries.length);
+    const full = days.filter((d) => d.complete);
+    const avgOf = (list) => Object.fromEntries(SUMMARY_MACROS.map((m) => [m.key, avg(list, (d) => d.sum[m.key])]));
+    const fullAvg = avgOf(full);
+    const modeLabel = GOAL_MODE_LABELS[settings.goalMode] || settings.goalMode;
+    const incompleteDef = `<${SUMMARY_MIN_ENTRIES} wpisy lub <${SUMMARY_MIN_KCAL} kcal`;
+    const out = [];
+
+    // 0. YAML front matter
+    out.push('---', `zakres_od: ${from}`, `zakres_do: ${to}`, `data_eksportu: ${toDateStr(now)}`,
+      `dni_w_zakresie: ${days.length}`, `dni_zalogowane: ${logged.length}`, `dni_pelne: ${full.length}`,
+      `dni_niepelne: ${logged.length - full.length}`, `dni_bez_wpisow: ${days.length - logged.length}`,
+      `definicja_dnia_niepelnego: "${incompleteDef}"`, `tryb_celu: ${settings.goalMode}`, 'cele:');
+    SUMMARY_MACROS.forEach((m) => out.push(`  ${m.yaml}: ${Number(settings[m.goalKey]) || 0}`));
+    out.push('srednie_dni_pelnych:');
+    SUMMARY_MACROS.forEach((m) => out.push(`  ${m.yaml}: ${fullAvg[m.key] == null ? 'null' : fmt(m.key, fullAvg[m.key])}`));
+    out.push('---', '');
+
+    // 1. Nagłówek
+    out.push(`# Podsumowanie żywieniowe ${from} – ${to}`, '',
+      `- Data eksportu: ${toDateStr(now)}`,
+      `- Dni w zakresie: ${days.length} (zalogowane ${logged.length}: pełne ${full.length}, niepełne ${logged.length - full.length}; bez żadnego wpisu ${days.length - logged.length})`,
+      `- Dzień niepełny: ${incompleteDef} — widoczny w tabeli dziennej, wykluczony ze średnich`,
+      `- Tryb celu: ${modeLabel}`,
+      `- Średnie z dni pełnych: ${fmt('kcal', fullAvg.kcal)} kcal · B ${fmt('protein', fullAvg.protein)} g · T ${fmt('fat', fullAvg.fat)} g · W ${fmt('carbs', fullAvg.carbs)} g`, '');
+
+    // 2. Cele
+    out.push('## Cele', '', `Aktualne: ${settings.kcalGoal} kcal · B ${settings.proteinGoal} g · T ${settings.fatGoal} g · W ${settings.carbsGoal} g`, '');
+    if (!historyStart || historyStart > from) {
+      out.push(historyStart
+        ? `_Historia celów niedostępna przed ${historyStart} — dla wcześniejszych dni % realizacji liczony względem celów aktualnych._`
+        : '_Historia celów niedostępna (zapisywana od pierwszego zapisu Ustawień) — % realizacji liczony względem celów aktualnych._', '');
+    }
+    const labels = { kcalGoal: 'kcal', proteinGoal: 'białko', fatGoal: 'tłuszcz', carbsGoal: 'węgle' };
+    const changes = [];
+    history.forEach((h, i) => {
+      if (i === 0 || h.date < from || h.date > to) return;
+      const diff = HISTORY_GOAL_KEYS.filter((k) => h[k] !== history[i - 1][k])
+        .map((k) => `${labels[k]} ${history[i - 1][k]}→${h[k]}`);
+      if (diff.length) changes.push(`- ${h.date}: ${diff.join(', ')}`);
+    });
+    out.push(...(changes.length ? changes : ['Brak zmian celów w zakresie.']), '');
+
+    // 3. Tabela dzienna
+    out.push('## Dni', '', '| Data | Dzień | kcal | Białko | Tłuszcz | Węgle | Wpisy | Flaga |', '|---|---|---:|---:|---:|---:|---:|---|');
+    days.forEach((d) => {
+      const flag = d.complete ? '' : d.entries.length ? 'niepełny' : 'brak wpisów';
+      out.push(`| ${d.date} | ${DIET_DAY_NAMES[d.dow]} | ${kc(d.sum.kcal)} | ${gr(d.sum.protein)} | ${gr(d.sum.fat)} | ${gr(d.sum.carbs)} | ${d.entries.length} | ${flag} |`);
+    });
+    out.push('');
+
+    // 4. Średnie tygodniowe (ISO) — tylko dni pełne
+    const weeks = new Map();
+    days.forEach((d) => {
+      const w = isoWeekLabel(d.date);
+      if (!weeks.has(w)) weeks.set(w, []);
+      if (d.complete) weeks.get(w).push(d);
+    });
+    out.push('## Średnie tygodniowe (tydzień ISO, dni pełne)', '',
+      '| Tydzień | Dni pełne | kcal | Białko | Tłuszcz | Węgle | % kcal | % B | % T | % W | Dni B ≥ cel | Dni T ≤ cel |',
+      '|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|');
+    weeks.forEach((list, w) => {
+      const a = avgOf(list);
+      const pct = SUMMARY_MACROS.map((m) => {
+        const p = avg(list, (d) => (Number(goalsOn(d.date)[m.goalKey]) ? d.sum[m.key] / goalsOn(d.date)[m.goalKey] * 100 : 0));
+        return p == null ? '—' : `${Math.round(p)}%`;
+      });
+      const proteinOk = list.filter((d) => d.sum.protein >= (Number(goalsOn(d.date).proteinGoal) || 0)).length;
+      const fatOk = list.filter((d) => d.sum.fat <= (Number(goalsOn(d.date).fatGoal) || 0)).length;
+      out.push(`| ${w} | ${list.length} | ${fmt('kcal', a.kcal)} | ${fmt('protein', a.protein)} | ${fmt('fat', a.fat)} | ${fmt('carbs', a.carbs)} | ${pct.join(' | ')} | ${proteinOk}/${list.length} | ${fatOk}/${list.length} |`);
+    });
+    out.push('');
+
+    // 5. Dni robocze vs weekend
+    out.push('## Dni robocze vs weekend (dni pełne)', '', '| Okres | Dni | kcal | Białko | Tłuszcz | Węgle |', '|---|---:|---:|---:|---:|---:|');
+    [['Pon–pt', full.filter((d) => d.dow >= 1 && d.dow <= 5)], ['Sob–ndz', full.filter((d) => d.dow === 0 || d.dow === 6)]].forEach(([label, list]) => {
+      const a = avgOf(list);
+      out.push(`| ${label} | ${list.length} | ${fmt('kcal', a.kcal)} | ${fmt('protein', a.protein)} | ${fmt('fat', a.fat)} | ${fmt('carbs', a.carbs)} |`);
+    });
+    out.push('');
+
+    // 6. Top 15 produktów (wszystkie zalogowane dni)
+    const products = new Map();
+    logged.forEach((d) => d.entries.forEach((e) => {
+      const key = (e.name || '').trim().toLowerCase();
+      if (!key) return;
+      const p = products.get(key) || { name: e.name.trim(), count: 0, protein: 0, fat: 0 };
+      p.count++;
+      p.protein += Number(e.protein) || 0;
+      p.fat += Number(e.fat) || 0;
+      products.set(key, p);
+    }));
+    const top = [...products.values()].sort((a, b) => b.count - a.count || b.protein - a.protein).slice(0, 15);
+    out.push('## Top 15 produktów (wszystkie zalogowane dni)', '', '| Nazwa | Wystąpienia | Suma białka (g) | Suma tłuszczu (g) |', '|---|---:|---:|---:|');
+    top.forEach((p) => out.push(`| ${cell(p.name)} | ${p.count} | ${gr(p.protein)} | ${gr(p.fat)} |`));
+    if (!top.length) out.push('| — | 0 | 0.0 | 0.0 |');
+    out.push('');
+
+    // 7. Wpisy tłuste
+    const fatty = [];
+    logged.forEach((d) => d.entries.forEach((e) => {
+      if ((Number(e.fat) || 0) >= SUMMARY_FAT_ENTRY_G) fatty.push({ date: d.date, e });
+    }));
+    out.push(`## Wpisy z ≥${SUMMARY_FAT_ENTRY_G} g tłuszczu`, '');
+    if (fatty.length) {
+      out.push('| Data | Nazwa | Gramatura | Tłuszcz (g) |', '|---|---|---:|---:|');
+      fatty.forEach(({ date, e }) => out.push(`| ${date} | ${cell(e.name || '')} | ${e.grams ? `${e.grams} g` : '—'} | ${gr(Number(e.fat))} |`));
+    } else {
+      out.push('Brak.');
+    }
+    out.push('');
+
+    // 8. Waga
+    const weights = Storage.getWeightHistory().filter((w) => w.date >= from && w.date <= to);
+    out.push('## Waga', '');
+    if (weights.length) {
+      out.push('| Data | kg | SMM (kg) | BF% |', '|---|---:|---:|---:|');
+      weights.forEach((w) => out.push(`| ${w.date} | ${gr(Number(w.kg))} | ${w.smm == null ? '—' : gr(w.smm)} | ${w.bf == null ? '—' : gr(w.bf)} |`));
+      const delta = Number(weights[weights.length - 1].kg) - Number(weights[0].kg);
+      out.push('', `Zmiana: ${delta > 0 ? '+' : ''}${gr(delta)} kg (${weights[0].date} → ${weights[weights.length - 1].date})`);
+    } else {
+      out.push('Brak pomiarów w zakresie.');
+    }
+    out.push('');
+
+    // 9. Suplementy
+    const supps = new Map(Storage.getRawSupplements().map((s) => [s.id, s]));
+    const suppDays = new Map();
+    days.forEach((d) => Storage.getSupplementLogForDate(d.date).forEach((r) => {
+      let key, name, dose = '';
+      if (r.adhoc) {
+        name = (r.name || '').trim();
+        key = 'adhoc:' + name.toLowerCase();
+      } else {
+        if (!Storage.extractDoseTimes(r).length) return;
+        const s = supps.get(r.suppId);
+        key = r.suppId;
+        name = s && !s.deleted ? suppLabel(s) : '(usunięty suplement)';
+        dose = (s && s.dose) || '';
+      }
+      if (!name) return;
+      const rec = suppDays.get(key) || { name, dose, dates: new Set() };
+      rec.dates.add(d.date);
+      suppDays.set(key, rec);
+    }));
+    out.push('## Suplementy', '');
+    if (suppDays.size) {
+      out.push('| Nazwa | Dni przyjęcia | Dawka |', '|---|---:|---|');
+      [...suppDays.values()].sort((a, b) => b.dates.size - a.dates.size)
+        .forEach((s) => out.push(`| ${cell(s.name)} | ${s.dates.size} | ${s.dose ? cell(s.dose) : '—'} |`));
+    } else {
+      out.push('Brak przyjęć w zakresie.');
+    }
+    out.push('');
+
+    // 10. Notatka
+    out.push('## Notatka', '', note.trim() || '—', '');
+    return out.join('\n');
+  }
+
+  function openSummaryExportModal() {
+    const range = previousMonthRange();
+    document.getElementById('summaryFrom').value = range.from;
+    document.getElementById('summaryTo').value = range.to;
+    document.getElementById('summaryNote').value = '';
+    document.getElementById('summaryExportError').textContent = '';
+    const probe = new File([''], 'x.md', { type: 'text/markdown' });
+    document.getElementById('shareSummaryBtn').hidden = !(navigator.canShare && navigator.canShare({ files: [probe] }));
+    document.getElementById('summaryExportOverlay').classList.add('active');
+  }
+
+  function closeSummaryExportModal() {
+    document.getElementById('summaryExportOverlay').classList.remove('active');
+  }
+
+  function summaryExportFile() {
+    const from = document.getElementById('summaryFrom').value;
+    const to = document.getElementById('summaryTo').value;
+    const errorEl = document.getElementById('summaryExportError');
+    errorEl.textContent = '';
+    if (!from || !to) { errorEl.textContent = 'Wybierz datę początkową i końcową.'; return null; }
+    if (from > to) { errorEl.textContent = 'Data początkowa jest późniejsza niż końcowa.'; return null; }
+    const md = buildNutritionSummary(from, to, document.getElementById('summaryNote').value);
+    return new File([md], `${to}_dane_zywienie.md`, { type: 'text/markdown' });
+  }
+
+  function downloadSummaryExport() {
+    const file = summaryExportFile();
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = file.name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    closeSummaryExportModal();
+    showToast('Wyeksportowano podsumowanie');
+  }
+
+  async function shareSummaryExport() {
+    const file = summaryExportFile();
+    if (!file) return;
+    try {
+      await navigator.share({ files: [file], title: file.name });
+      closeSummaryExportModal();
+    } catch (e) {
+      if (e.name !== 'AbortError') {
+        document.getElementById('summaryExportError').textContent = 'Nie udało się udostępnić pliku — użyj „Pobierz".';
+      }
+    }
+  }
+
   function importDataFromFile(file) {
     const statusEl = document.getElementById('backupStatus');
     const reader = new FileReader();
@@ -3681,6 +3973,10 @@ const UI = (() => {
     lookupBarcode,
     clearAllData,
     exportDataToFile,
+    openSummaryExportModal,
+    closeSummaryExportModal,
+    downloadSummaryExport,
+    shareSummaryExport,
     importDataFromFile,
     saveFirebaseConfigFromForm,
     syncWithCloud,

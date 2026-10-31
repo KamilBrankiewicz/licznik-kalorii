@@ -77,7 +77,7 @@ w `ui.js`.
 
 localStorage:
 - `entries_YYYY-MM-DD` → tablica wpisów
-- `settings` → cele, klucz Gemini, profil zdrowotny, UID partnera, config Firebase, `updatedAt`
+- `settings` → cele (+ `goalHistory`), klucz Gemini, profil zdrowotny, UID partnera, config Firebase, `updatedAt`
 - `weights` → mapa `{ "YYYY-MM-DD": { kg, smm?, bf?, updatedAt } }`
 - `favoriteProducts`, `recipes`, `analysisGoals`, `supplements`, `adhocQuickItems` → tablice
 - `dailyAnalyses`, `supplementLog`, `supplementAnalyses`, `dietAnalyses` → mapy

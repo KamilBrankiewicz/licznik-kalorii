@@ -78,6 +78,7 @@ Entry = {
 Settings = {
   kcalGoal, proteinGoal, carbsGoal, fatGoal, fiberGoal: number,
   goalMode: 'cut'|'maintain'|'bulk',  // kierunek oceny kcal (od v65); brak = 'cut'
+  goalHistory?: [{ date, kcalGoal, proteinGoal, fatGoal, carbsGoal }],  // od v66; [0] = stan przy pierwszym zapisie Ustawień (początek historii), dalej tylko zmiany (jedna na dzień)
   geminiApiKey: string,
   healthProfile: string, partnerUid: string,
   firebaseConfig: string,  // wklejony obiekt konfiguracyjny jako tekst — per-urządzenie, NIE trafia do chmury
