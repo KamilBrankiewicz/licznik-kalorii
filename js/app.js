@@ -231,6 +231,8 @@ document.addEventListener('DOMContentLoaded', () => {
       UI.closeGoalPickerModal();
     } else if (document.getElementById('suppModalOverlay').classList.contains('active')) {
       UI.closeSupplementModal();
+    } else if (document.getElementById('summaryExportOverlay').classList.contains('active')) {
+      UI.closeSummaryExportModal();
     }
   });
 
@@ -254,6 +256,13 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   document.getElementById('exportDataBtn').addEventListener('click', () => UI.exportDataToFile());
+  document.getElementById('openSummaryExportBtn').addEventListener('click', () => UI.openSummaryExportModal());
+  document.getElementById('cancelSummaryExportBtn').addEventListener('click', () => UI.closeSummaryExportModal());
+  document.getElementById('downloadSummaryBtn').addEventListener('click', () => UI.downloadSummaryExport());
+  document.getElementById('shareSummaryBtn').addEventListener('click', () => UI.shareSummaryExport());
+  document.getElementById('summaryExportOverlay').addEventListener('click', (e) => {
+    if (e.target.id === 'summaryExportOverlay') UI.closeSummaryExportModal();
+  });
   document.getElementById('importDataBtn').addEventListener('click', () => {
     document.getElementById('importFileInput').click();
   });

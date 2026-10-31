@@ -153,7 +153,7 @@
   <section id="view-ustawienia" class="view">
     <div style="display:flex; align-items:baseline; justify-content:space-between; gap:8px;">
       <h1 class="page-title" style="margin-bottom:0;">Ustawienia</h1>
-      <span class="hint" style="white-space:nowrap;">v65</span>
+      <span class="hint" style="white-space:nowrap;">v66</span>
     </div>
 
     <h3 class="section-title" style="margin-top:16px;">Wygląd</h3>
@@ -257,6 +257,7 @@
           <button class="btn btn-secondary" id="exportDataBtn">Eksportuj dane</button>
           <button class="btn btn-secondary" id="importDataBtn">Importuj dane</button>
         </div>
+        <button class="btn btn-secondary" id="openSummaryExportBtn" style="margin-top:10px;">Eksport podsumowania (Markdown)</button>
         <input type="file" id="importFileInput" accept="application/json" style="display:none;">
         <div id="backupStatus" class="hint" style="margin-top:8px;"></div>
       </div>
@@ -611,6 +612,38 @@
       <div class="btn-row">
         <button class="btn btn-secondary" id="cancelGoalBtn">Anuluj</button>
         <button class="btn btn-primary" id="saveGoalBtn">Zapisz cel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: EKSPORT PODSUMOWANIA ŻYWIENIOWEGO -->
+  <div class="modal-overlay" id="summaryExportOverlay">
+    <div class="modal-sheet">
+      <h3>Eksport podsumowania</h3>
+
+      <div class="form-row-2">
+        <div class="form-group">
+          <label>Od</label>
+          <input type="date" id="summaryFrom">
+        </div>
+        <div class="form-group">
+          <label>Do</label>
+          <input type="date" id="summaryTo">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Notatka (opcjonalnie)</label>
+        <textarea id="summaryNote" rows="3" placeholder="np. choroba 12–14.11, wyjazd — logowanie szacunkowe"></textarea>
+        <div class="hint">Plik Markdown liczony lokalnie: dni, średnie tygodniowe, top produkty, waga, suplementy. Bez błonnika i kategorii posiłków.</div>
+      </div>
+
+      <div id="summaryExportError" class="error-msg"></div>
+
+      <div class="btn-row">
+        <button class="btn btn-secondary" id="cancelSummaryExportBtn">Anuluj</button>
+        <button class="btn btn-secondary" id="shareSummaryBtn" hidden>Udostępnij</button>
+        <button class="btn btn-primary" id="downloadSummaryBtn">Pobierz</button>
       </div>
     </div>
   </div>

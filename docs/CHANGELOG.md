@@ -15,6 +15,22 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [cd1c205] 2026-10-31 — Eksport podsumowania żywieniowego do Markdown (v66)
+**Co:** w Ustawieniach → Kopia zapasowa przycisk „Eksport podsumowania (Markdown)”. Modal z zakresem
+dat (domyślnie poprzedni miesiąc kalendarzowy) i notatką generuje plik `RRRR-MM-DD_dane_zywienie.md`
+(data = koniec zakresu). Plik ma YAML front matter, a pod nim sekcje: nagłówek, cele, tabela dzienna,
+średnie tygodniowe ISO, dni robocze vs weekend, top 15 produktów, wpisy z ≥20 g tłuszczu, wagę, suplementy
+i notatkę. Przycisk „Pobierz” (Blob); „Udostępnij” (`navigator.share`) pojawia się tylko tam, gdzie
+przeglądarka umie udostępniać pliki. Zapis Ustawień dopisuje zmiany celów do `settings.goalHistory`.
+**Dlaczego:** dane dla zewnętrznej aplikacji. Spec od użytkownika.
+**Pliki:** `index.html`, `js/app.js`, `js/ui.js`, `sw.js`, `docs/ARCHITECTURE.md`.
+**Uwagi:** dzień niepełny = <3 wpisy lub <1000 kcal; jest w tabeli, ale nie wchodzi do średnich.
+Ta reguła jest niezależna od `LOGGED_DAY_SHARE`. Eksport celowo pomija `meal`, `time` i błonnik
+(dane nierzetelne). Historia celów działa dopiero od v66, bo wcześniej cele były nadpisywane. Dla
+dni sprzed `goalHistory[0].date` % realizacji liczy się względem celów aktualnych, a plik ma o tym
+dopisek. Kolumny „źródło” przy wadze nie ma, bo pomiary go nie zapisują. Liczby mają kropkę dziesiętną
+(łatwiej je sparsować).
+
 ## [cfb2dc4] 2026-10-10 — Skróty na ikonie aplikacji (Android) (v65)
 **Co:** przytrzymanie ikony zainstalowanej aplikacji pokazuje „Dodaj posiłek” (otwiera formularz)
 i „Skanuj kod kreskowy” (formularz + skaner od razu). Działa też w PWA zainstalowanej na Windows
