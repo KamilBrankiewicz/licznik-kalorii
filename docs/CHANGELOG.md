@@ -15,7 +15,7 @@ Format wpisu — nowe na górze:
 
 ---
 
-## [w toku] 2026-10-31 — Automatyczne przeładowanie po aktualizacji (v67)
+## [b5698c4] 2026-10-31 — Automatyczne przeładowanie po aktualizacji (v67)
 **Co:** gdy nowy service worker przejmie stronę, aplikacja raz się przeładowuje.
 **Dlaczego:** po wdrożeniu v66 przycisk eksportu „nic nie robił”. Nawigacja idzie przez sieć
 (network-first), więc HTML był nowy, ale JS pochodził jeszcze ze starego cache.
