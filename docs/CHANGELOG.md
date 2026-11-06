@@ -15,7 +15,7 @@ Format wpisu — nowe na górze:
 
 ---
 
-## [w toku] 2026-11-06 — Poprawki z analizy aplikacji (v68)
+## [3caa355] 2026-11-06 — Poprawki z analizy aplikacji (v68)
 **Co:** wdrożenie znalezisk z `docs/ANALIZA-2026-11-06.md` (ID K-xx) i decyzji właściciela z sekcji 5 raportu.
 - **Sync (K-02, K-22):** push w tle (`pushDayToCloud`, `flushMetaPush`) najpierw czyta dokument z chmury,
   scala go z lokalnym i dopiero zapisuje. Wcześniej urządzenie bez świeżego synca nadpisywało cudze wpisy.
