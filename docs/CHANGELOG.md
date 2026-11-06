@@ -15,6 +15,14 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku] 2026-11-06 — Przywrócenie jasnego zielonego w motywie jasnym (v69)
+**Co:** motyw jasny znów używa domyślnego zielonego `--accent` (`#34d399`) zamiast ciemnego `#047857` z v68.
+**Dlaczego:** właścicielowi nie podobał się ciemniejszy zielony.
+**Pliki:** `css/style.css`, `sw.js`, `index.html`.
+**Uwagi:** ciemniejsze `--warning`/`--off-goal` z v68 zostają. Nie przyciemniać zielonego ponownie bez pytania, mimo słabszego kontrastu na białym.
+
+---
+
 ## [3caa355] 2026-11-06 — Poprawki z analizy aplikacji (v68)
 **Co:** wdrożenie znalezisk z `docs/ANALIZA-2026-11-06.md` (ID K-xx) i decyzji właściciela z sekcji 5 raportu.
 - **Sync (K-02, K-22):** push w tle (`pushDayToCloud`, `flushMetaPush`) najpierw czyta dokument z chmury,

@@ -25,10 +25,7 @@
     --text-muted: #6b6b80;
     --border: #e2e2ec;
     --accent-soft: rgba(52,211,153,0.12);
-    /* ciemniejsze odcienie: jasne #34d399/#fbbf24/#fb923c miały na białym kontrast 1,7–2,3:1 */
-    --accent: #047857;
-    --accent-dark: #065f46;
-    --accent-text: #ffffff;
+    /* ciemniejsze odcienie: jasne #fbbf24/#fb923c miały na białym kontrast 1,7–2,3:1 (zielony accent zostaje jasny) */
     --warning: #b45309;
     --off-goal: #c2410c;
     color-scheme: light;
@@ -43,9 +40,6 @@
   --text-muted: #6b6b80;
   --border: #e2e2ec;
   --accent-soft: rgba(52,211,153,0.12);
-  --accent: #047857;
-  --accent-dark: #065f46;
-  --accent-text: #ffffff;
   --warning: #b45309;
   --off-goal: #c2410c;
   color-scheme: light;
