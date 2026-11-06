@@ -34,6 +34,10 @@ const Voice = (() => {
           reject(new Error('PERMISSION_DENIED'));
         } else if (event.error === 'no-speech') {
           reject(new Error('NO_SPEECH'));
+        } else if (event.error === 'network') {
+          reject(new Error('NETWORK_ERROR')); // Chrome wysyła mowę na serwery Google — offline nie działa
+        } else if (event.error === 'audio-capture') {
+          reject(new Error('NO_MIC'));
         } else {
           reject(new Error('RECOGNITION_ERROR'));
         }

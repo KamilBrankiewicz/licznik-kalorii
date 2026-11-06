@@ -256,6 +256,12 @@ const Storage = (() => {
     return dates;
   }
 
+  // Najwcześniejszy dzień z jakimkolwiek zapisem — początek używania aplikacji. Same klucze, bez
+  // parsowania (tani przy każdym renderze); dzień z samymi nagrobkami też się liczy — świadome uproszczenie.
+  function getFirstDataDate() {
+    return getAllDates().reduce((min, d) => (!min || d < min ? d : min), null);
+  }
+
   function buildProductIndex() {
     const byName = new Map();
     getAllDates().forEach((date) => {
@@ -276,10 +282,6 @@ const Storage = (() => {
     });
     return [...byName.values()]
       .sort((a, b) => b.count - a.count || b.lastDate.localeCompare(a.lastDate));
-  }
-
-  function getFrequentProducts(limit = 8) {
-    return buildProductIndex().slice(0, limit).map((i) => i.entry);
   }
 
   function getUniqueProducts() {
@@ -551,6 +553,8 @@ const Storage = (() => {
   // Czy wg harmonogramu suplement ma być wzięty w dniu `date` (YYYY-MM-DD)
   function isSupplementDueOn(supp, date) {
     if (supp.deleted || supp.active === false) return false;
+    // przed dodaniem suplementu nic nie było planowe (inaczej „Codziennie” liczył się wstecz w compliance)
+    if (supp.anchorDate && date < supp.anchorDate) return false;
     const type = supp.scheduleType || 'daily';
     if (type === 'daily') return true;
     if (type === 'weekdays') {
@@ -889,8 +893,9 @@ const Storage = (() => {
 
   // ── Cache sekcji statycznych analizy (interakcje, sumy dawek) — lokalny, odtwarzalny ──
 
+  // Prefiks wersji unieważnia stary cache (v1 liczył interakcje na nazwach wyświetlanych)
   function getSupplementsFingerprint() {
-    return getSupplements()
+    return 'v2|' + getSupplements()
       .filter((s) => s.active !== false)
       .sort((a, b) => a.id.localeCompare(b.id))
       .map((s) => `${s.id}:${s.updatedAt || ''}`)
@@ -913,6 +918,16 @@ const Storage = (() => {
     });
   }
 
+  // Przybliżony rozmiar localStorage w znakach (limit przeglądarki ~5 mln) — do podglądu w Ustawieniach
+  function getDataSize() {
+    let chars = 0;
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      chars += key.length + (localStorage.getItem(key) || '').length;
+    }
+    return chars;
+  }
+
   function exportData() {
     const entries = {};
     getAllDates().forEach((date) => {
@@ -920,7 +935,8 @@ const Storage = (() => {
     });
     return {
       exportedAt: new Date().toISOString(),
-      settings: getSettings(),
+      // bez klucza Gemini i configu Firebase — plik kopii łatwo trafia poza urządzenie (decyzja 2026-11-06)
+      settings: { ...getSettings(), geminiApiKey: '', firebaseConfig: '' },
       entries,
       weights: getWeights(),
       favoriteProducts: getRawFavoriteProducts(),
@@ -935,9 +951,51 @@ const Storage = (() => {
     };
   }
 
-  function importData(data, mode) {
+  // Plik importu to dane spoza aplikacji: tylko daty jako klucze dni, tylko bezpieczne id/klucze
+  // (trafiają do atrybutów data-* w renderze), tylko obiekty jako rekordy.
+  const SAFE_ID = /^[\w.:-]{1,120}$/;
+  const isDateKey = (k) => /^\d{4}-\d{2}-\d{2}$/.test(k);
+  const isObj = (r) => r && typeof r === 'object' && !Array.isArray(r);
+  const safeList = (list, needsId) => (Array.isArray(list) ? list.filter((r) => isObj(r) && (!needsId || SAFE_ID.test(String(r.id)))) : []);
+  const safeMap = (map, keyOk) => (isObj(map)
+    ? Object.fromEntries(Object.entries(map).filter(([k, r]) => keyOk(k) && isObj(r) && (r.goalId == null || SAFE_ID.test(String(r.goalId)))))
+    : {});
+
+  function sanitizeImport(data) {
+    const entries = {};
+    Object.entries(isObj(data.entries) ? data.entries : {}).forEach(([date, list]) => {
+      if (isDateKey(date)) entries[date] = safeList(list, true);
+    });
+    const ids = (k) => SAFE_ID.test(k);
+    return {
+      settings: isObj(data.settings) ? data.settings : null,
+      entries,
+      weights: data.weights && safeMap(data.weights, isDateKey),
+      favoriteProducts: data.favoriteProducts && safeList(data.favoriteProducts, false),
+      recipes: data.recipes && safeList(data.recipes, true),
+      analysisGoals: data.analysisGoals && safeList(data.analysisGoals, true),
+      dailyAnalyses: data.dailyAnalyses && safeMap(data.dailyAnalyses, ids),
+      supplements: data.supplements && safeList(data.supplements, true),
+      supplementLog: data.supplementLog && safeMap(data.supplementLog, ids),
+      supplementAnalyses: data.supplementAnalyses && safeMap(data.supplementAnalyses, ids),
+      dietAnalyses: data.dietAnalyses && safeMap(data.dietAnalyses, ids),
+      adhocQuickItems: data.adhocQuickItems && safeList(data.adhocQuickItems, false)
+    };
+  }
+
+  function importData(rawData, mode) {
+    const data = sanitizeImport(rawData);
+    const localSettings = getSettings();
     if (mode === 'replace') clearAllData();
-    if (data.settings) saveSettings({ ...DEFAULT_SETTINGS, ...data.settings });
+    if (data.settings) {
+      const incoming = { ...data.settings };
+      delete incoming.firebaseConfig; // per-urządzenie, nigdy z pliku
+      if (!incoming.geminiApiKey) delete incoming.geminiApiKey; // eksport od v68 nie zawiera klucza
+      // „scal” nie cofa nowszych ustawień starą kopią; wygrywa nowszy updatedAt, jak w syncu
+      if (mode === 'replace' || (incoming.updatedAt || '') > (localSettings.updatedAt || '')) {
+        saveSettings({ ...DEFAULT_SETTINGS, ...localSettings, ...incoming, firebaseConfig: localSettings.firebaseConfig });
+      }
+    }
     if (data.favoriteProducts) {
       saveFavoriteProducts(
         mode === 'replace'
@@ -995,6 +1053,28 @@ const Storage = (() => {
     }
   }
 
+  // Każdy rekord każdej synchronizowanej kolekcji → nagrobek z bieżącym updatedAt (zasada 1).
+  // Do „wyczyść też w chmurze”: samo kasowanie dokumentów nie wystarczy — drugie urządzenie
+  // wypchnęłoby dane z powrotem; nagrobki wygrywają u niego przy najbliższym syncu.
+  function tombstoneAll() {
+    const now = new Date().toISOString();
+    const tomb = (r) => (r.deleted ? r : { id: r.id, deleted: true, updatedAt: now });
+    const tombMap = (map, keep) => Object.fromEntries(Object.entries(map)
+      .map(([k, r]) => [k, r.deleted ? r : { ...keep(r), deleted: true, updatedAt: now }]));
+    getAllDates().forEach((date) => saveEntries(date, getRawEntries(date).map(tomb)));
+    saveWeights(tombMap(getWeights(), () => ({})));
+    saveFavoriteProducts(getRawFavoriteProducts().map((p) => (p.deleted ? p : { key: p.key, deleted: true, updatedAt: now })));
+    saveRecipes(getRawRecipes().map(tomb));
+    saveGoals(getRawGoals().map(tomb));
+    saveSupplements(getRawSupplements().map(tomb));
+    saveAdhocQuickItems(getRawAdhocQuickItems().map((i) => (i.deleted ? i : { name: i.name, deleted: true, updatedAt: now })));
+    saveRawSupplementLog(tombMap(getRawSupplementLog(), (r) => ({ date: r.date, suppId: r.suppId })));
+    saveRawDailyAnalyses(tombMap(getRawDailyAnalyses(), (r) => ({ date: r.date, goalId: r.goalId })));
+    saveRawSupplementAnalyses(tombMap(getRawSupplementAnalyses(), () => ({})));
+    saveRawDietAnalyses(tombMap(getRawDietAnalyses(), () => ({})));
+    saveSettings({ ...DEFAULT_SETTINGS, firebaseConfig: getSettings().firebaseConfig, updatedAt: now });
+  }
+
   function clearAllData() {
     const keysToRemove = [];
     for (let i = 0; i < localStorage.length; i++) {
@@ -1043,7 +1123,6 @@ const Storage = (() => {
     getLatestBodyComp,
     getWeightHistory,
     mergeWeights,
-    getFrequentProducts,
     getFavoriteProducts,
     getRawFavoriteProducts,
     saveFavoriteProducts,
@@ -1058,6 +1137,7 @@ const Storage = (() => {
     getDailySummary,
     getAllDatesWithEntries,
     getAllDates,
+    getFirstDataDate,
     getRecipes,
     getRawRecipes,
     saveRecipes,
@@ -1134,8 +1214,10 @@ const Storage = (() => {
     getSuppStaticCache,
     saveSuppStaticCache,
     getUniqueProducts,
+    getDataSize,
     exportData,
     importData,
+    tombstoneAll,
     clearAllData
   };
 })();

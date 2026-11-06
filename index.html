@@ -153,7 +153,7 @@
   <section id="view-ustawienia" class="view">
     <div style="display:flex; align-items:baseline; justify-content:space-between; gap:8px;">
       <h1 class="page-title" style="margin-bottom:0;">Ustawienia</h1>
-      <span class="hint" style="white-space:nowrap;">v67</span>
+      <span class="hint" style="white-space:nowrap;">v68</span>
     </div>
 
     <h3 class="section-title" style="margin-top:16px;">Wygląd</h3>
@@ -243,13 +243,6 @@
       </div>
     </details>
 
-    <details class="settings-accordion" id="supplementsAccordion" hidden>
-      <summary>Suplementy i leki</summary>
-      <div class="settings-accordion-body">
-        <div class="hint">Zarządzanie suplementami przeniesiono do zakładki Suplementy.</div>
-      </div>
-    </details>
-
     <details class="settings-accordion">
       <summary>Kopia zapasowa</summary>
       <div class="settings-accordion-body">
@@ -260,6 +253,8 @@
         <button class="btn btn-secondary" id="openSummaryExportBtn" style="margin-top:10px;">Eksport podsumowania (Markdown)</button>
         <input type="file" id="importFileInput" accept="application/json" style="display:none;">
         <div id="backupStatus" class="hint" style="margin-top:8px;"></div>
+        <div id="storageUsageInfo" class="hint" style="margin-top:4px;"></div>
+        <div class="hint" style="margin-top:4px;">Plik kopii nie zawiera klucza Gemini ani konfiguracji Firebase.</div>
       </div>
     </details>
 
@@ -281,11 +276,11 @@
         <div id="firebaseStatus" class="hint" style="margin-top:8px;"></div>
 
         <div class="form-group" style="margin-top:14px;">
-          <label>UID partnera (do udostępniania przepisów)</label>
+          <label>UID partnera (do udostępniania przepisów i suplementów)</label>
           <input type="text" id="settingPartnerUid" placeholder="wklej UID drugiej osoby">
           <div class="hint" style="margin-top:6px;">
-            Poproś partnera o jego UID (widoczne powyżej po zalogowaniu) i wklej tutaj — umożliwi to
-            przycisk „Udostępnij” przy przepisach.
+            Poproś partnera o jego UID (widoczne powyżej po zalogowaniu) i wklej tutaj — zapisuje się od razu.
+            Umożliwi to przycisk „Udostępnij” przy przepisach i suplementach.
           </div>
         </div>
       </div>
@@ -294,7 +289,10 @@
     <details class="settings-accordion danger-zone">
       <summary>Strefa niebezpieczna</summary>
       <div class="settings-accordion-body">
-        <button class="btn btn-danger" id="clearDataBtn">Wyczyść wszystkie dane</button>
+        <button class="btn btn-danger" id="clearDataBtn">Wyczyść dane na tym urządzeniu</button>
+        <div class="hint" style="margin:6px 0 14px;">Kopia w chmurze zostaje — dane wrócą po ponownym zalogowaniu.</div>
+        <button class="btn btn-danger" id="clearCloudDataBtn">Wyczyść dane na tym urządzeniu i w chmurze</button>
+        <div class="hint" style="margin-top:6px;">Wymaga zalogowania. Inne urządzenia stracą dane przy najbliższej synchronizacji.</div>
       </div>
     </details>
   </section>
@@ -499,8 +497,7 @@
 
       <div class="form-group">
         <label>Nazwa składnika</label>
-        <input type="text" id="ingredientName" placeholder="np. Ryż do sushi" list="ingredientSuggestions">
-        <datalist id="ingredientSuggestions"></datalist>
+        <input type="text" id="ingredientName" placeholder="np. Ryż do sushi">
       </div>
       <button type="button" class="btn btn-secondary" id="ingredientLookupBtn" style="margin-bottom:14px;">🔍 Sprawdź makro dla tej nazwy (AI)</button>
 

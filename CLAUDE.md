@@ -68,7 +68,12 @@ w `ui.js`.
    prywatnego Firestore użytkownika (`users/{uid}/meta/settings`); config Firebase jest
    per-urządzenie i nie opuszcza localStorage.
 
-6. **Zmiana modelu danych musi być wstecznie zgodna.** W localStorage użytkownika leżą
+6. **Zapis do chmury zawsze scala z chmurą i idzie przez `queueCloud`.** Nowy push nie może robić
+   samego `setDoc` lokalnej wersji — najpierw `pullDay`/`pullMeta`, `merge*`, zapis lokalny, potem push
+   (`pushDayToCloud`, `flushMetaPush` w `ui.js`). Inaczej urządzenie bez świeżego synca kasuje w chmurze
+   wpisy z drugiego urządzenia.
+
+7. **Zmiana modelu danych musi być wstecznie zgodna.** W localStorage użytkownika leżą
    wpisy sprzed miesięcy. Nowe pole = wartość domyślna przy odczycie (wzorzec:
    `Number(e.fiber) || 0`, `{ ...DEFAULT_SETTINGS, ...zapisane }`), nigdy migracja
    niszcząca ani zakładanie, że pole istnieje.
@@ -81,7 +86,9 @@ localStorage:
 - `weights` → mapa `{ "YYYY-MM-DD": { kg, smm?, bf?, updatedAt } }`
 - `favoriteProducts`, `recipes`, `analysisGoals`, `supplements`, `adhocQuickItems` → tablice
 - `dailyAnalyses`, `supplementLog`, `supplementAnalyses`, `dietAnalyses` → mapy
-- per-urządzenie, poza syncem: `themePreference`, `historyMetricPreference`, `geminiUsage`
+- per-urządzenie, poza syncem: `themePreference`, `historyMetricPreference`, `geminiUsage`, `nudgeDismissed`,
+  `seenSharedRecipeIds`, `seenSharedSupplementIds`
+- eksport JSON nie zawiera `geminiApiKey` ani `firebaseConfig`; import ich nie nadpisuje
 
 Wpis posiłku: `{ id, date, name, kcal, protein, carbs, fat, fiber, meal, time, updatedAt }`,
 gdzie `meal` ∈ `sniadanie|obiad|kolacja|przekaska` (stare wpisy bez `meal` — kategoria wg godziny).

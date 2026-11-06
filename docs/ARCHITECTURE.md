@@ -61,6 +61,9 @@ index.html  →  app.js  →  ui.js  →  storage.js  →  localStorage
 | `adhocQuickItems` | `AdhocQuickItem[]` | szybkie chipy leków doraźnych (nazwy ostatnio użyte), z nagrobkami |
 | `geminiUsage` | `{ month, calls, usd }` | licznik zapytań i kosztu Gemini w bieżącym miesiącu — per-urządzenie, poza syncem i eksportem |
 | `themePreference`, `historyMetricPreference` | string | preferencje per-urządzenie, poza syncem |
+| `nudgeDismissed` | `{ [rodzaj]: YYYY-MM-DD }` | ukryte do jutra podpowiedzi w Dzienniku — per-urządzenie, poza syncem i eksportem |
+| `seenSharedRecipeIds`, `seenSharedSupplementIds` | `string[]` | lokalny guard przed podwójnym importem ze skrzynki partnera (sekcja 7) |
+| `sessionStorage.supplementsUnlocked` | `'1'` | odblokowanie ukrytego modułu suplementów — do zamknięcia karty |
 
 ```javascript
 Entry = {
@@ -172,7 +175,10 @@ ogólne `pushMeta(docId, data)` i `pullAllMeta()` (wszystkie dokumenty meta jedn
 
 Push w trakcie pracy: `UI.pushMetaToCloud(nazwa, kluczRekordu?)` — debounce 2 s, zbiera
 dotknięte kolekcje i miesiące (domyślnie miesiąc oglądanego dnia; przy usuwaniu raportu z innego
-miesiąca podaj jego klucz). `visibilitychange → hidden` w `app.js` woła `UI.flushMetaPush()`, żeby
+miesiąca podaj jego klucz). Push w tle (dzień i meta) **zawsze najpierw czyta dokument z chmury i scala**
+(`pullDay`/`pullMeta` → `merge*` → zapis lokalny → `setDoc`) — bez tego urządzenie bez świeżego synca
+nadpisywało cały dokument swoją wersją. Wszystkie zapisy do chmury, także pełny sync, idą po kolei przez
+`queueCloud` w `ui.js` (dwa równoległe „odczyt → scal → zapis” mogłyby się wyprzedzić). `visibilitychange → hidden` w `app.js` woła `UI.flushMetaPush()`, żeby
 chowanie aplikacji tuż po zmianie nie zgubiło zapisu. Pull przy pełnym syncu czyta shardy **oraz**
 stary dokument zbiorczy `nazwa` (dane sprzed shardingu / ze starej wersji na drugim urządzeniu),
 scala i opróżnia dokument zbiorczy — bez utraty danych przy mieszanych wersjach.
@@ -189,7 +195,9 @@ tego samego użytkownika. Patrz sekcja 7.
 ## 4. Synchronizacja i rozwiązywanie konfliktów
 
 Sync jest **na żądanie**, nie realtime: pełny sync przy logowaniu/starcie aplikacji, a każdy zapis
-wypycha w tle tylko zmienioną kolekcję/dzień.
+wypycha w tle tylko zmienioną kolekcję/dzień (scaloną z chmurą). Przy powrocie z tła, najwyżej co 15 min,
+`refreshFromCloud` odświeża ostatnie 8 dni, bieżący miesiąc kolekcji i ustawienia (~20 odczytów) —
+starsze zmiany z drugiego urządzenia dochodzą przy najbliższym zimnym starcie.
 Świadomie zrezygnowano z nasłuchiwania na żywo — jeden użytkownik, rzadko dwa urządzenia naraz.
 
 Algorytm (`syncWithCloud` w `ui.js`):
@@ -201,6 +209,11 @@ Algorytm (`syncWithCloud` w `ui.js`):
    koszt rósł z liczbą dni i zjadał darmowy limit Firestore (20 tys. zapisów/dzień).
 5. Każda kolekcja we własnym `try` — błąd jednej (np. limit 1 MB) nie blokuje reszty; status
    i toast wymieniają, co się nie udało.
+
+**Dzień pełny (statystyki, eksport, AI):** miniony dzień z ≥50% celu kcal obowiązującego tego dnia
+(`isJudgedDay`/`isLoggedDay` w `ui.js`, cel z `goalsOnDate` = `settings.goalHistory`). Tylko takie dni
+wchodzą do średnich, „dni w celu”, średniej 7-dniowej, bilansu z wagi i progów analizy AI; dzień w toku
+i niepełne są przygaszone i trafiają do AI z flagą `dzien_w_toku`/`niepelny`. Seria używa tego samego progu.
 
 **Ustawienia** nie są listą rekordów, więc mają osobną regułę (`syncSettings`): wygrywa nowszy
 `updatedAt`; gdy lokalnie go brak (dane sprzed v64), wygrywa chmura jak dawniej.
@@ -226,8 +239,14 @@ z żywym rekordem i usunięcie się propaguje. Nagrobki nigdy nie są czyszczone
 znikomy przy skali jednego użytkownika.
 
 **Dodając nową synchronizowaną kolekcję** potrzebujesz kompletu: nagrobków przy usuwaniu,
-`merge*` w `storage.js`, `push*`/`pull*` w `firebase-sync.js`, wywołania w `syncWithCloud`,
-obsługi w eksporcie/imporcie JSON.
+`merge*` w `storage.js` (zwykle `mergeListBy`/`mergeMaps`), wpisu w tabeli `META` w `ui.js` (z `shard`,
+jeśli rośnie z czasem) — pełny sync, push w tle i odświeżenie przy powrocie obsłużą ją same — oraz
+obsługi w eksporcie/imporcie JSON (`exportData`, `importData` + `sanitizeImport`) i w `Storage.tombstoneAll`
+(„wyczyść też w chmurze”). `firebase-sync.js` nie wymaga zmian.
+
+**Czyszczenie danych:** „tylko to urządzenie” = `Storage.clearAllData()` + wylogowanie (chmura zostaje).
+„Urządzenie i chmura” = pełny sync → `Storage.tombstoneAll()` → pełny sync → `clearAllData()`. Samo
+kasowanie dokumentów w Firestore nie działa — drugie urządzenie wypchnęłoby dane z powrotem.
 
 ## 5. Service worker
 
@@ -236,8 +255,9 @@ obsługi w eksporcie/imporcie JSON.
   Nowy `index.html` dociera natychmiast.
 - **zasoby** (JS/CSS/ikony) → stale-while-revalidate. Odpowiedź z cache, aktualizacja w tle.
 
-Konsekwencja: po deployu użytkownik dostaje **nowy HTML ze starym JS** przy pierwszym
-otwarciu, a poprawną kombinację dopiero przy drugim. `install` pobiera shell z
+Konsekwencja: po deployu przez chwilę działa **nowy HTML ze starym JS**. Od v67 `app.js` przeładowuje
+stronę raz, gdy nowy SW przejmie kontrolę (`controllerchange`); od v68 przeładowanie czeka, aż żaden
+modal nie jest otwarty (`UI.reloadWhenIdle`), żeby nie skasować wypełnianego formularza. `install` pobiera shell z
 `cache: 'reload'`, żeby nowa wersja cache nie została wypełniona plikami z HTTP cache przeglądarki
 (GitHub Pages: `max-age=600`). Dlatego `CACHE_NAME` musi rosnąć przy
 każdej zmianie — `activate` kasuje wtedy stare cache i wymusza świeży pobór całego shella.
@@ -250,8 +270,8 @@ Objaw zapomnianego bumpu: przyciski nie reagują, w konsoli `UI.costamNowego is 
 Endpoint `v1beta/models/gemini-flash-latest:generateContent`. Zastosowania: OCR etykiety,
 zrzut ekranu z innej aplikacji, zdjęcie posiłku (szacowanie porcji), transkrypcja głosowa,
 parsowanie przepisu, analizy (dzień/dieta/suplementy), dane suplementu. Całe HTTP idzie przez
-`requestGemini`: kody błędów (`NO_API_KEY`, `NETWORK_ERROR`, `QUOTA_EXCEEDED` dla 429,
-`API_ERROR`, `PARSE_ERROR`), `responseMimeType: 'application/json'` dla wywołań JSON-owych (poza
+`requestGemini`: kody błędów (`NO_API_KEY`, `NETWORK_ERROR`, `TIMEOUT` po 60 s, `QUOTA_EXCEEDED` dla 429,
+`INVALID_API_KEY` dla 400/403 ze złym kluczem, `API_ERROR`, `PARSE_ERROR`), `responseMimeType: 'application/json'` dla wywołań JSON-owych (poza
 groundingiem `google_search`, który go nie obsługuje) i zapis zużycia. Parser nadal znosi tekst wokół
 JSON-a. Tekst błędu dla użytkownika zawsze z `UI.aiErrorText` / `UI.showAiError` (brak klucza →
 link do Ustawień).
@@ -271,7 +291,9 @@ Wartości przychodzą na 100 g i wymagają przeliczenia na gramaturę porcji.
 
 ### Firebase (`js/firebase-sync.js`)
 SDK ładowany dynamicznym `import()` z `gstatic.com` (stała `FIREBASE_SDK_VERSION`) — brak
-npm, brak bundlera. Config użytkownika parsowany z wklejonego tekstu przez `parseFirebaseConfig`.
+npm, brak bundlera. Config użytkownika parsowany z wklejonego tekstu przez `parseFirebaseConfig`
+(literał obiektu JS → JSON, bez `eval`/`new Function` — tekst configu nie może stać się kodem).
+Start bez sieci: `UI.initFirebase` ponawia init po zdarzeniu `online`.
 Logowanie: Google popup. Na GitHub Pages domena musi być na liście autoryzowanych w konsoli Firebase.
 
 ### Web Speech API (`js/voice.js`)

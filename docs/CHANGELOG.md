@@ -15,6 +15,50 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku] 2026-11-06 — Poprawki z analizy aplikacji (v68)
+**Co:** wdrożenie znalezisk z `docs/ANALIZA-2026-11-06.md` (ID K-xx) i decyzji właściciela z sekcji 5 raportu.
+- **Sync (K-02, K-22):** push w tle (`pushDayToCloud`, `flushMetaPush`) najpierw czyta dokument z chmury,
+  scala go z lokalnym i dopiero zapisuje. Wcześniej urządzenie bez świeżego synca nadpisywało cudze wpisy.
+  Wszystkie zapisy do chmury idą jedną kolejką (`queueCloud`), także pełny sync. Przy powrocie z tła
+  (co ≥15 min) działa lekkie odświeżenie: ostatnie 8 dni, bieżący miesiąc kolekcji i ustawienia
+  (`refreshFromCloud`, ~20 odczytów). W pełnym syncu każdy dzień ma własny `try`.
+- **Dzień pełny = ≥50% celu kcal, wszędzie (K-03, K-11, K-12, K-17):** średnie, „dni w celu”, kolory w Historii,
+  karta tygodnia, kalendarz, eksport Markdown i dane dla AI liczą tylko minione dni zaliczone. Dzień w toku
+  i dni niepełne są przygaszone i nie liczą się jako „w celu”. „Średnia 7 dni” uśrednia tylko dni pełne
+  (wcześniej puste dni liczyły się jako 0) i ma podpis o tym. AI dostaje flagi `dzien_w_toku`/`niepelny`,
+  a próg „za mało danych” liczy dni pełne. Podpowiedzi i kropki tygodnia nie liczą dni sprzed pierwszego wpisu.
+- **Bilans z wagi (K-04):** trend z regresji liniowej, min. 3 pomiary na ≥14 dni. Pomiar sprzed okresu
+  brany jest tylko, jeśli jest ≤7 dni wcześniej. TDEE liczone ze średniej dni pełnych.
+- **Historia celów w ocenie (K-06):** minione dni oceniane wg celu obowiązującego tego dnia (`goalsOnDate`).
+  Tryb celu bez historii (decyzja właściciela).
+- **Suplementy (K-05, K-10):** analiza AI i eksport Markdown dostają prawdziwą nazwę, nie wyświetlaną
+  (cache interakcji unieważniony prefiksem `v2|`). „Planowe” dni dopiero od `anchorDate`. Dawki wstrzymanych,
+  usuniętych i spoza harmonogramu widać w dniu jako „poza planem”.
+- **Import/eksport (K-07, K-08, K-09):** eksport JSON bez klucza Gemini i configu Firebase. Import nie cofa
+  nowszych ustawień, nie nadpisuje configu ani klucza, waliduje klucze dat i id, a po imporcie uruchamia sync.
+  `parseFirebaseConfig` bez `new Function` (literał JS → JSON).
+- **Czyszczenie danych (K-25):** dwa przyciski. „Tylko to urządzenie” robi to co wcześniej, plus wylogowanie
+  i prawdziwy komunikat. „Urządzenie i chmura” to pełny sync → nagrobki dla wszystkiego (`Storage.tombstoneAll`)
+  → sync → wyczyszczenie lokalne. Potwierdzenie: dialog i wpisanie „USUŃ”.
+- **Drobne:** „⭐ Zapamiętaj składnik” działa (K-01, regresja z v64). UID partnera zapisuje się od razu (K-14).
+  Timeout 60 s i osobny komunikat przy złym kluczu Gemini, blokada przycisków skanu w trakcie zapytania (K-18).
+  Etykieta z samą kolumną „porcja” wypełnia formularz (K-19). Brak sieci przy starcie ponawia init Firebase
+  po powrocie połączenia, a dyktowanie offline mówi o braku internetu (K-21). Indeks produktów budowany raz
+  na otwarcie formularza, `per100g` zaokrąglone, rozmiar danych w Ustawieniach (K-23). Ponowne udostępnienie
+  odebranego przepisu działa (K-24). `flag` z AI na białej liście (K-13). Ciemniejsze akcenty w jasnym
+  motywie (K-15). Przeładowanie po aktualizacji SW czeka na zamknięcie formularza (K-20). Logika skanera
+  przeniesiona z `app.js` do `UI.cancelBarcode`/`submitManualBarcode` (Escape w skanerze składnika wraca do
+  składnika). Usunięte: zaślepka „Suplementy i leki” w Ustawieniach, pusty datalist, `getFrequentProducts` (K-26).
+**Dlaczego:** analiza 2026-11-06. Najpoważniejsze były nadpisywanie danych w chmurze przez nieaktualne
+urządzenie i statystyki nagradzające niedologowanie.
+**Pliki:** `js/ui.js`, `js/storage.js`, `js/firebase-sync.js`, `js/ocr.js`, `js/recipes.js`, `js/voice.js`,
+`js/app.js`, `index.html`, `css/style.css`, `sw.js` (v67→v68), dokumentacja.
+**Uwagi:** zamiast pullu przyrostowego po `serverTimestamp` (wariant z raportu, sekcja 5) wdrożone lekkie
+odświeżenie przy powrocie. Nie zmienia ono schematu Firestore, a przy jednym użytkowniku wystarcza
+(komentarz `ponytail:` przy `refreshFromCloud`). Bez zmian: K-16 (przecinek w `type=number`, hipoteza do
+sprawdzenia na telefonie), aktualizacja SDK Firebase (K-28). Stare raporty AI diety mają bilans liczony
+dawną metodą.
+
 ## [b5698c4] 2026-10-31 — Automatyczne przeładowanie po aktualizacji (v67)
 **Co:** gdy nowy service worker przejmie stronę, aplikacja raz się przeładowuje.
 **Dlaczego:** po wdrożeniu v66 przycisk eksportu „nic nie robił”. Nawigacja idzie przez sieć

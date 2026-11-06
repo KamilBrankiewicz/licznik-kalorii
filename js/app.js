@@ -66,44 +66,15 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   document.getElementById('scanBarcodeBtn').addEventListener('click', () => UI.openBarcodeScanner());
-  document.getElementById('barcodeCancelBtn').addEventListener('click', () => {
-    if (window._barcodeReturnToIngredient) {
-      window._barcodeReturnToIngredient = false;
-      Barcode.stop();
-      document.getElementById('barcodeOverlay').classList.remove('active');
-      document.getElementById('ingredientModalOverlay').classList.add('active');
-    } else {
-      UI.closeBarcodeScanner();
-    }
-  });
+  document.getElementById('barcodeCancelBtn').addEventListener('click', () => UI.cancelBarcode());
   document.getElementById('barcodeManualSearchBtn').addEventListener('click', () => {
-    const code = document.getElementById('barcodeManualInput').value;
-    if (window._barcodeReturnToIngredient) {
-      Recipes.lookupIngredientBarcode(code);
-    } else {
-      UI.lookupBarcode(code, false);
-    }
+    UI.submitManualBarcode(document.getElementById('barcodeManualInput').value);
   });
   document.getElementById('barcodeManualInput').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      if (window._barcodeReturnToIngredient) {
-        Recipes.lookupIngredientBarcode(e.target.value);
-      } else {
-        UI.lookupBarcode(e.target.value, false);
-      }
-    }
+    if (e.key === 'Enter') UI.submitManualBarcode(e.target.value);
   });
   document.getElementById('barcodeOverlay').addEventListener('click', (e) => {
-    if (e.target.id === 'barcodeOverlay') {
-      if (window._barcodeReturnToIngredient) {
-        window._barcodeReturnToIngredient = false;
-        Barcode.stop();
-        document.getElementById('barcodeOverlay').classList.remove('active');
-        document.getElementById('ingredientModalOverlay').classList.add('active');
-      } else {
-        UI.closeBarcodeScanner();
-      }
-    }
+    if (e.target.id === 'barcodeOverlay') UI.cancelBarcode();
   });
 
   document.getElementById('entryGrams').addEventListener('input', () => UI.recalcFromPer100g());
@@ -216,7 +187,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
     if (document.getElementById('barcodeOverlay').classList.contains('active')) {
-      UI.closeBarcodeScanner();
+      UI.cancelBarcode();
     } else if (document.getElementById('ingredientModalOverlay').classList.contains('active')) {
       Recipes.closeIngredientModal();
     } else if (document.getElementById('recipeModalOverlay').classList.contains('active')) {
@@ -246,6 +217,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('saveSettingsBtn').addEventListener('click', () => UI.saveSettingsFromForm());
   document.getElementById('clearDataBtn').addEventListener('click', () => UI.clearAllData());
+  document.getElementById('clearCloudDataBtn').addEventListener('click', () => UI.clearAllDataEverywhere());
 
   const toggleBtn = document.getElementById('toggleApiKeyVisibility');
   toggleBtn.addEventListener('click', () => {
@@ -273,6 +245,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   document.getElementById('saveFirebaseConfigBtn').addEventListener('click', () => UI.saveFirebaseConfigFromForm());
+  document.getElementById('settingPartnerUid').addEventListener('change', () => UI.savePartnerUid());
 
   // ── Cele analizy dnia ──
   document.getElementById('newGoalBtn').addEventListener('click', () => UI.openGoalModal());
@@ -342,7 +315,7 @@ document.addEventListener('DOMContentLoaded', () => {
       navigator.serviceWorker.addEventListener('controllerchange', () => {
         if (reloading) return;
         reloading = true;
-        location.reload();
+        UI.reloadWhenIdle();
       });
     }
     navigator.serviceWorker.register('sw.js').catch((err) => {
@@ -350,15 +323,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  const existingFirebaseConfig = Storage.getSettings().firebaseConfig;
-  if (existingFirebaseConfig && window.FirebaseSync) {
-    try {
-      const parsed = FirebaseSync.parseFirebaseConfig(existingFirebaseConfig);
-      FirebaseSync.init(parsed).then(() => UI.ensureAuthListener());
-    } catch (e) {
-      console.warn('Nie udało się wczytać zapisanej konfiguracji Firebase:', e);
-    }
-  }
+  UI.initFirebase();
 });
 
 // Pełny localStorage: Storage rzuca STORAGE_FULL z dowolnego handlera — jeden wspólny komunikat

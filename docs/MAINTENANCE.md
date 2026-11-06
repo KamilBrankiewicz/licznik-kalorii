@@ -60,19 +60,32 @@ i sprawdź:
       dodanie wpisu ręcznie, edycja wpisu, usunięcie wpisu, przełączenie dnia
       (‹ ›), przełączenie widoków (Dziennik / Historia / Ustawienia).
 - [ ] **Widok mobilny** — DevTools ~375 px. Aplikacja jest mobile-first, to główny scenariusz.
-- [ ] **Tryb ciemny i jasny**, jeśli zmiana dotykała CSS.
+- [ ] **Tryb ciemny i jasny**, jeśli zmiana dotykała CSS (jasny — sprawdź czytelność kolorów akcentu na białym).
+- [ ] **Wywołania między modułami** — po zmianie nazwy lub usunięciu funkcji `UI.*` sprawdź, czy nikt jej
+      nie woła (w v64 tak zepsuł się „Zapamiętaj składnik”). Ma nic nie wypisać:
+      `for f in $(grep -oh "UI\.[a-zA-Z0-9]*" js/*.js | sort -u | cut -d. -f2); do grep -q "^    $f,\?$\|^    $f:" js/ui.js || echo "brak UI.$f"; done`
 
 ### C3. Testy zależne od zakresu zmiany
 
 Zmiana w **modelu danych / storage**:
 - [ ] Otwórz aplikację z danymi sprzed zmiany (nie czyść localStorage) — stare wpisy renderują się poprawnie.
 - [ ] Eksport JSON → import JSON (UI ma tylko tryb „scal"; `Storage.importData(data, 'replace')` jest dostępny z konsoli) → dane spójne.
+- [ ] Nowa kolekcja → także w `sanitizeImport` i `Storage.tombstoneAll` (inaczej import jej nie wczyta, a „wyczyść w chmurze” jej nie usunie).
 
 Zmiana w **synchronizacji**:
 - [ ] Zaloguj się, zsynchronizuj, przeładuj — dane się nie zdublowały.
 - [ ] Drugi sync bez zmian nie robi żadnych zapisów (DevTools → Network, brak żądań `Write`/`Commit`).
 - [ ] Usuń wpis, zsynchronizuj, przeładuj — wpis **nie wrócił** (test nagrobków).
+- [ ] **Dwa urządzenia / karty:** A dodaje wpis; B (otwarta wcześniej, bez przeładowania) dodaje wpis na ten
+      sam dzień; w chmurze są **oba** (push w tle scala z chmurą, nie nadpisuje).
 - [ ] Sprawdź dokumenty w konsoli Firestore.
+- [ ] Bez prawdziwego Firebase: podmień `window.FirebaseSync` na obiekt w pamięci (`pullDay`/`pushDay`/
+      `pullMeta`/`pushMeta`/`pullAllDays`/`pullAllMeta`) i sprawdź stan „chmury” po akcji.
+
+Zmiana w **statystykach, ocenie dnia lub danych dla AI**:
+- [ ] Dzień w toku i miniony dzień z <50% celu kcal nie zmieniają średnich ani „dni w celu” (są przygaszone).
+- [ ] Dzień sprzed pierwszego wpisu i sprzed dodania suplementu nie liczy się jako brak.
+- [ ] Dzień sprzed zmiany celu oceniany wg ówczesnego celu (`settings.goalHistory`).
 
 Zmiana w **integracji AI/skanowaniu**:
 - [ ] Ścieżka bez klucza Gemini → czytelny komunikat kierujący do Ustawień, nie crash.
@@ -120,8 +133,11 @@ Zmiana w **service workerze lub liście plików**:
 
 ## Rytm utrzymaniowy (co kilka miesięcy)
 
-- [ ] `FIREBASE_SDK_VERSION` w `firebase-sync.js` — czy nie jest mocno przestarzała.
-- [ ] Model Gemini w `ocr.js` (`gemini-flash-latest`) — czy endpoint i nazwa nadal aktualne.
+- [ ] `FIREBASE_SDK_VERSION` w `firebase-sync.js` — czy nie jest mocno przestarzała (10.12.2 to gałąź z 2024 r.;
+      po podbiciu: logowanie popupem, pełny sync, push w tle).
+- [ ] Model Gemini w `ocr.js` (`gemini-flash-latest`) — czy endpoint i nazwa nadal aktualne. Alias sam przechodzi
+      na nowsze modele: sprawdź, czy `modelVersion` z odpowiedzi ma wiersz w `GEMINI_PRICES`, i jakość OCR etykiet.
+- [ ] Ustawienia → Kopia zapasowa → „Dane na tym urządzeniu” — daleko od ~5 MB?
 - [ ] Cennik `GEMINI_PRICES` i kurs `USD_PLN` w `ocr.js` — 1.01.2027 drożeją modele 3.7/3.8 Flash.
 - [ ] Zużycie darmowego tieru Firebase i Gemini.
 - [ ] Ręczny eksport JSON jako kopia zapasowa niezależna od Firestore.

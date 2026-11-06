@@ -25,6 +25,12 @@
     --text-muted: #6b6b80;
     --border: #e2e2ec;
     --accent-soft: rgba(52,211,153,0.12);
+    /* ciemniejsze odcienie: jasne #34d399/#fbbf24/#fb923c miały na białym kontrast 1,7–2,3:1 */
+    --accent: #047857;
+    --accent-dark: #065f46;
+    --accent-text: #ffffff;
+    --warning: #b45309;
+    --off-goal: #c2410c;
     color-scheme: light;
   }
 }
@@ -37,6 +43,11 @@
   --text-muted: #6b6b80;
   --border: #e2e2ec;
   --accent-soft: rgba(52,211,153,0.12);
+  --accent: #047857;
+  --accent-dark: #065f46;
+  --accent-text: #ffffff;
+  --warning: #b45309;
+  --off-goal: #c2410c;
   color-scheme: light;
 }
 
@@ -1077,6 +1088,17 @@ html, body {
   background: var(--off-goal);
 }
 
+/* Dzień niepełny (<50% celu kcal) — nie wchodzi do średnich ani „dni w celu” */
+.week-bar.partial {
+  background: var(--text-muted);
+  opacity: 0.45;
+}
+
+.stats-hint {
+  margin-top: 8px;
+  font-size: 11px;
+}
+
 .week-labels {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
@@ -1152,7 +1174,11 @@ html, body {
   width: 8px;
   height: 8px;
   border-radius: 50%;
+  background: var(--accent);
 }
+.history-dot.bad { background: var(--off-goal); }
+.history-dot.partial,
+.cal-dot.partial { background: transparent; border: 1.5px solid var(--text-muted); box-sizing: border-box; }
 
 h1.page-title {
   font-size: 20px;

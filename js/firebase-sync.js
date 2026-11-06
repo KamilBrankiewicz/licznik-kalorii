@@ -8,14 +8,26 @@ let firestoreMod = null;
 let currentUser = null;
 const authListeners = [];
 
+// Config wklejony z konsoli Firebase (literał obiektu JS, z `const firebaseConfig =` lub bez) albo JSON.
+// Bez eval/new Function — tekst configu nie może stać się kodem (np. z podrzuconego pliku importu).
 function parseFirebaseConfig(rawText) {
   const trimmed = rawText.trim();
   if (!trimmed) throw new Error('EMPTY_CONFIG');
+  const json = trimmed
+    .replace(/^\s*\/\/.*$/gm, '')                         // komentarze w osobnych liniach
+    .replace(/^\s*(const|let|var)\s+[\w$]+\s*=\s*/, '')
+    .replace(/;\s*$/, '')
+    .replace(/'/g, '"')
+    .replace(/([{,]\s*)([A-Za-z_$][\w$]*)\s*:/g, '$1"$2":') // klucze bez cudzysłowów
+    .replace(/,\s*}/g, '}');                                // przecinek przed }
+  let config;
   try {
-    return new Function('return (' + trimmed.replace(/^const\s+\w+\s*=\s*/, '').replace(/;\s*$/, '') + ')')();
+    config = JSON.parse(json);
   } catch (e) {
     throw new Error('INVALID_CONFIG');
   }
+  if (!config || typeof config !== 'object' || !config.apiKey || !config.projectId) throw new Error('INVALID_CONFIG');
+  return config;
 }
 
 async function init(config) {
@@ -61,6 +73,21 @@ async function pushDay(date, entries) {
   await setDoc(doc(db, 'users', currentUser.uid, 'days', date), { entries });
 }
 
+// Pojedyncze dokumenty — do scalenia z chmurą tuż przed zapisem w tle (ui.js: pushDayToCloud/flushMetaPush)
+async function pullDay(date) {
+  if (!currentUser) return [];
+  const { doc, getDoc } = firestoreMod;
+  const snap = await getDoc(doc(db, 'users', currentUser.uid, 'days', date));
+  return snap.exists() ? snap.data().entries || [] : [];
+}
+
+async function pullMeta(docId) {
+  if (!currentUser) return null;
+  const { doc, getDoc } = firestoreMod;
+  const snap = await getDoc(doc(db, 'users', currentUser.uid, 'meta', docId));
+  return snap.exists() ? snap.data() : null;
+}
+
 async function pullAllDays() {
   if (!currentUser) return {};
   const { collection, getDocs } = firestoreMod;
@@ -96,8 +123,9 @@ async function pushSharedRecipe(recipientUid, recipe) {
   await setDoc(doc(db, 'sharedRecipes', recipientUid, 'inbox', shareId), {
     name: recipe.name,
     ingredients: recipe.ingredients,
-    totalWeightCooked: recipe.totalWeightCooked,
-    per100g: recipe.per100g,
+    // Firestore odrzuca undefined — przepis odebrany od partnera nie ma per100g
+    totalWeightCooked: recipe.totalWeightCooked ?? null,
+    per100g: recipe.per100g ?? null,
     sharedBy: currentUser.uid,
     sharedAt: new Date().toISOString()
   });
@@ -159,8 +187,10 @@ const FirebaseSync = {
   isSignedIn,
   getCurrentUser,
   pushDay,
+  pullDay,
   pullAllDays,
   pushMeta,
+  pullMeta,
   pullAllMeta,
   pushSharedRecipe,
   pullSharedRecipes,

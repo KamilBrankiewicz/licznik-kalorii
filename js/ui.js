@@ -97,6 +97,8 @@ const UI = (() => {
     switch (err && err.message) {
       case 'NO_API_KEY': return 'Brak klucza Gemini API — dodaj go w Ustawieniach.';
       case 'NETWORK_ERROR': return 'Błąd sieci — sprawdź połączenie z internetem.';
+      case 'TIMEOUT': return 'Gemini nie odpowiada — spróbuj ponownie za chwilę.';
+      case 'INVALID_API_KEY': return 'Klucz Gemini jest nieprawidłowy albo nieaktywny — sprawdź go w Ustawieniach.';
       case 'QUOTA_EXCEEDED': return 'Wyczerpany limit darmowego Gemini — spróbuj za minutę albo jutro.';
       case 'NOT_RECOGNIZED': return notRecognized || failed;
       default: return failed;
@@ -136,13 +138,11 @@ const UI = (() => {
 
     if (wasUnlocked) {
       switchView('dziennik');
-      updateSupplementsSettingsVisibility();
       showToast('Moduł suplementów ukryty');
       return;
     }
 
     switchView('suplementy');
-    updateSupplementsSettingsVisibility();
     showToast('Moduł suplementów odblokowany');
   }
 
@@ -177,11 +177,51 @@ const UI = (() => {
   let lastKnownToday = currentDate;
 
   function handleAppResume() {
+    refreshFromCloud();
     const today = toDateStr(new Date());
     if (today === lastKnownToday) return;
     if (currentDate === lastKnownToday) currentDate = today;
     lastKnownToday = today;
     renderCurrentDayView();
+  }
+
+  // Lekkie odświeżenie przy powrocie z tła (pełny sync jest tylko przy zimnym starcie): ostatnie
+  // dni i bieżący miesiąc kolekcji — ~20 odczytów zamiast całej historii. Zmiany z drugiego
+  // urządzenia starsze niż RESUME_SYNC_DAYS dni dojdą przy najbliższym zimnym starcie.
+  // ponytail: stałe okno dni; sync przyrostowy po znaczniku serwera, gdyby to przestało wystarczać
+  const RESUME_SYNC_MIN_MS = 15 * 60 * 1000;
+  const RESUME_SYNC_DAYS = 8;
+  let lastCloudRefresh = Date.now(); // zimny start i tak robi pełny sync
+
+  function refreshFromCloud() {
+    if (!(window.FirebaseSync && FirebaseSync.isSignedIn())) return;
+    if (Date.now() - lastCloudRefresh < RESUME_SYNC_MIN_MS) return;
+    lastCloudRefresh = Date.now();
+    const today = toDateStr(new Date());
+    queueCloud(async () => {
+      let changed = false;
+      for (const date of dateRangeEnding(today, RESUME_SYNC_DAYS)) {
+        const remote = await FirebaseSync.pullDay(date);
+        const local = Storage.getRawEntries(date);
+        const merged = Storage.mergeEntryLists(remote, local);
+        if (!sameRecords(merged, local)) { Storage.saveEntries(date, merged); changed = true; }
+        if (!sameRecords(merged, remote)) await FirebaseSync.pushDay(date, merged);
+      }
+      for (const [name, cfg] of Object.entries(META)) {
+        const docId = cfg.shard ? `${name}-${today.slice(0, 7)}` : name;
+        const remote = (await FirebaseSync.pullMeta(docId))?.[cfg.field] ?? (cfg.field === 'map' ? {} : []);
+        const local = cfg.get();
+        const merged = cfg.merge(remote, local);
+        if (!sameRecords(merged, local)) { cfg.save(merged); changed = true; }
+        const mine = cfg.shard ? filterShard(merged, cfg.shard, today.slice(0, 7)) : merged;
+        if (!sameRecords(mine, remote)) await FirebaseSync.pushMeta(docId, { [cfg.field]: mine });
+      }
+      await syncSettings(await FirebaseSync.pullMeta('settings'));
+      if (changed) renderCurrentDayView();
+    }).catch(() => {
+      lastCloudRefresh = 0; // spróbuj przy następnym powrocie
+      document.getElementById('firebaseStatus').textContent = 'Nie udało się odświeżyć danych z chmury — spróbuję przy następnym otwarciu.';
+    });
   }
 
   function renderCurrentDayView() {
@@ -438,12 +478,19 @@ const UI = (() => {
   };
 
   // Porównanie niezależne od kolejności kluczy (Firestore zwraca mapy z posortowanymi kluczami)
+  const stableJson = (v) => JSON.stringify(v, (k, val) =>
+    (val && typeof val === 'object' && !Array.isArray(val)
+      ? Object.fromEntries(Object.entries(val).sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0)))
+      : val));
+
   function sameData(a, b) {
-    const stable = (v) => JSON.stringify(v, (k, val) =>
-      (val && typeof val === 'object' && !Array.isArray(val)
-        ? Object.fromEntries(Object.entries(val).sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0)))
-        : val));
-    return stable(a) === stable(b);
+    return stableJson(a) === stableJson(b);
+  }
+
+  // Jak sameData, ale kolejność rekordów w liście bez znaczenia (merge zmienia kolejność)
+  function sameRecords(a, b) {
+    const canon = (v) => (Array.isArray(v) ? v.map(stableJson).sort().join('\n') : stableJson(v));
+    return canon(a) === canon(b);
   }
 
   function filterShard(map, shard, month) {
@@ -464,6 +511,21 @@ const UI = (() => {
     metaPushTimer = setTimeout(flushMetaPush, 2000);
   }
 
+  // Wszystkie zapisy do chmury (push w tle i pełny sync) idą po kolei przez jedną kolejkę — dwa
+  // równoległe „odczyt → scal → zapis” tego samego dokumentu mogłyby się wyprzedzić i zapisać starszy stan.
+  // ponytail: jedna globalna kolejka; przy jednym użytkowniku przepustowość nie ma znaczenia
+  let cloudQueue = Promise.resolve();
+  function queueCloud(fn) {
+    const run = cloudQueue.then(fn);
+    cloudQueue = run.catch(() => {});
+    return run;
+  }
+
+  // Lokalny stan po scaleniu z chmurą różni się od tego, co było — odśwież widok dnia
+  function rerenderIfChanged(before, after) {
+    if (!sameRecords(before, after)) renderCurrentDayView();
+  }
+
   function flushMetaPush() {
     clearTimeout(metaPushTimer);
     metaPushTimer = null;
@@ -472,11 +534,20 @@ const UI = (() => {
     if (pending.length === 0 || !(window.FirebaseSync && FirebaseSync.isSignedIn())) return;
     pending.forEach(([name, months]) => {
       const cfg = META[name];
-      const data = cfg.get();
-      const writes = cfg.shard
-        ? [...months].map((m) => FirebaseSync.pushMeta(`${name}-${m}`, { map: filterShard(data, cfg.shard, m) }))
-        : [FirebaseSync.pushMeta(name, { [cfg.field]: data })];
-      Promise.all(writes).catch(() => showToast(`Błąd synchronizacji: ${cfg.label}`));
+      const docIds = cfg.shard ? [...months].map((m) => `${name}-${m}`) : [name];
+      // Scalenie z chmurą przed zapisem: bez tego urządzenie bez świeżego synca nadpisywało cały
+      // dokument swoją (nieaktualną) wersją i gubiło zmiany z drugiego urządzenia
+      queueCloud(async () => {
+        for (const docId of docIds) {
+          const remote = (await FirebaseSync.pullMeta(docId))?.[cfg.field] ?? (cfg.field === 'map' ? {} : []);
+          const before = cfg.get();
+          const merged = cfg.merge(remote, before);
+          cfg.save(merged);
+          rerenderIfChanged(before, merged);
+          const data = cfg.shard ? filterShard(merged, cfg.shard, docId.slice(name.length + 1)) : merged;
+          await FirebaseSync.pushMeta(docId, { [cfg.field]: data });
+        }
+      }).catch(() => showToast(`Błąd synchronizacji: ${cfg.label}`));
     });
   }
 
@@ -518,20 +589,30 @@ const UI = (() => {
   const GOAL_TOLERANCE = 0.05; // ±5% celu liczy się jako „w celu"
   const KCAL_JUDGE_BY_MODE = { cut: 'max', maintain: 'range', bulk: 'min' };
 
+  // Cele obowiązujące danego dnia wg settings.goalHistory; przed początkiem historii — bieżące.
+  // Tryb celu (goalMode) nie ma historii — kierunek oceny zawsze z bieżącego (decyzja 2026-11-06).
+  function goalsOnDate(date, settings) {
+    const history = Array.isArray(settings.goalHistory) ? settings.goalHistory : [];
+    return history.filter((h) => h.date <= date).pop() || settings;
+  }
+
   function metricWithGoal(metricKey, settings) {
     const base = HISTORY_METRICS[metricKey];
     const judge = metricKey === 'kcal' ? (KCAL_JUDGE_BY_MODE[settings.goalMode] || 'max') : base.judge;
-    return { ...base, judge, goal: settings[base.goalKey] };
+    const goalOn = (date) => Number(goalsOnDate(date, settings)[base.goalKey]) || 0;
+    return { ...base, judge, goal: settings[base.goalKey], goalOn };
   }
 
   // Jedyne miejsce oceny dnia (Dziennik, słupki, wykres, kalendarz, lista historii).
   // „Za mało" oceniamy dopiero dla minionych dni — w trakcie dnia to normalny stan.
+  // Cel = obowiązujący tego dnia (historia celów), nie dzisiejszy.
   function isBadHistoryDay(summary, metric, date) {
-    if (!summary.kcal || !metric.goal) return false; // dzień bez wpisów / brak celu — nie oceniamy
+    const goal = metric.goalOn ? metric.goalOn(date) : metric.goal;
+    if (!summary.kcal || !goal) return false; // dzień bez wpisów / brak celu — nie oceniamy
     const value = summary[metricKeyOf(metric)];
-    const tol = metric.goal * GOAL_TOLERANCE;
-    const over = value > metric.goal + tol;
-    const under = value < metric.goal - tol && date < toDateStr(new Date());
+    const tol = goal * GOAL_TOLERANCE;
+    const over = value > goal + tol;
+    const under = value < goal - tol && date < toDateStr(new Date());
     if (metric.judge === 'max') return over;
     if (metric.judge === 'min') return under;
     if (metric.judge === 'range') return over || under;
@@ -554,9 +635,22 @@ const UI = (() => {
 
   const LOGGED_DAY_SHARE = 0.5; // dzień zaliczony = zalogowane ≥50% celu kcal
 
-  function isLoggedDay(date, settings) {
-    const kcal = Storage.getDailySummary(date).kcal;
-    return kcal > 0 && kcal >= (settings.kcalGoal || 0) * LOGGED_DAY_SHARE;
+  function isLoggedDay(date, settings, summary = Storage.getDailySummary(date)) {
+    return summary.kcal > 0 && summary.kcal >= (Number(goalsOnDate(date, settings).kcalGoal) || 0) * LOGGED_DAY_SHARE;
+  }
+
+  // Dzień „pełny” = miniony i zaliczony (≥50% celu kcal). Jedyna podstawa średnich, „dni w celu”,
+  // kolorów w Historii, eksportu i danych dla AI — dzień w toku i dni niedologowane nie zaniżają
+  // średnich ani nie liczą się jako „w celu” (decyzja 2026-11-06).
+  function isJudgedDay(date, settings, summary) {
+    return date < toDateStr(new Date()) && isLoggedDay(date, settings, summary);
+  }
+
+  // Klasa kropki/słupka: today = oceniamy tylko przekroczenie (isBadHistoryDay pilnuje „za mało”),
+  // miniony niepełny = neutralny, reszta wg oceny celu
+  function dayJudgeClass(date, summary, metric, settings) {
+    if (date !== toDateStr(new Date()) && !isJudgedDay(date, settings, summary)) return 'partial';
+    return isBadHistoryDay(summary, metric, date) ? 'bad' : 'good';
   }
 
   function weekStartOf(dateStr) {
@@ -587,7 +681,9 @@ const UI = (() => {
   // Zachęta do uzupełnienia wczoraj/przedwczoraj; starszych dni nie ruszamy (z pamięci za trudne).
   // Po przerwie ≥3 dni ton „nowego startu" zamiast wyliczania braków.
   function backfillNudge(settings, today) {
-    const missing = [shiftDateStr(today, -2), shiftDateStr(today, -1)].filter((d) => !isLoggedDay(d, settings));
+    const firstDate = Storage.getFirstDataDate(); // dni sprzed początku używania nie są „niepełne”
+    const missing = [shiftDateStr(today, -2), shiftDateStr(today, -1)]
+      .filter((d) => firstDate && d >= firstDate && !isLoggedDay(d, settings));
     if (!missing.length) return null;
     let lastLoggedAgo = 0;
     for (let i = 1; i <= 60 && !lastLoggedAgo; i++) if (isLoggedDay(shiftDateStr(today, -i), settings)) lastLoggedAgo = i;
@@ -638,16 +734,17 @@ const UI = (() => {
     const today = toDateStr(new Date());
     const start = weekStartOf(currentDate);
     const dayNames = ['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'So', 'Nd'];
+    const firstDate = Storage.getFirstDataDate() || today;
     let done = 0, counted = 0;
     const dots = dayNames.map((name, i) => {
       const date = shiftDateStr(start, i);
       const logged = date <= today && isLoggedDay(date, settings);
       let cls = 'missed';
-      if (date > today) cls = 'future';
+      if (date > today || date < firstDate) cls = 'future'; // przed startem aplikacji — nie liczymy jako brak
       else if (logged) cls = 'done';
       else if (date === today) cls = 'today';
       if (logged) done++;
-      if (date < today || logged) counted++;
+      if ((date < today && date >= firstDate) || logged) counted++;
       const [, m, d] = date.split('-');
       return `<button type="button" class="habit-dot ${cls}${date === currentDate ? ' current' : ''}" data-date="${date}" aria-label="${name} ${d}.${m}"${cls === 'future' ? ' disabled' : ''}></button>`;
     }).join('');
@@ -691,17 +788,17 @@ const UI = (() => {
       days.push({ date, label: dayNames[d.getDay()], summary: Storage.getDailySummary(date) });
     }
 
-    const daysWithEntries = days.filter((d) => d.summary.kcal > 0);
-    if (daysWithEntries.length === 0) {
+    if (!days.some((d) => d.summary.kcal > 0)) {
       container.innerHTML = '';
       return;
     }
 
+    const judged = days.filter((d) => isJudgedDay(d.date, settings, d.summary));
     const maxVal = Math.max(metric.goal, ...days.map((d) => valueOf(d.summary)), 1);
     const goalPct = Math.round((metric.goal / maxVal) * 100);
-    const avg = (key) =>
-      Math.round(daysWithEntries.reduce((s, d) => s + d.summary[key], 0) / daysWithEntries.length);
-    const inGoal = daysWithEntries.filter((d) => !isBadHistoryDay(d.summary, metric, d.date)).length;
+    const avg = (key) => (judged.length ? Math.round(judged.reduce((s, d) => s + d.summary[key], 0) / judged.length) : '—');
+    const inGoal = judged.filter((d) => !isBadHistoryDay(d.summary, metric, d.date)).length;
+    const barClass = { good: '', bad: 'over', partial: 'partial' };
 
     container.innerHTML = `
       <div class="summary-card">
@@ -710,7 +807,7 @@ const UI = (() => {
           <div class="goal-line" style="bottom:${goalPct}%"></div>
           ${days
             .map(
-              (d) => `<div class="week-bar ${isBadHistoryDay(d.summary, metric, d.date) ? 'over' : ''}" data-date="${d.date}" style="height:${Math.round((valueOf(d.summary) / maxVal) * 100)}%"></div>`
+              (d) => `<div class="week-bar ${barClass[dayJudgeClass(d.date, d.summary, metric, settings)]}" data-date="${d.date}" style="height:${Math.round((valueOf(d.summary) / maxVal) * 100)}%"></div>`
             )
             .join('')}
         </div>
@@ -730,8 +827,9 @@ const UI = (() => {
           <div class="week-stat"><div class="value">${avg('carbs')} g</div><div class="label">śr. węgle</div></div>
           <div class="week-stat"><div class="value">${avg('fat')} g</div><div class="label">śr. tłuszcz</div></div>
           <div class="week-stat"><div class="value">${avg('fiber')} g</div><div class="label">śr. błonnik</div></div>
-          <div class="week-stat"><div class="value">${inGoal}/${daysWithEntries.length}</div><div class="label">${metric.judge === 'none' ? 'dni z wpisem' : 'dni w celu'}</div></div>
+          <div class="week-stat"><div class="value">${metric.judge === 'none' ? judged.length : `${inGoal}/${judged.length}`}</div><div class="label">${metric.judge === 'none' ? 'dni pełne' : 'dni w celu'}</div></div>
         </div>
+        <div class="hint stats-hint">${FULL_DAYS_HINT}</div>
       </div>
     `;
 
@@ -740,7 +838,10 @@ const UI = (() => {
     });
   }
 
-  function buildNutritionChart(days, metric) {
+  const FULL_DAYS_HINT = 'Średnie i „dni w celu” liczone z dni pełnych (≥50% celu kcal), bez dnia dzisiejszego. Dni niepełne — przygaszone.';
+
+  // days = punkty wykresu (sumy albo wygładzone), judgedDays = surowe sumy dni pełnych do „dni w celu”
+  function buildNutritionChart(days, metric, judgedDays) {
     const metricKey = metricKeyOf(metric), goal = metric.goal, unit = metric.unit, judge = metric.judge;
     const W = 300, H = 100, PAD = 6;
     const vals = days.map((d) => d.summary[metricKey]);
@@ -764,7 +865,7 @@ const UI = (() => {
     const avg = Math.round(vals.reduce((s, v) => s + v, 0) / vals.length);
     const min2 = Math.round(Math.min(...vals));
     const max2 = Math.round(Math.max(...vals));
-    const inGoal = days.filter((d) => !isBadHistoryDay(d.summary, metric, d.date)).length;
+    const inGoal = judgedDays.filter((d) => !isBadHistoryDay(d.summary, metric, d.date)).length;
 
     return {
       svg: `<svg class="nutrition-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
@@ -776,15 +877,17 @@ const UI = (() => {
         <div class="week-stat"><div class="value">${avg} ${unit}</div><div class="label">średnia</div></div>
         <div class="week-stat"><div class="value">${min2} ${unit}</div><div class="label">min</div></div>
         <div class="week-stat"><div class="value">${max2} ${unit}</div><div class="label">max</div></div>
-        ${judge !== 'none' ? `<div class="week-stat"><div class="value">${inGoal}/${days.length}</div><div class="label">dni w celu</div></div>` : ''}`
+        ${judge !== 'none' ? `<div class="week-stat"><div class="value">${inGoal}/${judgedDays.length}</div><div class="label">dni w celu</div></div>` : ''}`
     };
   }
 
-  function computeMovingAverage(days, key, window) {
+  // Średnia krocząca tylko z dni pełnych w oknie — dzień niezalogowany to brak danych, nie 0 kcal
+  // (decyzja 2026-11-06; wcześniej zera, c4c9542). Punkt bez żadnego dnia pełnego w oknie pomijamy.
+  function computeMovingAverage(days, key, window, isFull) {
     return days.map((d, i) => {
-      const slice = days.slice(Math.max(0, i - window + 1), i + 1);
-      const avg = slice.reduce((s, x) => s + x.summary[key], 0) / slice.length;
-      return { date: d.date, summary: { ...d.summary, [key]: avg } };
+      const slice = days.slice(Math.max(0, i - window + 1), i + 1).filter(isFull);
+      if (!slice.length) return null;
+      return { date: d.date, summary: { ...d.summary, [key]: slice.reduce((s, x) => s + x.summary[key], 0) / slice.length } };
     });
   }
 
@@ -803,18 +906,25 @@ const UI = (() => {
       days.push({ date, summary: Storage.getDailySummary(date) });
     }
 
-    const daysWithEntries = days.filter((d) => d.summary.kcal > 0);
-    if (daysWithEntries.length === 0) {
-      container.innerHTML = '';
+    const isFull = (d) => isJudgedDay(d.date, settings, d.summary);
+    const judged = days.filter(isFull);
+    if (judged.length === 0) {
+      container.innerHTML = days.some((d) => d.summary.kcal > 0)
+        ? `<div class="summary-card"><div class="hint">Brak dni pełnych (≥50% celu kcal) w tym zakresie — wykres pojawi się po pierwszym takim dniu.</div></div>`
+        : '';
       return;
     }
 
+    // Punkty tylko dla dni pełnych — dzień w toku i niedologowany nie robią „dołków” na wykresie
     const chartDays = historyMeasure === 'avg7'
-      ? computeMovingAverage(days, key, 7).filter((d, i) => days[i].summary.kcal > 0)
-      : daysWithEntries;
+      ? computeMovingAverage(days, key, 7, isFull).filter((d, i) => d && isFull(days[i]))
+      : judged;
 
-    const chart = buildNutritionChart(chartDays, metric);
+    const chart = buildNutritionChart(chartDays, metric, judged);
     const title = range === 'month' ? 'Ostatnie 30 dni' : 'Ostatnie 90 dni';
+    const measureHint = historyMeasure === 'avg7'
+      ? 'Średnia 7 dni liczona tylko z dni pełnych w oknie — dni bez wpisów i niepełne są pomijane, nie liczone jako 0.'
+      : 'Na wykresie tylko dni pełne (≥50% celu kcal), bez dnia dzisiejszego.';
 
     container.innerHTML = `
       <div class="summary-card">
@@ -826,6 +936,7 @@ const UI = (() => {
         </div>
         ${chart.svg}
         <div class="week-stats">${chart.stats}</div>
+        <div class="hint stats-hint">${measureHint} Dni pełne: ${judged.length} z ${daysCount}.</div>
       </div>
     `;
 
@@ -946,17 +1057,18 @@ const UI = (() => {
     const kcalMetric = metricWithGoal('kcal', settings);
     const proteinMetric = metricWithGoal('protein', settings);
     const days = dates.map((date) => ({ date, summary: Storage.getDailySummary(date) }));
-    const withEntries = days.filter((d) => d.summary.kcal > 0);
-    const avg = (key) => (withEntries.length ? withEntries.reduce((s, d) => s + d.summary[key], 0) / withEntries.length : null);
+    const judged = days.filter((d) => isJudgedDay(d.date, settings, d.summary));
+    const avg = (key) => (judged.length ? judged.reduce((s, d) => s + d.summary[key], 0) / judged.length : null);
     const kgs = Storage.getWeightHistory().filter((w) => w.date >= dates[0] && w.date <= dates[6] && w.kg != null).map((w) => Number(w.kg));
     return {
       dates,
-      logged: dates.map((d) => isLoggedDay(d, settings)),
-      withEntries: withEntries.length,
+      logged: days.map((d) => isLoggedDay(d.date, settings, d.summary)),
+      withEntries: days.filter((d) => d.summary.kcal > 0).length,
+      judged: judged.length,
       kcal: avg('kcal'),
       protein: avg('protein'),
-      kcalInGoal: withEntries.filter((d) => !isBadHistoryDay(d.summary, kcalMetric, d.date)).length,
-      proteinInGoal: withEntries.filter((d) => !isBadHistoryDay(d.summary, proteinMetric, d.date)).length,
+      kcalInGoal: judged.filter((d) => !isBadHistoryDay(d.summary, kcalMetric, d.date)).length,
+      proteinInGoal: judged.filter((d) => !isBadHistoryDay(d.summary, proteinMetric, d.date)).length,
       kg: kgs.length ? kgs.reduce((s, v) => s + v, 0) / kgs.length : null
     };
   }
@@ -985,15 +1097,19 @@ const UI = (() => {
     const dots = week.dates.map((d, i) => `<button type="button" class="habit-dot ${week.logged[i] ? 'done' : 'missed'}" data-date="${d}" aria-label="${fmtDate(d)}"></button>`).join('');
     const row = (label, value, delta) => `<div class="review-row"><span class="review-label">${label}</span><span class="review-value">${value}</span><span class="review-delta">${delta || ''}</span></div>`;
     const hasPrev = prev.withEntries > 0;
+    const hasPrevAvg = prev.judged > 0 && week.judged > 0;
+    const avgRow = (label, value, goal, unit, inGoal, delta) => row(label,
+      week.judged ? `śr. ${Math.round(value)} / ${goal}${unit} · w celu ${inGoal}/${week.judged}` : 'brak dni pełnych',
+      hasPrevAvg ? delta : '');
 
     container.innerHTML = `
       <div class="summary-card week-review">
         <h3 class="section-title">Poprzedni tydzień · ${fmtDate(week.dates[0])}–${fmtDate(week.dates[6])}</h3>
         ${row('Logowanie', `<span class="habit-dots">${dots}</span> ${loggedCount}/7`, hasPrev ? signed(loggedCount - prevLogged, pluralPl(Math.abs(loggedCount - prevLogged), 'dzień', 'dni', 'dni')) : '')}
-        ${row('Kcal', `śr. ${Math.round(week.kcal)} / ${settings.kcalGoal} · w celu ${week.kcalInGoal}/${week.withEntries}`, hasPrev ? signed(week.kcal - prev.kcal, 'kcal') : '')}
-        ${row('Białko', `śr. ${Math.round(week.protein)} / ${settings.proteinGoal} g · w celu ${week.proteinInGoal}/${week.withEntries}`, hasPrev ? signed(week.protein - prev.protein, 'g') : '')}
+        ${avgRow('Kcal', week.kcal, settings.kcalGoal, '', week.kcalInGoal, hasPrevAvg ? signed(week.kcal - prev.kcal, 'kcal') : '')}
+        ${avgRow('Białko', week.protein, settings.proteinGoal, ' g', week.proteinInGoal, hasPrevAvg ? signed(week.protein - prev.protein, 'g') : '')}
         ${week.kg != null ? row('Waga', `śr. ${week.kg.toFixed(1)} kg`, prev.kg != null ? signed(week.kg - prev.kg, 'kg', 1) : '') : ''}
-        ${hasPrev ? '<div class="hint review-hint">Zmiany względem tygodnia wcześniej.</div>' : ''}
+        <div class="hint review-hint">Średnie z dni pełnych (≥50% celu kcal)${hasPrev ? '; zmiany względem tygodnia wcześniej' : ''}.</div>
       </div>`;
     container.querySelectorAll('.habit-dot').forEach((btn) => btn.addEventListener('click', () => goToDate(btn.dataset.date)));
   }
@@ -1033,16 +1149,16 @@ const UI = (() => {
     dates.forEach((date) => {
       const summary = Storage.getDailySummary(date);
       const value = summary[metricKeyOf(metric)];
-      const bad = isBadHistoryDay(summary, metric, date);
+      const judgeClass = dayJudgeClass(date, summary, metric, settings);
       const item = document.createElement('div');
       item.className = 'history-item';
       item.innerHTML = `
         <div>
           <div class="date">${formatDateLabel(date)}</div>
-          <div class="hint" style="margin-top:2px;">cel ${metric.goal} ${metric.unit}</div>
+          <div class="hint" style="margin-top:2px;">cel ${metric.goalOn(date)} ${metric.unit}</div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;">
-          <div class="history-dot" style="background:${bad ? 'var(--off-goal)' : 'var(--accent)'};"></div>
+          <div class="history-dot ${judgeClass}"${judgeClass === 'partial' ? ' title="Dzień niepełny (<50% celu kcal)"' : ''}></div>
           <div class="kcal">${Math.round(value)} ${metric.unit}</div>
         </div>
       `;
@@ -1144,7 +1260,6 @@ const UI = (() => {
     const cellsHtml = cells.map((c) => {
       const summary = Storage.getDailySummary(c.dateStr);
       const hasEntries = summary.kcal > 0;
-      const bad = hasEntries ? isBadHistoryDay(summary, metric, c.dateStr) : false;
       const isToday = c.dateStr === todayStr;
       const classes = ['cal-day'];
       if (c.otherMonth) classes.push('other-month');
@@ -1152,7 +1267,7 @@ const UI = (() => {
 
       let dot = '';
       if (hasEntries) {
-        dot = `<div class="cal-dot ${bad ? 'bad' : 'good'}"></div>`;
+        dot = `<div class="cal-dot ${dayJudgeClass(c.dateStr, summary, metric, settings)}"></div>`;
       }
 
       return `<div class="${classes.join(' ')}" data-date="${c.dateStr}">${c.day}${dot}</div>`;
@@ -1250,9 +1365,11 @@ const UI = (() => {
     document.getElementById('geminiUsageInfo').textContent = usage.calls
       ? `Ten miesiąc (to urządzenie): ${usage.calls} ${pluralPl(usage.calls, 'zapytanie', 'zapytania', 'zapytań')}, ${formatPln(Ocr.usdToPln(usage.usd))} wg cennika płatnego (darmowy tier: 0 zł)`
       : '';
+    const kb = Storage.getDataSize() / 1000;
+    const sizeText = kb < 1000 ? `${Math.max(1, Math.round(kb))} kB` : `${(kb / 1000).toLocaleString('pl-PL', { maximumFractionDigits: 1 })} MB`;
+    document.getElementById('storageUsageInfo').textContent = `Dane na tym urządzeniu: ${sizeText} z ok. 5 MB dostępnych w przeglądarce.`;
     renderFirebaseAuthBlock();
     renderGoalsList();
-    updateSupplementsSettingsVisibility();
   }
 
   function renderFirebaseAuthBlock() {
@@ -1308,6 +1425,24 @@ const UI = (() => {
     }
   }
 
+  // Start z zapisanym configiem. SDK idzie z gstatic (poza cache SW) — bez sieci init się nie uda,
+  // więc ponawiamy po powrocie połączenia zamiast czekać na kolejny zimny start.
+  function initFirebase() {
+    const raw = Storage.getSettings().firebaseConfig;
+    if (!raw || !window.FirebaseSync) return;
+    let parsed;
+    try {
+      parsed = FirebaseSync.parseFirebaseConfig(raw);
+    } catch (e) {
+      document.getElementById('firebaseStatus').textContent = 'Nieprawidłowa zapisana konfiguracja Firebase.';
+      return;
+    }
+    FirebaseSync.init(parsed).then(ensureAuthListener).catch(() => {
+      document.getElementById('firebaseStatus').textContent = 'Brak połączenia — synchronizacja ruszy po powrocie internetu.';
+      window.addEventListener('online', initFirebase, { once: true });
+    });
+  }
+
   function ensureAuthListener() {
     if (authListenerRegistered || !window.FirebaseSync) return;
     authListenerRegistered = true;
@@ -1346,7 +1481,11 @@ const UI = (() => {
   // Pełny sync przy logowaniu/starcie. Każda kolekcja we własnym try — błąd jednej (np. limit
   // 1 MB dokumentu) nie blokuje pozostałych. Push tylko tam, gdzie wynik merge różni się od
   // chmury: bez tego każde otwarcie aplikacji przepisywało całą historię (koszt O(historia)).
-  async function syncWithCloud() {
+  function syncWithCloud() {
+    return queueCloud(runFullSync);
+  }
+
+  async function runFullSync() {
     const statusEl = document.getElementById('firebaseStatus');
     statusEl.textContent = 'Synchronizowanie danych...';
     const failed = [];
@@ -1358,18 +1497,26 @@ const UI = (() => {
     await step('pobieranie', async () => { remoteMeta = await FirebaseSync.pullAllMeta(); });
     if (!remoteMeta) {
       statusEl.textContent = 'Błąd synchronizacji danych — sprawdź połączenie.';
-      return;
+      return failed;
     }
 
     await step('dziennik', async () => {
       const remoteDays = await FirebaseSync.pullAllDays();
       const dates = new Set([...Storage.getAllDates(), ...Object.keys(remoteDays)]);
+      let failedDays = 0;
       for (const date of dates) {
-        const remote = remoteDays[date] || [];
-        const merged = Storage.mergeEntryLists(remote, Storage.getRawEntries(date));
-        Storage.saveEntries(date, merged);
-        if (!sameData(merged, remote)) await FirebaseSync.pushDay(date, merged);
+        // każdy dzień osobno — błąd jednego (np. limit 1 MB) nie zatrzymuje pozostałych
+        try {
+          const remote = remoteDays[date] || [];
+          const merged = Storage.mergeEntryLists(remote, Storage.getRawEntries(date));
+          Storage.saveEntries(date, merged);
+          if (!sameData(merged, remote)) await FirebaseSync.pushDay(date, merged);
+        } catch (e) {
+          if (e && e.message === 'STORAGE_FULL') throw e;
+          failedDays++;
+        }
       }
+      if (failedDays) throw new Error('DAYS_FAILED');
     });
 
     // Skrzynki od partnera przed merge kolekcji — nowe pozycje pójdą w tym samym pushu
@@ -1382,6 +1529,7 @@ const UI = (() => {
       await step(cfg.label, () => syncMetaCollection(name, cfg, remoteMeta));
     }
     await step('ustawienia', () => syncSettings(remoteMeta.settings));
+    lastCloudRefresh = Date.now();
 
     renderDiary();
     if (importedSharedCount > 0) {
@@ -1399,6 +1547,7 @@ const UI = (() => {
     } else {
       statusEl.textContent = 'Zsynchronizowano ✓';
     }
+    return failed;
   }
 
   // Ustawienia: wygrywa nowszy updatedAt. Rekordy sprzed tej zmiany nie mają updatedAt —
@@ -1520,16 +1669,32 @@ const UI = (() => {
     renderDiary();
   }
 
+  // UID partnera zapisywany od razu po zmianie (pole leży w innej sekcji niż „Zapisz ustawienia”)
+  function savePartnerUid() {
+    const partnerUid = document.getElementById('settingPartnerUid').value.trim();
+    const settings = { ...Storage.getSettings(), partnerUid, updatedAt: new Date().toISOString() };
+    Storage.saveSettings(settings);
+    pushSettingsToCloud(settings);
+    showToast(partnerUid ? 'Zapisano UID partnera' : 'Usunięto UID partnera');
+  }
+
   function pushSettingsToCloud(settings) {
     if (window.FirebaseSync && FirebaseSync.isSignedIn()) {
       FirebaseSync.pushMeta('settings', settingsForCloud(settings)).catch(() => showToast('Błąd synchronizacji ustawień'));
     }
   }
 
+  // Push dnia w tle: najpierw scalenie z dokumentem w chmurze (wpisy z drugiego urządzenia), potem zapis
   function pushDayToCloud(date) {
-    if (window.FirebaseSync && FirebaseSync.isSignedIn()) {
-      FirebaseSync.pushDay(date, Storage.getRawEntries(date)).catch(() => showToast('Błąd synchronizacji z chmurą'));
-    }
+    if (!(window.FirebaseSync && FirebaseSync.isSignedIn())) return Promise.resolve();
+    return queueCloud(async () => {
+      const remote = await FirebaseSync.pullDay(date);
+      const before = Storage.getRawEntries(date);
+      const merged = Storage.mergeEntryLists(remote, before);
+      Storage.saveEntries(date, merged);
+      if (date === currentDate) rerenderIfChanged(before, merged);
+      await FirebaseSync.pushDay(date, merged);
+    }).catch(() => showToast('Błąd synchronizacji z chmurą'));
   }
 
   function nowTimeStr() {
@@ -1588,7 +1753,8 @@ const UI = (() => {
     container.classList.add('collapsed');
     toggleBtn.setAttribute('aria-expanded', 'false');
 
-    const products = show ? Storage.getFrequentProducts(8) : [];
+    // productCache jest już posortowany po liczbie wystąpień — bez drugiego parsowania całej historii
+    const products = show ? (productCache || Storage.getUniqueProducts()).slice(0, 8) : [];
     section.hidden = products.length === 0;
     products.forEach((p) => {
       container.appendChild(createProductChip(p, (product) => {
@@ -1729,13 +1895,14 @@ const UI = (() => {
   function derivePer100gFromEntry(entry) {
     const grams = Number(entry.grams);
     if (!grams || grams <= 0) return null;
-    const factor = 100 / grams;
+    // zaokrąglenie do 0,1 — pełne 16 cyfr zjadało miejsce w localStorage przy każdej edycji
+    const per100 = (v) => Math.round(((Number(v) || 0) * 100 / grams) * 10) / 10;
     return {
-      kcal: (entry.kcal || 0) * factor,
-      protein: (entry.protein || 0) * factor,
-      carbs: (entry.carbs || 0) * factor,
-      fat: (entry.fat || 0) * factor,
-      fiber: entry.fiber != null ? entry.fiber * factor : null
+      kcal: per100(entry.kcal),
+      protein: per100(entry.protein),
+      carbs: per100(entry.carbs),
+      fat: per100(entry.fat),
+      fiber: entry.fiber != null ? per100(entry.fiber) : null
     };
   }
 
@@ -1764,9 +1931,9 @@ const UI = (() => {
     pendingSource = entry ? entry.source || 'manual' : 'manual';
     pendingPer100g = entry ? (entry.per100g || derivePer100gFromEntry(entry)) : null;
     selectMeal(timing.meal);
+    buildProductCache();
     renderRecentProducts(!entry);
     renderFavoriteProducts(!entry);
-    buildProductCache();
 
     document.getElementById('entryModalOverlay').classList.add('active');
   }
@@ -1868,6 +2035,26 @@ const UI = (() => {
     if (typeof result.fiber === 'number') document.getElementById('entryFiber').value = Math.round(result.fiber * 10) / 10;
   }
 
+  // Na czas zapytania AI w modalu wpisu blokujemy przyciski skanu — drugie kliknięcie to drugie
+  // zapytanie (koszt) i wyścig dwóch odpowiedzi wypełniających ten sam formularz
+  function withEntryScanBusy(fn) {
+    return async (...args) => {
+      const buttons = document.querySelectorAll('#entryModalOverlay .scan-btn');
+      buttons.forEach((b) => { b.disabled = true; });
+      try { return await fn(...args); } finally { buttons.forEach((b) => { b.disabled = false; }); }
+    };
+  }
+
+  function voiceErrorText(err) {
+    switch (err && err.message) {
+      case 'PERMISSION_DENIED': return 'Brak dostępu do mikrofonu. Zezwól na dostęp w ustawieniach przeglądarki.';
+      case 'NO_SPEECH': return 'Nie wykryto mowy. Spróbuj ponownie.';
+      case 'NETWORK_ERROR': return 'Rozpoznawanie mowy wymaga internetu — sprawdź połączenie.';
+      case 'NO_MIC': return 'Nie znaleziono mikrofonu.';
+      default: return 'Rozpoznawanie mowy nie jest obsługiwane w tej przeglądarce.';
+    }
+  }
+
   // Waga porcji z etykiety: podana wprost, a gdy jej brak — z proporcji kcal porcji do kcal/100g
   // (etykiety gotowych dań często mają kolumnę "porcja" bez gramatury). Liczymy w kodzie, nie w modelu.
   function labelServingGrams(result) {
@@ -1891,15 +2078,20 @@ const UI = (() => {
       const result = await Ocr.analyzeLabel(file, settings.geminiApiKey);
       statusEl.textContent = '';
 
+      if (!result.per100g && !result.perServing) throw new Error('NOT_RECOGNIZED');
       if (result.name) document.getElementById('entryName').value = result.name;
 
-      if (!document.getElementById('entryGrams').value) {
-        document.getElementById('entryGrams').value = labelServingGrams(result) || 100;
-      }
-
       if (result.per100g) {
+        if (!document.getElementById('entryGrams').value) {
+          document.getElementById('entryGrams').value = labelServingGrams(result) || 100;
+        }
         pendingPer100g = result.per100g;
         recalcFromPer100g();
+      } else {
+        // Etykieta tylko z kolumną „porcja” (bez 100 g) — wartości wprost dla porcji
+        pendingPer100g = null;
+        document.getElementById('entryGrams').value = labelServingGrams(result) || '';
+        fillFormFromAnalysis(result.perServing);
       }
       showAiToast('Rozpoznano etykietę — sprawdź wartości');
     } catch (err) {
@@ -1990,6 +2182,23 @@ const UI = (() => {
     document.getElementById('barcodeOverlay').classList.remove('active');
   }
 
+  // Skaner służy dwóm formularzom (wpis i składnik przepisu) — tu jedno miejsce, które wie, dokąd wrócić
+  function cancelBarcode() {
+    if (!Recipes.cancelIngredientBarcode()) closeBarcodeScanner();
+  }
+
+  function submitManualBarcode(code) {
+    if (Recipes.isIngredientBarcodeActive()) Recipes.lookupIngredientBarcode(code);
+    else lookupBarcode(code, false);
+  }
+
+  // Przeładowanie po aktualizacji SW — nie w trakcie wypełniania formularza (otwarty modal)
+  function reloadWhenIdle() {
+    const idle = () => !document.querySelector('.modal-overlay.active');
+    if (idle()) { location.reload(); return; }
+    const timer = setInterval(() => { if (idle()) { clearInterval(timer); location.reload(); } }, 1000);
+  }
+
   function onBarcodeDetected(code) {
     if (navigator.vibrate) navigator.vibrate(80);
     lookupBarcode(code, true);
@@ -2050,13 +2259,7 @@ const UI = (() => {
       transcript = await Voice.listenOnce();
     } catch (err) {
       statusEl.textContent = '';
-      if (err.message === 'PERMISSION_DENIED') {
-        errorEl.textContent = 'Brak dostępu do mikrofonu. Zezwól na dostęp w ustawieniach przeglądarki.';
-      } else if (err.message === 'NO_SPEECH') {
-        errorEl.textContent = 'Nie wykryto mowy. Spróbuj ponownie.';
-      } else {
-        errorEl.textContent = 'Rozpoznawanie mowy nie jest obsługiwane w tej przeglądarce.';
-      }
+      errorEl.textContent = voiceErrorText(err);
       return;
     }
 
@@ -2217,12 +2420,7 @@ const UI = (() => {
     showToast(editingGoalId ? 'Zapisano zmiany' : 'Cel zapisany');
   }
 
-  // ── Suplementy i leki — zarządzanie listą w Ustawieniach ──
-
-  function updateSupplementsSettingsVisibility() {
-    const acc = document.getElementById('supplementsAccordion');
-    if (acc) acc.hidden = !supplementsUnlocked();
-  }
+  // ── Suplementy i leki — zarządzanie listą (zakładka Suplementy) ──
 
   const SUPP_SCHEDULE_LABELS = {
     daily: 'Codziennie',
@@ -2534,7 +2732,8 @@ const UI = (() => {
   }
 
   function flagDot(flag) {
-    return `<span class="flag-dot flag-${flag || 'neutral'}"></span>`;
+    const f = ['good', 'neutral', 'warning'].includes(flag) ? flag : 'neutral'; // wartość z odpowiedzi AI
+    return `<span class="flag-dot flag-${f}"></span>`;
   }
 
   function renderAnalysisBody(result) {
@@ -2675,12 +2874,19 @@ const UI = (() => {
     const container = document.getElementById('supplementsSection');
     if (!container) return;
 
-    const due = Storage.getSupplements().filter((s) => Storage.isSupplementDueOn(s, currentDate));
+    const allSupps = Storage.getSupplements();
     const logForDate = Storage.getSupplementLogForDate(currentDate);
     const adhoc = logForDate.filter((r) => r.adhoc);
     const timesBySuppId = new Map(
       logForDate.filter((r) => r.suppId).map((r) => [r.suppId, Storage.extractDoseTimes(r)])
     );
+    // Planowe na ten dzień + każda pozycja z dawką w logu tego dnia (wstrzymana, usunięta, po zmianie
+    // harmonogramu) — historia przyjęć ma być widoczna (decyzja 2026-11-06)
+    const planned = allSupps.filter((s) => Storage.isSupplementDueOn(s, currentDate));
+    const plannedIds = new Set(planned.map((s) => s.id));
+    const offPlan = [...timesBySuppId].filter(([id, times]) => times.length && !plannedIds.has(id))
+      .map(([id]) => ({ ...(allSupps.find((s) => s.id === id) || { id, name: '(usunięty suplement)', timing: 'any' }), offPlan: true }));
+    const due = [...planned, ...offPlan];
     const remainingStockMap = Storage.getRemainingStockMap();
 
     let itemsHtml = '';
@@ -2700,7 +2906,7 @@ const UI = (() => {
           <div class="supp-card${taken ? ' taken' : ''}${partial ? ' partial' : ''}" data-supp-id="${s.id}">
             <div class="supp-card-avatar">${escapeHtml(initial)}</div>
             <div class="supp-card-info">
-              <div class="supp-card-title">${escapeHtml(suppLabel(s))}${s.dose ? ` <span class="supp-dose">${escapeHtml(s.dose)}</span>` : ''}${countLabel}</div>
+              <div class="supp-card-title">${escapeHtml(suppLabel(s))}${s.dose ? ` <span class="supp-dose">${escapeHtml(s.dose)}</span>` : ''}${countLabel}${s.offPlan ? ' <span class="supp-dose">poza planem</span>' : ''}</div>
               ${stockHtml}
             </div>
             <button class="supp-plus-btn" data-action="increment" data-id="${s.id}" aria-label="Dodaj dawkę">+</button>
@@ -2929,7 +3135,8 @@ const UI = (() => {
   function suppListForPrompt() {
     return Storage.getSupplements().filter((s) => s.active !== false).map((s) => {
       const item = {
-        nazwa: suppLabel(s), dawka: s.dose || null, notatki: s.notes || null,
+        // prawdziwa nazwa, nie displayName — pseudonim prywatności uniemożliwiłby wykrycie interakcji
+        nazwa: s.name, dawka: s.dose || null, notatki: s.notes || null,
         pora: s.timing || 'any', dawek_dziennie: s.timesPerDay || 1
       };
       if (s.type) item.type = s.type;
@@ -2986,8 +3193,9 @@ const UI = (() => {
 
     if (scope === 'day') {
       const due = Storage.getSupplements().filter((s) => Storage.isSupplementDueOn(s, endDate));
-      const dawki = due
-        .map((s) => ({ nazwa: suppLabel(s), godziny: Storage.getSupplementDoseTimes(endDate, s.id) }))
+      // wszystkie przyjęte tego dnia, także poza planem (wstrzymane, zmieniony harmonogram)
+      const dawki = Storage.getSupplements()
+        .map((s) => ({ nazwa: s.name, godziny: Storage.getSupplementDoseTimes(endDate, s.id) }))
         .filter((d) => d.godziny.length > 0);
       const dorazne = Storage.getSupplementLogForDate(endDate).filter((r) => r.adhoc)
         .map((r) => ({ nazwa: r.name, godzina: r.time || null }));
@@ -3007,7 +3215,7 @@ const UI = (() => {
       const dueDates = range.filter((d) => Storage.isSupplementDueOn(s, d));
       if (dueDates.length === 0) return null;
       const takenDates = dueDates.filter((d) => Storage.getSupplementTakenCount(d, s.id) > 0);
-      const item = { nazwa: suppLabel(s), dni_planowych: dueDates.length, dni_wzietych: takenDates.length };
+      const item = { nazwa: s.name, dni_planowych: dueDates.length, dni_wzietych: takenDates.length };
       if (scope === 'week') {
         const allTimes = dueDates.flatMap((d) => Storage.getSupplementDoseTimes(d, s.id)).filter(Boolean);
         item.typowe_godziny = [...new Set(allTimes)].sort();
@@ -3285,25 +3493,50 @@ const UI = (() => {
     return Object.values(counts).sort((a, b) => b.ile_razy - a.ile_razy).slice(0, limit);
   }
 
+  // Bilans z wagi: nachylenie regresji liniowej ze wszystkich pomiarów (nie pierwszy vs ostatni —
+  // pojedynczy pomiar „po wodzie” przestawiał wynik o ±1500 kcal/dzień). Minimum 3 pomiary
+  // rozpięte na ≥14 dni; krócej to szum wahań wody.
+  const BALANCE_MIN_POINTS = 3;
+  const BALANCE_MIN_SPAN_DAYS = 14;
+
   function buildWeightBalance(pomiaryWagi) {
-    if (pomiaryWagi.length < 2) return null;
-    const w0 = pomiaryWagi[0];
-    const w1 = pomiaryWagi[pomiaryWagi.length - 1];
-    const okresPomiaruDni = Storage.daysBetween(w0.data, w1.data);
-    if (okresPomiaruDni < 5) return null;
-    return { w0, w1, okresPomiaruDni };
+    if (pomiaryWagi.length < BALANCE_MIN_POINTS) return null;
+    const first = pomiaryWagi[0].data;
+    const okresPomiaruDni = Storage.daysBetween(first, pomiaryWagi[pomiaryWagi.length - 1].data);
+    if (okresPomiaruDni < BALANCE_MIN_SPAN_DAYS) return null;
+    const pts = pomiaryWagi.map((p) => ({ t: Storage.daysBetween(first, p.data), kg: Number(p.kg) }));
+    const mt = pts.reduce((s, p) => s + p.t, 0) / pts.length;
+    const mk = pts.reduce((s, p) => s + p.kg, 0) / pts.length;
+    const slope = pts.reduce((s, p) => s + (p.t - mt) * (p.kg - mk), 0) / pts.reduce((s, p) => s + (p.t - mt) ** 2, 0);
+    return { slopeKgPerDay: slope, okresPomiaruDni, liczbaPomiarow: pts.length };
   }
 
-  function buildWeekAggregate(weekDates) {
-    const daysWithEntries = weekDates.map((d) => Storage.getDailySummary(d)).filter((s) => s.kcal > 0);
-    const n = daysWithEntries.length;
-    const avg = (key) => (n > 0 ? Math.round(daysWithEntries.reduce((s, d) => s + d[key], 0) / n) : 0);
+  function buildWeekAggregate(weekDates, settings) {
+    const summaries = weekDates.map((date) => ({ date, s: Storage.getDailySummary(date) }));
+    const full = summaries.filter((d) => isJudgedDay(d.date, settings, d.s)).map((d) => d.s);
+    const n = full.length;
+    const avg = (key) => (n > 0 ? Math.round(full.reduce((s, d) => s + d[key], 0) / n) : 0);
     return {
       od: weekDates[0], do: weekDates[weekDates.length - 1],
-      dni_z_wpisami: n,
+      dni_pelne: n,
+      dni_niepelne: summaries.filter((d) => d.s.kcal > 0).length - n,
       sr_kcal: avg('kcal'), sr_bialko_g: avg('protein'), sr_wegle_g: avg('carbs'),
       sr_tluszcz_g: avg('fat'), sr_blonnik_g: avg('fiber')
     };
+  }
+
+  // Wiersz dnia dla AI: dzień w toku i niepełny jawnie oznaczone, żeby AI nie brało ich za „dzień odstający”
+  function dietDayRow(date, summary, settings, withMeals) {
+    if (!(summary.kcal > 0)) return { data: date, dzien_tygodnia: dietDayOfWeek(date), brak_wpisow: true };
+    const row = {
+      data: date, dzien_tygodnia: dietDayOfWeek(date),
+      kcal: Math.round(summary.kcal), bialko_g: Math.round(summary.protein),
+      wegle_g: Math.round(summary.carbs), tluszcz_g: Math.round(summary.fat), blonnik_g: Math.round(summary.fiber)
+    };
+    if (date === toDateStr(new Date())) row.dzien_w_toku = true;
+    else if (!isJudgedDay(date, settings, summary)) row.niepelny = true;
+    if (withMeals) row.posilki = Storage.getEntries(date).map((e) => e.name);
+    return row;
   }
 
   // Zwraca { scope, startDate, endDate, cele, periodData, dniZWpisami }; daty licz zawsze względem currentDate
@@ -3319,10 +3552,22 @@ const UI = (() => {
       wegle_g: settings.carbsGoal, tluszcz_g: settings.fatGoal, blonnik_g: settings.fiberGoal,
       tryb_celu: { cut: 'redukcja (deficyt kaloryczny)', maintain: 'utrzymanie wagi', bulk: 'masa (nadwyżka kaloryczna)' }[settings.goalMode] || 'redukcja (deficyt kaloryczny)'
     };
+    // Cele zmienione w trakcie okresu — AI ma oceniać dni wg celu obowiązującego wtedy
+    const goalChanges = (Array.isArray(settings.goalHistory) ? settings.goalHistory : [])
+      .filter((h, i) => i > 0 && h.date >= startDate && h.date <= endDate)
+      .map((h) => ({ od: h.date, kcal: h.kcalGoal, bialko_g: h.proteinGoal, wegle_g: h.carbsGoal, tluszcz_g: h.fatGoal }));
+    if (goalChanges.length) {
+      cele.obowiazujace_przed_zmianami = (({ kcalGoal, proteinGoal, carbsGoal, fatGoal }) =>
+        ({ kcal: kcalGoal, bialko_g: proteinGoal, wegle_g: carbsGoal, tluszcz_g: fatGoal }))(goalsOnDate(shiftDateStr(startDate, -1), settings));
+      cele.zmiany_w_okresie = goalChanges;
+    }
 
     const allWeights = Storage.getWeightHistory();
     const weightsInRange = allWeights.filter((w) => w.date >= startDate && w.date <= endDate);
-    const baseline = allWeights.filter((w) => w.date < startDate).sort((a, b) => b.date.localeCompare(a.date))[0] || null;
+    // Pomiar sprzed okresu tylko, jeśli jest najwyżej tydzień wcześniej — starszy mieszałby zmianę
+    // wagi z innego okresu ze spożyciem z tego
+    const baseline = allWeights.filter((w) => w.date < startDate && w.date >= shiftDateStr(startDate, -7))
+      .sort((a, b) => b.date.localeCompare(a.date))[0] || null;
     const pomiary_wagi = [...(baseline ? [baseline] : []), ...weightsInRange].map((w) => {
       const rec = { data: w.date, kg: w.kg };
       if (w.smm != null) rec.smm = w.smm;
@@ -3331,56 +3576,44 @@ const UI = (() => {
     });
 
     const dayEntries = range.map((date) => ({ date, summary: Storage.getDailySummary(date) }));
-    const daysWithEntries = dayEntries.filter((d) => d.summary.kcal > 0);
-    const dniZWpisami = daysWithEntries.length;
-    const srKcalDniZWpisami = dniZWpisami > 0
-      ? Math.round(daysWithEntries.reduce((s, d) => s + d.summary.kcal, 0) / dniZWpisami)
+    const fullDays = dayEntries.filter((d) => isJudgedDay(d.date, settings, d.summary));
+    const dniPelne = fullDays.length;
+    const srKcalDniPelnych = dniPelne > 0
+      ? Math.round(fullDays.reduce((s, d) => s + d.summary.kcal, 0) / dniPelne)
       : 0;
 
     let bilans_wstepny = null;
     const balance = buildWeightBalance(pomiary_wagi);
-    if (balance) {
-      const zmiana = Math.round((balance.w1.kg - balance.w0.kg) * 10) / 10;
+    if (balance && dniPelne > 0) {
       // dodatni = deficyt (chudnięcie), ujemny = nadwyżka; TDEE = spożycie + deficyt
-      const deficyt = Math.round((-zmiana * 7700) / balance.okresPomiaruDni);
+      const deficyt = Math.round(-balance.slopeKgPerDay * 7700);
       bilans_wstepny = {
-        zmiana_wagi_kg: zmiana,
+        zmiana_wagi_kg: Math.round(balance.slopeKgPerDay * balance.okresPomiaruDni * 10) / 10,
         szacowany_deficyt_dzienny: deficyt,
-        szacowana_tdee: srKcalDniZWpisami + deficyt,
+        szacowana_tdee: srKcalDniPelnych + deficyt,
         okres_pomiaru_dni: balance.okresPomiaruDni,
-        sr_kcal_dni_z_wpisami: srKcalDniZWpisami,
-        dni_z_wpisami: dniZWpisami,
+        metoda: `trend (regresja liniowa) z ${balance.liczbaPomiarow} pomiarów`,
+        sr_kcal_dni_pelnych: srKcalDniPelnych,
+        dni_pelne: dniPelne,
         dni_okresu: days
       };
     }
 
     let periodData;
     if (scope === 'week') {
-      const dni = dayEntries.map(({ date, summary }) => summary.kcal > 0
-        ? {
-            data: date, dzien_tygodnia: dietDayOfWeek(date),
-            kcal: Math.round(summary.kcal), bialko_g: Math.round(summary.protein),
-            wegle_g: Math.round(summary.carbs), tluszcz_g: Math.round(summary.fat), blonnik_g: Math.round(summary.fiber),
-            posilki: Storage.getEntries(date).map((e) => e.name)
-          }
-        : { data: date, dzien_tygodnia: dietDayOfWeek(date), brak_wpisow: true });
+      const dni = dayEntries.map(({ date, summary }) => dietDayRow(date, summary, settings, true));
       periodData = { dni, pomiary_wagi, bilans_wstepny };
     } else if (scope === 'month') {
-      const dni = dayEntries.map(({ date, summary }) => summary.kcal > 0
-        ? {
-            data: date, dzien_tygodnia: dietDayOfWeek(date),
-            kcal: Math.round(summary.kcal), bialko_g: Math.round(summary.protein),
-            wegle_g: Math.round(summary.carbs), tluszcz_g: Math.round(summary.fat), blonnik_g: Math.round(summary.fiber)
-          }
-        : { data: date, dzien_tygodnia: dietDayOfWeek(date), brak_wpisow: true });
+      const dni = dayEntries.map(({ date, summary }) => dietDayRow(date, summary, settings, false));
       periodData = { dni, najczestsze_produkty: groupProductCounts(range, 10), pomiary_wagi, bilans_wstepny };
     } else {
       const tygodnie = [];
-      for (let i = 0; i < range.length; i += 7) tygodnie.push(buildWeekAggregate(range.slice(i, i + 7)));
+      for (let i = 0; i < range.length; i += 7) tygodnie.push(buildWeekAggregate(range.slice(i, i + 7), settings));
       periodData = { tygodnie, najczestsze_produkty: groupProductCounts(range, 15), pomiary_wagi, bilans_wstepny };
     }
+    periodData.definicja_dnia_pelnego = 'dzień miniony z ≥50% celu kcal; dni "niepelny" i "dzien_w_toku" nie są reprezentatywne — nie oceniaj ich jak pełnych dni';
 
-    return { scope, startDate, endDate, cele, periodData, dniZWpisami };
+    return { scope, startDate, endDate, cele, periodData, dniPelne };
   }
 
   async function runDietAnalysis(scope) {
@@ -3393,8 +3626,8 @@ const UI = (() => {
 
     const payload = buildDietAnalysisPayload(scope);
     const minDays = DIET_ANALYSIS_MIN_DAYS[scope];
-    if (payload.dniZWpisami < minDays) {
-      statusEl.textContent = `Za mało danych — dni z wpisami: ${payload.dniZWpisami} (minimum ${minDays}).`;
+    if (payload.dniPelne < minDays) {
+      statusEl.textContent = `Za mało danych — dni pełnych (≥50% celu kcal): ${payload.dniPelne} (minimum ${minDays}).`;
       return;
     }
 
@@ -3610,7 +3843,8 @@ const UI = (() => {
     statusEl.textContent = 'Analizuję dzień...';
 
     try {
-      const result = await Ocr.analyzeDayAgainstGoal(currentDate, mealsForPrompt, goal.systemPrompt, healthProfile, apiKey);
+      const result = await Ocr.analyzeDayAgainstGoal(currentDate, mealsForPrompt, goal.systemPrompt, healthProfile, apiKey,
+        currentDate === toDateStr(new Date()));
       Storage.saveDailyAnalysis(currentDate, goal.id, goal.name, result);
       pushMetaToCloud('dailyAnalyses');
       statusEl.textContent = '';
@@ -3641,8 +3875,6 @@ const UI = (() => {
   // ── Eksport podsumowania żywieniowego (Markdown) — dla zewnętrznej aplikacji ──
   // Celowo bez pól meal/time (kategorie i godziny są nierzetelne) i bez błonnika.
 
-  const SUMMARY_MIN_ENTRIES = 3;
-  const SUMMARY_MIN_KCAL = 1000;
   const SUMMARY_FAT_ENTRY_G = 20;
   const GOAL_MODE_LABELS = { cut: 'redukcja', maintain: 'utrzymanie', bulk: 'masa' };
   const SUMMARY_MACROS = [
@@ -3671,8 +3903,7 @@ const UI = (() => {
     const settings = Storage.getSettings();
     const history = Array.isArray(settings.goalHistory) ? settings.goalHistory : [];
     const historyStart = history.length ? history[0].date : null;
-    // Cele obowiązujące danego dnia; przed początkiem historii — cele aktualne
-    const goalsOn = (date) => history.filter((h) => h.date <= date).pop() || settings;
+    const goalsOn = (date) => goalsOnDate(date, settings);
 
     const kc = (n) => String(Math.round(n));
     const gr = (n) => (Math.round(n * 10) / 10).toFixed(1);
@@ -3680,6 +3911,7 @@ const UI = (() => {
     const fmt = (key, n) => (n == null ? '—' : key === 'kcal' ? kc(n) : gr(n));
     const avg = (list, fn) => (list.length ? list.reduce((s, x) => s + fn(x), 0) / list.length : null);
 
+    const todayStr = toDateStr(now);
     const days = [];
     for (let date = from; date <= to; date = shiftDateStr(date, 1)) {
       const entries = Storage.getEntries(date);
@@ -3688,7 +3920,9 @@ const UI = (() => {
       const dow = new Date(date + 'T00:00:00').getDay();
       days.push({
         date, entries, sum, dow,
-        complete: entries.length >= SUMMARY_MIN_ENTRIES && sum.kcal >= SUMMARY_MIN_KCAL
+        inProgress: date === todayStr,
+        // ta sama reguła co w aplikacji: miniony dzień z ≥50% celu kcal obowiązującego tego dnia
+        complete: date < todayStr && sum.kcal > 0 && sum.kcal >= LOGGED_DAY_SHARE * (Number(goalsOn(date).kcalGoal) || 0)
       });
     }
     const logged = days.filter((d) => d.entries.length);
@@ -3696,7 +3930,7 @@ const UI = (() => {
     const avgOf = (list) => Object.fromEntries(SUMMARY_MACROS.map((m) => [m.key, avg(list, (d) => d.sum[m.key])]));
     const fullAvg = avgOf(full);
     const modeLabel = GOAL_MODE_LABELS[settings.goalMode] || settings.goalMode;
-    const incompleteDef = `<${SUMMARY_MIN_ENTRIES} wpisy lub <${SUMMARY_MIN_KCAL} kcal`;
+    const incompleteDef = `<${Math.round(LOGGED_DAY_SHARE * 100)}% celu kcal obowiązującego tego dnia albo dzień w toku`;
     const out = [];
 
     // 0. YAML front matter
@@ -3737,7 +3971,7 @@ const UI = (() => {
     // 3. Tabela dzienna
     out.push('## Dni', '', '| Data | Dzień | kcal | Białko | Tłuszcz | Węgle | Wpisy | Flaga |', '|---|---|---:|---:|---:|---:|---:|---|');
     days.forEach((d) => {
-      const flag = d.complete ? '' : d.entries.length ? 'niepełny' : 'brak wpisów';
+      const flag = d.complete ? '' : d.inProgress && d.entries.length ? 'w toku' : d.entries.length ? 'niepełny' : 'brak wpisów';
       out.push(`| ${d.date} | ${DIET_DAY_NAMES[d.dow]} | ${kc(d.sum.kcal)} | ${gr(d.sum.protein)} | ${gr(d.sum.fat)} | ${gr(d.sum.carbs)} | ${d.entries.length} | ${flag} |`);
     });
     out.push('');
@@ -3828,7 +4062,7 @@ const UI = (() => {
         if (!Storage.extractDoseTimes(r).length) return;
         const s = supps.get(r.suppId);
         key = r.suppId;
-        name = s && !s.deleted ? suppLabel(s) : '(usunięty suplement)';
+        name = s && !s.deleted ? s.name : '(usunięty suplement)';
         dose = (s && s.dose) || '';
       }
       if (!name) return;
@@ -3931,17 +4165,53 @@ const UI = (() => {
       renderSettings();
       statusEl.textContent = 'Zaimportowano dane ✓';
       showToast('Dane zaimportowane');
+      // bez tego zaimportowane dane trafiłyby do chmury dopiero przy następnym zimnym starcie
+      if (window.FirebaseSync && FirebaseSync.isSignedIn()) syncWithCloud();
     };
     reader.readAsText(file);
   }
 
-  function clearAllData() {
-    if (confirm('Czy na pewno chcesz usunąć wszystkie dane? Tej operacji nie można cofnąć.')) {
-      Storage.clearAllData();
-      renderDiary();
-      renderSettings();
-      showToast('Dane wyczyszczone');
+  function afterClear(msg) {
+    renderDiary();
+    renderSettings();
+    showToast(msg, 4000);
+  }
+
+  // Wariant 1: tylko to urządzenie. Kopia w chmurze zostaje — wróci po ponownym zalogowaniu.
+  async function clearAllData() {
+    if (!confirm('Usunąć wszystkie dane z TEGO urządzenia?\n\nKopia w chmurze (jeśli korzystasz z synchronizacji) zostaje — dane wrócą po ponownym zalogowaniu.')) return;
+    if (window.FirebaseSync && FirebaseSync.isSignedIn()) await FirebaseSync.signOutUser().catch(() => {});
+    Storage.clearAllData();
+    afterClear('Dane usunięte z tego urządzenia');
+  }
+
+  // Wariant 2: urządzenie i chmura — przez nagrobki, żeby drugie urządzenie nie wypchnęło danych z powrotem
+  async function clearAllDataEverywhere() {
+    if (!(window.FirebaseSync && FirebaseSync.isSignedIn())) {
+      showToast('Zaloguj się przez Google w Ustawieniach → Synchronizacja, aby wyczyścić też chmurę', 4000);
+      return;
     }
+    if (!confirm('Usunąć wszystkie dane z tego urządzenia I z chmury?\n\nInne zalogowane urządzenia stracą je przy najbliższej synchronizacji. Tej operacji nie można cofnąć.')) return;
+    const typed = (prompt('Aby potwierdzić, wpisz: USUŃ') || '').trim().toLowerCase();
+    if (typed !== 'usuń' && typed !== 'usun') { showToast('Anulowano'); return; }
+    const statusEl = document.getElementById('firebaseStatus');
+    // 1. pełny sync — lokalnie mają być także rekordy, które istnieją tylko w chmurze
+    if ((await syncWithCloud()).length) {
+      showToast('Nie udało się połączyć z chmurą — nic nie usunięto.', 4000);
+      return;
+    }
+    // 2. nagrobki dla wszystkiego, 3. wypchnięcie ich do chmury
+    Storage.tombstoneAll();
+    const failed = await syncWithCloud();
+    if (failed.length) {
+      // nagrobki zostają lokalnie i dojdą do chmury przy kolejnej synchronizacji
+      afterClear('Usunięto na tym urządzeniu; chmura wyczyści się przy następnej synchronizacji');
+      return;
+    }
+    await FirebaseSync.signOutUser().catch(() => {});
+    Storage.clearAllData();
+    statusEl.textContent = '';
+    afterClear('Dane usunięte z tego urządzenia i z chmury');
   }
 
   return {
@@ -3955,6 +4225,7 @@ const UI = (() => {
     setTheme,
     setGoalMode,
     saveSettingsFromForm,
+    savePartnerUid,
     openEntryModal,
     closeEntryModal,
     saveEntryFromForm,
@@ -3963,15 +4234,20 @@ const UI = (() => {
     toggleFavoriteSection,
     saveWeightFromInput,
     toggleBodyComp,
-    handleLabelScan,
-    handleScreenshotScan,
-    handleMealPhoto,
-    handleVoiceEntry,
+    handleLabelScan: withEntryScanBusy(handleLabelScan),
+    handleScreenshotScan: withEntryScanBusy(handleScreenshotScan),
+    handleMealPhoto: withEntryScanBusy(handleMealPhoto),
+    handleVoiceEntry: withEntryScanBusy(handleVoiceEntry),
+    voiceErrorText,
     openBarcodeScanner,
     handleLaunchAction,
     closeBarcodeScanner,
+    cancelBarcode,
+    submitManualBarcode,
+    reloadWhenIdle,
     lookupBarcode,
     clearAllData,
+    clearAllDataEverywhere,
     exportDataToFile,
     openSummaryExportModal,
     closeSummaryExportModal,
@@ -3981,7 +4257,7 @@ const UI = (() => {
     saveFirebaseConfigFromForm,
     syncWithCloud,
     renderFirebaseAuthBlock,
-    ensureAuthListener,
+    initFirebase,
     recalcFromPer100g,
     clearPendingPer100g,
     autofillFromName,

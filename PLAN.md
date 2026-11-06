@@ -6,7 +6,7 @@
 > [docs/MAINTENANCE.md](docs/MAINTENANCE.md) — checklista wdrożenia ·
 > [docs/CHANGELOG.md](docs/CHANGELOG.md) — co i kiedy się zmieniło.
 
-## Stan realizacji (2026-10-31)
+## Stan realizacji (2026-11-06)
 
 **Zrobione:**
 - ✅ Faza 1 (MVP) w całości: szkielet PWA, storage, widok dzienny, formularz ręczny, OCR etykiet (Gemini; od v63 z gramaturą porcji z kolumny „porcja"), ustawienia, nawigacja + historia
@@ -65,6 +65,10 @@
     po przerwie; domyślny posiłek i godzina przy dodawaniu na miniony dzień — etap 3
   - v65: podsumowanie poprzedniego tygodnia na górze Historii + poniedziałkowa zajawka w Dzienniku — etap 4
   - v65: skróty na ikonie aplikacji (Android): Dodaj posiłek, Skanuj kod kreskowy — etap 5
+  - v68: poprawki z analizy `docs/ANALIZA-2026-11-06.md`: scalanie z chmurą przed każdym zapisem
+    w tle i lekkie odświeżenie przy powrocie z tła; jedna definicja dnia pełnego (≥50% celu kcal)
+    w statystykach, eksporcie i AI; bilans z trendu wagi; ocena wg historii celów; eksport bez kluczy,
+    bezpieczny import; dwa warianty czyszczenia danych (urządzenie / urządzenie + chmura)
 
 **Pozostało (świadomie odłożone):**
 - Wielojęzyczność — raczej bez sensu przy aplikacji dla jednego użytkownika
@@ -111,6 +115,7 @@ Osobista aplikacja PWA do śledzenia dziennego spożycia kalorii i makroskładni
 │   ├── app.js          # Inicjalizacja, podpięcie zdarzeń
 │   ├── storage.js      # Warstwa localStorage (CRUD wpisów, merge do synca)
 │   ├── ui.js           # Renderowanie widoków, obsługa formularzy
+│   ├── recipes.js      # Przepisy: kreator, składniki, porcje
 │   ├── ocr.js          # Integracja z Gemini API (etykieta, zrzut ekranu, zdjęcie posiłku, głos)
 │   ├── voice.js        # Rozpoznawanie mowy (Web Speech API)
 │   ├── barcode.js      # Skaner kodów kreskowych (BarcodeDetector + Open Food Facts)
@@ -282,10 +287,11 @@ Payload:
   wybrane dni tygodnia, co N dni, cykl brania/przerwy — każdy liczony względem `anchorDate`.
 - **Dziennik przyjęć** (`Storage.toggleSupplementTaken/addAdhocSupplementLog`, kolekcja
   `supplementLog`, klucz `"YYYY-MM-DD__id"`, z nagrobkami): checklista w widoku dnia
-  pogrupowana wg pory dnia, tap = odhaczenie (zmniejsza zapas o 1, jeśli śledzony), drugi
-  tap = cofnięcie; osobno wpisy doraźne (lek wzięty bez definicji) przez pole „Leki doraźne" z szybkimi chipami.
-- **Zarządzanie listą w Ustawieniach:** akordeon i modal edycji analogiczne do „Cele analizy
-  dnia”, widoczne tylko przy odblokowanym module. Usunięcie definicji to nagrobek — historia
+  pogrupowana wg pory dnia, tap = odhaczenie (zapas liczony z bazy minus dawki z logu — patrz
+  ARCHITECTURE.md), drugi tap = cofnięcie; osobno wpisy doraźne (lek wzięty bez definicji) przez pole
+  „Leki doraźne" z szybkimi chipami.
+- **Zarządzanie listą w zakładce Suplementy** (sekcja „Zarządzaj suplementami”): modal edycji
+  analogiczny do „Cele analizy dnia”, widoczny tylko przy odblokowanym module. Usunięcie definicji to nagrobek — historia
   przyjęć w dzienniku pozostaje.
 - **Sync:** `meta/supplements` i `meta/supplementLog` w Firestore, ten sam wzorzec
   pull→merge→zapis→push co reszta kolekcji.

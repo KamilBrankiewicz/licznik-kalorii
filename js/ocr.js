@@ -169,6 +169,8 @@ Jeśli na zdjęciu nie widać jedzenia, zwróć: {"error": "nie rozpoznano jedze
     return usd * USD_PLN;
   }
 
+  const GEMINI_TIMEOUT_MS = 60000; // słaby zasięg — bez limitu „Analizuję…” wisiałoby bez końca
+
   // Jedno miejsce dla HTTP do Gemini: błędy → kody, zapis zużycia, zwraca tekst odpowiedzi.
   // jsonMode wymusza czysty JSON (responseMimeType) — nie działa razem z narzędziami (google_search).
   async function requestGemini(parts, apiKey, extraPayload, jsonMode) {
@@ -183,14 +185,20 @@ Jeśli na zdjęciu nie widać jedzenia, zwróć: {"error": "nie rozpoznano jedze
       response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS)
       });
     } catch (e) {
-      throw new Error('NETWORK_ERROR');
+      throw new Error(e && e.name === 'TimeoutError' ? 'TIMEOUT' : 'NETWORK_ERROR');
     }
 
     if (response.status === 429) throw new Error('QUOTA_EXCEEDED');
-    if (!response.ok) throw new Error('API_ERROR');
+    if (!response.ok) {
+      // Zły/odwołany klucz: 400 API_KEY_INVALID albo 403 PERMISSION_DENIED — osobny komunikat
+      const body = await response.text().catch(() => '');
+      if (/API_KEY_INVALID|API key not valid|PERMISSION_DENIED/.test(body)) throw new Error('INVALID_API_KEY');
+      throw new Error('API_ERROR');
+    }
 
     let data;
     try {
@@ -471,14 +479,17 @@ Jeśli nie rozpoznajesz żadnego składnika w podanym tekście, zwróć: {"error
 }
 Jeśli lista posiłków jest pusta lub nie zawiera żadnych danych istotnych dla tego celu analizy, zwróć: {"error": "brak danych do analizy"}`;
 
-  async function analyzeDayAgainstGoal(date, meals, goalSystemPrompt, healthProfile, apiKey) {
+  async function analyzeDayAgainstGoal(date, meals, goalSystemPrompt, healthProfile, apiKey, inProgress) {
     const profileText = (healthProfile || '').trim() || 'Nie podano.';
+    const progressNote = inProgress
+      ? '\nUWAGA: ten dzień jeszcze trwa — oceniaj dotychczasowe spożycie i co warto dojeść, nie wyciągaj wniosków o całodziennym niedoborze.'
+      : '';
     const prompt = `${goalSystemPrompt}
 
 ## Profil użytkownika
 ${profileText}
 
-## Dane z dnia ${date}
+## Dane z dnia ${date}${progressNote}
 ${JSON.stringify(meals)}
 
 ${GOAL_RESPONSE_FORMAT}`;
@@ -563,7 +574,7 @@ ${SUPP_RESPONSE_FORMAT}`;
 
   const DIET_RESPONSE_FORMAT = `## Format odpowiedzi — WYŁĄCZNIE poniższy JSON, bez tekstu przed/po.
 Pusta tablica jest poprawną odpowiedzią w każdej sekcji — NIE wymyślaj ustaleń, żeby wypełnić sekcje.
-Jeśli w danych wejściowych "bilans_wstepny" jest null, zwróć "weight_energy_balance": null i odnotuj brak wagi w data_gaps.
+Jeśli w danych wejściowych "bilans_wstepny" jest null, zwróć "weight_energy_balance": null i odnotuj w data_gaps, że do bilansu potrzeba min. 3 pomiarów wagi rozpiętych na ≥14 dni.
 Wartości liczbowe w weight_energy_balance PRZEPISZ z "bilans_wstepny" — nie licz ich samodzielnie.
 szacowany_deficyt_dzienny: wartość dodatnia = deficyt (spadek wagi), ujemna = nadwyżka.
 {
@@ -575,7 +586,7 @@ szacowany_deficyt_dzienny: wartość dodatnia = deficyt (spadek wagi), ujemna = 
   },
   "macro_review": [
     { "skladnik": "kalorie|białko|węglowodany|tłuszcz|błonnik",
-      "srednio": "średnia dzienna z dni z wpisami", "cel": "cel dzienny",
+      "srednio": "średnia dzienna z dni pełnych (bez dni niepelny/dzien_w_toku)", "cel": "cel dzienny",
       "status": "ok|ponizej|powyzej", "note": "1 zdanie, tylko przy istotnym odchyleniu" }
   ],
   "patterns": [
@@ -595,7 +606,7 @@ Jeśli dane z okresu są puste, zwróć: {"error": "brak danych do analizy"}`;
 2. Regularność: dni bez wpisów, rozrzut kcal, wzorce dni tygodnia.
 3. Jakość diety na podstawie nazw posiłków (powtarzalność, produkty przetworzone, brakujące grupy — warzywa, błonnik).
 4. Krótki komentarz do bilans_wstepny (jeśli podany) z zaznaczeniem dużej niepewności (wahania wody) przy tak krótkim okresie.`,
-    month: `1. Bilans energetyczny — NAJWAŻNIEJSZA SEKCJA: spójność zmiany wagi ze spożyciem, ocena tempa (bezpieczne 0,25–1 kg/tydz.). Gdy dni_z_wpisami jest znacznie mniejsze niż długość okresu, wprost zaznacz że szacunek TDEE jest zafałszowany.
+    month: `1. Bilans energetyczny — NAJWAŻNIEJSZA SEKCJA: spójność zmiany wagi ze spożyciem, ocena tempa (bezpieczne 0,25–1 kg/tydz.). Gdy dni_pelne jest znacznie mniejsze niż długość okresu, wprost zaznacz że szacunek TDEE jest niepewny.
 2. Trendy składu ciała (smm/bf) jeśli dostępne: czy zmiana to głównie tłuszcz czy mięśnie.
 3. Średnie makroskładniki vs cele + systematyczność logowania.
 4. Wzorce: dni odstające, powtarzalne braki, najczęstsze produkty.`,

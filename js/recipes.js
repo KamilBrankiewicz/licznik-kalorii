@@ -443,7 +443,7 @@ const Recipes = (() => {
       per100g: { kcal, protein, carbs, fat, fiber },
       source: 'ingredient'
     });
-    UI.pushFavoritesToCloud();
+    UI.pushMetaToCloud('favorites');
     renderIngredientFavorites();
     UI.showToast(`Zapamiętano: ${name}`);
   }
@@ -524,13 +524,7 @@ const Recipes = (() => {
       transcript = await Voice.listenOnce();
     } catch (err) {
       statusEl.textContent = '';
-      if (err.message === 'PERMISSION_DENIED') {
-        errorEl.textContent = 'Brak dostępu do mikrofonu. Zezwól na dostęp w ustawieniach przeglądarki.';
-      } else if (err.message === 'NO_SPEECH') {
-        errorEl.textContent = 'Nie wykryto mowy. Spróbuj ponownie.';
-      } else {
-        errorEl.textContent = 'Rozpoznawanie mowy nie jest obsługiwane w tej przeglądarce.';
-      }
+      errorEl.textContent = UI.voiceErrorText(err);
       return;
     }
 
@@ -592,6 +586,23 @@ const Recipes = (() => {
     }, closeIngredientModal);
   }
 
+  // Skaner otwarty z modalu składnika — po zamknięciu wracamy do tego modalu, nie do formularza wpisu
+  let ingredientBarcodeActive = false;
+
+  function isIngredientBarcodeActive() {
+    return ingredientBarcodeActive;
+  }
+
+  // true = obsłużone (skaner był otwarty dla składnika)
+  function cancelIngredientBarcode() {
+    if (!ingredientBarcodeActive) return false;
+    ingredientBarcodeActive = false;
+    Barcode.stop();
+    document.getElementById('barcodeOverlay').classList.remove('active');
+    document.getElementById('ingredientModalOverlay').classList.add('active');
+    return true;
+  }
+
   function openIngredientBarcodeScanner() {
     closeIngredientModal();
     const statusEl = document.getElementById('barcodeStatus');
@@ -600,7 +611,7 @@ const Recipes = (() => {
     document.getElementById('barcodeManualInput').value = '';
     document.getElementById('barcodeOverlay').classList.add('active');
 
-    window._barcodeReturnToIngredient = true;
+    ingredientBarcodeActive = true;
 
     if (Barcode.isSupported()) {
       video.style.display = '';
@@ -635,7 +646,7 @@ const Recipes = (() => {
       const product = await Barcode.fetchProduct(code.trim());
       Barcode.stop();
       document.getElementById('barcodeOverlay').classList.remove('active');
-      window._barcodeReturnToIngredient = false;
+      ingredientBarcodeActive = false;
 
       document.getElementById('ingredientModalOverlay').classList.add('active');
       if (product.name) document.getElementById('ingredientName').value = product.name;
@@ -920,6 +931,8 @@ const Recipes = (() => {
     handleIngredientVoice,
     handleIngredientLookup,
     openIngredientBarcodeScanner,
+    isIngredientBarcodeActive,
+    cancelIngredientBarcode,
     lookupIngredientBarcode,
     toggleIngredientFavoriteSection,
     saveIngredientAsFavorite,
