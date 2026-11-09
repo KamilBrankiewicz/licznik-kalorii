@@ -128,16 +128,8 @@ AdhocQuickItem = { name: string, usedAt: string, updatedAt: string } | { name, d
 // tożsamość rekordu = name.toLowerCase(); merge po updatedAt (fallback usedAt dla starych rekordów bez updatedAt)
 ```
 
-**Zapas suplementu (`stockBaseline`/`stockBaselineDate` vs legacy `stock`):** bieżący zapas
-nie jest już przechowywany — `Storage.getRemainingStockMap()` liczy go jako
-`stockBaseline` minus liczbę dawek z `supplementLog`, których `date > stockBaselineDate`.
-Odhaczanie dawek **nie** dotyka rekordu suplementu (`updatedAt` definicji się nie zmienia).
-Stare rekordy sprzed tej zmiany mają tylko `stock` (bez `stockBaseline`) — traktowane jako
-baza z datą w przyszłości, więc żadna dawka się nie odejmuje, dopóki użytkownik nie zapisze
-suplementu ponownie w formularzu (wtedy zapis przechodzi na nowy model). Świadomie bez
-migracji hurtowej. `Storage.getStockCoverage(supp, remaining)` liczy z harmonogramu, na ile
-dni starczy zapasu (`{ days, lastDate }`) — alarm (`supp-stock-low`) gdy `days <= 7` lub
-zapas == 0.
+**Zapas suplementu — usunięty (v70).** Stare rekordy mogą mieć pola `stock`/`stockBaseline`/
+`stockBaselineDate`; nic ich już nie czyta ani nie zapisuje, zostają nietknięte.
 
 Odczyt ustawień zawsze przez `{ ...DEFAULT_SETTINGS, ...zapisane }` — dzięki temu nowe pole
 w `DEFAULT_SETTINGS` automatycznie działa dla istniejących użytkowników. **Dodając nowy cel

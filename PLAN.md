@@ -35,8 +35,7 @@
     z pomiarów wagi (AI go tylko interpretuje), przegląd makro vs cele, wzorce i rekomendacje;
     bez cache'u statycznego, z guardem „za mało danych" przed wywołaniem API
   - Usprawnienia modułu suplementów (6 poprawek, `docs/archiwum/PLAN-USPRAWNIENIA-SUPLEMENTY.md`):
-    nagrobki/merge/sync/eksport dla chipów leków doraźnych, zapas liczony z bazy + logu
-    zamiast nadpisywanego pola, alarm zapasu w dniach pokrycia wg harmonogramu, sharding
+    nagrobki/merge/sync/eksport dla chipów leków doraźnych, (śledzenie zapasu — usunięte w v70), sharding
     logu suplementów w Firestore po miesiącach z debounce'em pusha, edycja godziny dawki
     przez `<input type="time">` zamiast `prompt()`, jeden odczyt logu dnia na render
   - Dodawanie suplementów/leków ze zdjęcia etykiety i wyszukiwania po nazwie (AI, z
@@ -282,13 +281,12 @@ Payload:
   synchronizuje się między urządzeniami i nie trafia do eksportu. Przy zablokowanym module
   w DOM nie renderuje się żaden ślad (ani puste sekcje).
 - **Definicje** (`Storage.getSupplements/addSupplement/updateSupplement/deleteSupplement`,
-  kolekcja `supplements` z nagrobkami): nazwa, dawka, pora dnia, notatki, zapas opcjonalny,
+  kolekcja `supplements` z nagrobkami): nazwa, dawka, pora dnia, notatki,
   flaga aktywny/pauza. Cztery typy harmonogramu (`Storage.isSupplementDueOn`): codziennie,
   wybrane dni tygodnia, co N dni, cykl brania/przerwy — każdy liczony względem `anchorDate`.
 - **Dziennik przyjęć** (`Storage.toggleSupplementTaken/addAdhocSupplementLog`, kolekcja
   `supplementLog`, klucz `"YYYY-MM-DD__id"`, z nagrobkami): checklista w widoku dnia
-  pogrupowana wg pory dnia, tap = odhaczenie (zapas liczony z bazy minus dawki z logu — patrz
-  ARCHITECTURE.md), drugi tap = cofnięcie; osobno wpisy doraźne (lek wzięty bez definicji) przez pole
+  pogrupowana wg pory dnia, tap = odhaczenie, drugi tap = cofnięcie; osobno wpisy doraźne (lek wzięty bez definicji) przez pole
   „Leki doraźne" z szybkimi chipami.
 - **Zarządzanie listą w zakładce Suplementy** (sekcja „Zarządzaj suplementami”): modal edycji
   analogiczny do „Cele analizy dnia”, widoczny tylko przy odblokowanym module. Usunięcie definicji to nagrobek — historia

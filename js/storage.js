@@ -577,48 +577,6 @@ const Storage = (() => {
     return true;
   }
 
-  // Bieżący zapas: baza minus dawki z logu wzięte PO dacie bazy (date > stockBaselineDate).
-  // Zwraca mapę suppId -> liczba sztuk (tylko suplementy ze śledzonym zapasem).
-  function getRemainingStockMap() {
-    const supps = getSupplements().filter((s) => s.stockBaseline != null || s.stock != null);
-    if (supps.length === 0) return {};
-    const result = {};
-    supps.forEach((s) => {
-      result[s.id] = { base: s.stockBaseline != null ? Number(s.stockBaseline) : Number(s.stock) || 0,
-                       since: s.stockBaseline != null ? (s.stockBaselineDate || '') : '9999-12-31',
-                       used: 0 };
-    });
-    Object.values(getRawSupplementLog()).forEach((rec) => {
-      if (rec.deleted || !rec.suppId || !result[rec.suppId]) return;
-      if ((rec.date || '') > result[rec.suppId].since) {
-        result[rec.suppId].used += getSupplementTimes(rec).length;
-      }
-    });
-    const out = {};
-    Object.entries(result).forEach(([id, r]) => { out[id] = Math.max(0, r.base - r.used); });
-    return out;
-  }
-
-  // Na ile dni starczy zapasu wg harmonogramu; zwraca { days, lastDate } albo null.
-  // Liczy od jutra, maks. 365 dni w przód. days = liczba dni od dziś do lastDate.
-  function getStockCoverage(supp, remaining) {
-    if (remaining == null) return null;
-    const perDay = Math.max(1, Number(supp.timesPerDay) || 1);
-    const today = localDateStr();
-    let left = remaining;
-    let lastDate = null;
-    const d = new Date();
-    for (let i = 1; i <= 365 && left > 0; i++) {
-      d.setDate(d.getDate() + 1);
-      const iso = localDateStr(d);
-      if (isSupplementDueOn(supp, iso)) {
-        left -= perDay;
-        lastDate = iso;
-      }
-    }
-    return { days: lastDate ? daysBetween(today, lastDate) : 0, lastDate };
-  }
-
   // ── Zapisane raporty analizy dnia — mapa { "YYYY-MM-DD__goalId": {...} },
   // usunięcia jako nagrobki, ten sam mechanizm merge co przy wadze/ulubionych ──
 
@@ -1175,8 +1133,6 @@ const Storage = (() => {
     localDateStr,
     daysBetween,
     isSupplementDueOn,
-    getRemainingStockMap,
-    getStockCoverage,
     getRawSupplementLog,
     saveRawSupplementLog,
     getSupplementLogForDate,

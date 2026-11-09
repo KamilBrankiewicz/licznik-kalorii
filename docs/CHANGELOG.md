@@ -15,6 +15,15 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku] 2026-11-09 — Usunięcie śledzenia zapasu suplementów (v70)
+**Co:** znika pole „Aktualny zapas" w formularzu suplementu i napis „zapas: N szt. · na X dni" na karcie.
+**Dlaczego:** właściciel nie używał tej funkcji.
+**Pliki:** `index.html`, `js/ui.js`, `js/storage.js`, `css/style.css`, `sw.js`.
+**Uwagi:** pola `stock`/`stockBaseline`/`stockBaselineDate` w starych rekordach zostają nietknięte (bez migracji).
+`packageSize` (wielkość opakowania z etykiety) zostaje. Nie przywracać bez pytania.
+
+---
+
 ## [w toku] 2026-11-06 — Przywrócenie jasnego zielonego w motywie jasnym (v69)
 **Co:** motyw jasny znów używa domyślnego zielonego `--accent` (`#34d399`) zamiast ciemnego `#047857` z v68.
 **Dlaczego:** właścicielowi nie podobał się ciemniejszy zielony.

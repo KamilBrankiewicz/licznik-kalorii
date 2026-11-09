@@ -2525,8 +2525,6 @@ const UI = (() => {
     document.getElementById('suppCycleOn').value = supp && supp.cycleOn != null ? supp.cycleOn : '';
     document.getElementById('suppCycleOff').value = supp && supp.cycleOff != null ? supp.cycleOff : '';
     document.getElementById('suppTimesPerDay').value = supp && supp.timesPerDay > 1 ? supp.timesPerDay : 1;
-    const remainingStock = supp ? Storage.getRemainingStockMap()[supp.id] : null;
-    document.getElementById('suppStock').value = remainingStock != null ? remainingStock : '';
     document.getElementById('suppActive').checked = supp ? supp.active !== false : true;
     document.getElementById('suppFormError').textContent = '';
 
@@ -2583,22 +2581,6 @@ const UI = (() => {
       servingSize: pendingSuppServingSize
     };
 
-    const stockInput = document.getElementById('suppStock').value;
-    if (stockInput === '') {
-      data.stockBaseline = null;
-      data.stockBaselineDate = null;
-      data.stock = null;
-    } else {
-      const enteredStock = Number(stockInput);
-      const existingSupp = editingSuppId ? Storage.getSupplements().find((s) => s.id === editingSuppId) : null;
-      const remaining = existingSupp ? Storage.getRemainingStockMap()[existingSupp.id] : null;
-      if (remaining == null || enteredStock !== remaining) {
-        data.stockBaseline = enteredStock;
-        data.stockBaselineDate = toDateStr(new Date());
-        data.stock = null;
-      }
-    }
-
     if (scheduleType === 'weekdays') {
       const days = [...document.querySelectorAll('#suppScheduleDaysRow input[data-dow]:checked')].map((cb) => Number(cb.dataset.dow));
       if (days.length === 0) { errorEl.textContent = 'Wybierz przynajmniej jeden dzień tygodnia'; return; }
@@ -2638,12 +2620,7 @@ const UI = (() => {
       });
     }
     if (result.form) document.getElementById('suppFormSelect').value = result.form;
-    if (result.packageSize != null) {
-      document.getElementById('suppPackageSize').value = result.packageSize;
-      if (!document.getElementById('suppStock').value) {
-        document.getElementById('suppStock').value = result.packageSize;
-      }
-    }
+    if (result.packageSize != null) document.getElementById('suppPackageSize').value = result.packageSize;
     if (result.instructions) document.getElementById('suppInstructions').value = result.instructions;
     if (result.warnings) document.getElementById('suppWarnings').value = result.warnings;
     if (Array.isArray(result.ingredients) && result.ingredients.length) {
@@ -2858,18 +2835,6 @@ const UI = (() => {
     input.addEventListener('click', (e) => e.stopPropagation());
   }
 
-  function stockDisplayHtml(s, remaining) {
-    if (remaining == null) return '';
-    const coverage = Storage.getStockCoverage(s, remaining);
-    const low = remaining === 0 || (coverage && coverage.days <= 7);
-    let text = `zapas: ${remaining} szt.`;
-    if (coverage && coverage.lastDate) {
-      const [, mm, dd] = coverage.lastDate.split('-');
-      text += ` · na ${coverage.days} dni (do ${dd}.${mm})`;
-    }
-    return `<span class="supp-card-stock${low ? ' supp-stock-low' : ''}">${text}</span>`;
-  }
-
   function renderSupplementsSection() {
     const container = document.getElementById('supplementsSection');
     if (!container) return;
@@ -2887,7 +2852,6 @@ const UI = (() => {
     const offPlan = [...timesBySuppId].filter(([id, times]) => times.length && !plannedIds.has(id))
       .map(([id]) => ({ ...(allSupps.find((s) => s.id === id) || { id, name: '(usunięty suplement)', timing: 'any' }), offPlan: true }));
     const due = [...planned, ...offPlan];
-    const remainingStockMap = Storage.getRemainingStockMap();
 
     let itemsHtml = '';
     TIMING_ORDER.forEach((timing) => {
@@ -2901,13 +2865,11 @@ const UI = (() => {
         const partial = count > 0 && !taken;
         const countLabel = target > 1 ? `<span class="supp-count">${count}/${target}</span>` : (count > 1 ? `<span class="supp-count">×${count}</span>` : '');
         const initial = suppLabel(s).charAt(0).toUpperCase();
-        const stockHtml = stockDisplayHtml(s, remainingStockMap[s.id]);
         return `
           <div class="supp-card${taken ? ' taken' : ''}${partial ? ' partial' : ''}" data-supp-id="${s.id}">
             <div class="supp-card-avatar">${escapeHtml(initial)}</div>
             <div class="supp-card-info">
               <div class="supp-card-title">${escapeHtml(suppLabel(s))}${s.dose ? ` <span class="supp-dose">${escapeHtml(s.dose)}</span>` : ''}${countLabel}${s.offPlan ? ' <span class="supp-dose">poza planem</span>' : ''}</div>
-              ${stockHtml}
             </div>
             <button class="supp-plus-btn" data-action="increment" data-id="${s.id}" aria-label="Dodaj dawkę">+</button>
           </div>`;
