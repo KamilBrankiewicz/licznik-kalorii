@@ -15,6 +15,22 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku] 2026-11-11 — Ustawienia scalane z chmurą, dosłanie po powrocie sieci (v71)
+**Co:** zapis ustawień (cele, tryb celu, UID partnera) najpierw czyta ustawienia z chmury i nakłada na nie
+tylko pola zmienione na tym urządzeniu. Po powrocie internetu aplikacja od razu dosyła to, co zapisało się
+offline. Bez sieci nie ma już toastu „Błąd synchronizacji”.
+**Dlaczego:** `pushSettingsToCloud` jako jedyny zapis omijał zasadę „scal przed zapisem” i `queueCloud`.
+Telefon ze starym stanem, po przełączeniu trybu celu, nadpisywał w chmurze nowe cele i `goalHistory` z laptopa.
+Od v68 push zaczyna się od odczytu, więc wpis dodany offline czekał na powrót z tła po ≥15 min albo zimny start.
+**Pliki:** `js/ui.js`, `js/app.js`, `sw.js`, `index.html`, dokumentacja.
+**Uwagi:** `pushSettingsToCloud(prev, settings)` — `prev` to stan sprzed edycji; chmura wygrywa, gdy jej
+`updatedAt` jest nowszy niż `prev.updatedAt`. Gdy zmieniono tu cele, `goalHistory` liczy się od historii
+z chmury (`nextGoalHistory(remote, …)`). `handleOnline` zeruje `lastCloudRefresh` i woła `refreshFromCloud`
+(ostatnie 8 dni, bieżący miesiąc, ustawienia). Testowane z `FirebaseSync` w pamięci; nie na dwóch
+prawdziwych urządzeniach ani w trybie samolotowym.
+
+---
+
 ## [w toku] 2026-11-09 — Usunięcie śledzenia zapasu suplementów (v70)
 **Co:** znika pole „Aktualny zapas" w formularzu suplementu i napis „zapas: N szt. · na X dni" na karcie.
 **Dlaczego:** właściciel nie używał tej funkcji.

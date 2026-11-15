@@ -340,3 +340,4 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') UI.flushMetaPush();
   else UI.handleAppResume();
 });
+window.addEventListener('online', () => UI.handleOnline());

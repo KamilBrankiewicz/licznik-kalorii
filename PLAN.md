@@ -6,7 +6,7 @@
 > [docs/MAINTENANCE.md](docs/MAINTENANCE.md) — checklista wdrożenia ·
 > [docs/CHANGELOG.md](docs/CHANGELOG.md) — co i kiedy się zmieniło.
 
-## Stan realizacji (2026-11-06)
+## Stan realizacji (2026-11-11)
 
 **Zrobione:**
 - ✅ Faza 1 (MVP) w całości: szkielet PWA, storage, widok dzienny, formularz ręczny, OCR etykiet (Gemini; od v63 z gramaturą porcji z kolumny „porcja"), ustawienia, nawigacja + historia
@@ -68,6 +68,8 @@
     w tle i lekkie odświeżenie przy powrocie z tła; jedna definicja dnia pełnego (≥50% celu kcal)
     w statystykach, eksporcie i AI; bilans z trendu wagi; ocena wg historii celów; eksport bez kluczy,
     bezpieczny import; dwa warianty czyszczenia danych (urządzenie / urządzenie + chmura)
+  - v71: zapis ustawień scala z chmurą (tylko zmienione pola wygrywają), dosłanie danych po powrocie sieci,
+    brak toastu błędu synca offline
 
 **Pozostało (świadomie odłożone):**
 - Wielojęzyczność — raczej bez sensu przy aplikacji dla jednego użytkownika

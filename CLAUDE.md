@@ -70,7 +70,7 @@ w `ui.js`.
 
 6. **Zapis do chmury zawsze scala z chmurą i idzie przez `queueCloud`.** Nowy push nie może robić
    samego `setDoc` lokalnej wersji — najpierw `pullDay`/`pullMeta`, `merge*`, zapis lokalny, potem push
-   (`pushDayToCloud`, `flushMetaPush` w `ui.js`). Inaczej urządzenie bez świeżego synca kasuje w chmurze
+   (`pushDayToCloud`, `flushMetaPush`, `pushSettingsToCloud` w `ui.js`). Inaczej urządzenie bez świeżego synca kasuje w chmurze
    wpisy z drugiego urządzenia.
 
 7. **Zmiana modelu danych musi być wstecznie zgodna.** W localStorage użytkownika leżą

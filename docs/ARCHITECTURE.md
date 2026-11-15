@@ -209,7 +209,12 @@ i niepełne są przygaszone i trafiają do AI z flagą `dzien_w_toku`/`niepelny`
 
 **Ustawienia** nie są listą rekordów, więc mają osobną regułę (`syncSettings`): wygrywa nowszy
 `updatedAt`; gdy lokalnie go brak (dane sprzed v64), wygrywa chmura jak dawniej.
-`firebaseConfig` nigdy nie idzie do chmury (`settingsForCloud`).
+`firebaseConfig` nigdy nie idzie do chmury (`settingsForCloud`). Zapis w trakcie pracy
+(`pushSettingsToCloud(prev, settings)`, przez `queueCloud`) czyta ustawienia z chmury; jeśli są nowsze niż
+stan sprzed edycji, bierze je i nakłada tylko pola zmienione tutaj (`goalHistory` przeliczone od historii z chmury).
+
+**Powrót sieci:** zdarzenie `online` → `UI.handleOnline` → `refreshFromCloud` bez czekania 15 min — dosyła
+wpisy i ustawienia zapisane offline. Błąd pushu przy `navigator.onLine === false` nie pokazuje toastu.
 
 Merge jest w dwóch ogólnych funkcjach: `mergeListBy(a, b, keyOf, tsOf?)` dla list i `mergeMaps`
 dla map; nazwane `merge*` to aliasy/jednolinijkowce na nich.

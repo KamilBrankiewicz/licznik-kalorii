@@ -547,7 +547,7 @@ const UI = (() => {
           const data = cfg.shard ? filterShard(merged, cfg.shard, docId.slice(name.length + 1)) : merged;
           await FirebaseSync.pushMeta(docId, { [cfg.field]: data });
         }
-      }).catch(() => showToast(`Błąd synchronizacji: ${cfg.label}`));
+      }).catch(() => cloudErrorToast(`Błąd synchronizacji: ${cfg.label}`));
     });
   }
 
@@ -1340,9 +1340,10 @@ const UI = (() => {
   // Zapis od razu po kliknięciu (jak motyw) — pozostałe pola formularza zostają nietknięte
   function setGoalMode(mode) {
     if (!GOAL_MODE_HINTS[mode]) return;
-    const settings = { ...Storage.getSettings(), goalMode: mode, updatedAt: new Date().toISOString() };
+    const prev = Storage.getSettings();
+    const settings = { ...prev, goalMode: mode, updatedAt: new Date().toISOString() };
     Storage.saveSettings(settings);
-    pushSettingsToCloud(settings);
+    pushSettingsToCloud(prev, settings);
     renderGoalModeSelect();
     renderDiary();
   }
@@ -1664,24 +1665,51 @@ const UI = (() => {
     };
     settings.goalHistory = nextGoalHistory(prevSettings, settings);
     Storage.saveSettings(settings);
-    pushSettingsToCloud(settings);
     document.getElementById('settingsToast').textContent = 'Zapisano ✓';
     renderDiary();
+    pushSettingsToCloud(prevSettings, settings);
   }
 
   // UID partnera zapisywany od razu po zmianie (pole leży w innej sekcji niż „Zapisz ustawienia”)
   function savePartnerUid() {
     const partnerUid = document.getElementById('settingPartnerUid').value.trim();
-    const settings = { ...Storage.getSettings(), partnerUid, updatedAt: new Date().toISOString() };
+    const prev = Storage.getSettings();
+    const settings = { ...prev, partnerUid, updatedAt: new Date().toISOString() };
     Storage.saveSettings(settings);
-    pushSettingsToCloud(settings);
+    pushSettingsToCloud(prev, settings);
     showToast(partnerUid ? 'Zapisano UID partnera' : 'Usunięto UID partnera');
   }
 
-  function pushSettingsToCloud(settings) {
-    if (window.FirebaseSync && FirebaseSync.isSignedIn()) {
-      FirebaseSync.pushMeta('settings', settingsForCloud(settings)).catch(() => showToast('Błąd synchronizacji ustawień'));
-    }
+  // Push ustawień w tle: najpierw odczyt z chmury. Jeśli drugie urządzenie zapisało ustawienia po
+  // stanie, na którym oparta była ta edycja (prev), bierzemy jego wersję i nakładamy tylko pola
+  // zmienione tutaj — inaczej stary telefon nadpisywał np. nowe cele z laptopa całym swoim dokumentem.
+  function pushSettingsToCloud(prev, settings) {
+    if (!(window.FirebaseSync && FirebaseSync.isSignedIn())) return;
+    const changes = Object.fromEntries(Object.entries(settings).filter(([k, v]) => !sameData(v, prev[k])));
+    queueCloud(async () => {
+      const remote = await FirebaseSync.pullMeta('settings');
+      const newer = !!remote && (remote.updatedAt || '') > (prev.updatedAt || '');
+      const local = Storage.getSettings();
+      const out = { ...local, ...(newer ? remote : {}), ...changes, firebaseConfig: local.firebaseConfig };
+      if (newer && 'goalHistory' in changes) out.goalHistory = nextGoalHistory(remote, out);
+      if (!sameData(out, local)) {
+        Storage.saveSettings(out);
+        renderSettings();
+        renderCurrentDayView();
+      }
+      await FirebaseSync.pushMeta('settings', settingsForCloud(out));
+    }).catch(() => cloudErrorToast('Błąd synchronizacji ustawień'));
+  }
+
+  // Bez sieci błąd pushu to normalny stan (dane są lokalnie, handleOnline dośle je po powrocie) — bez toastu
+  function cloudErrorToast(msg) {
+    if (navigator.onLine) showToast(msg);
+  }
+
+  // Powrót sieci: od razu dosyłamy to, co zapisało się offline (ostatnie dni, bieżący miesiąc, ustawienia)
+  function handleOnline() {
+    lastCloudRefresh = 0;
+    refreshFromCloud();
   }
 
   // Push dnia w tle: najpierw scalenie z dokumentem w chmurze (wpisy z drugiego urządzenia), potem zapis
@@ -1694,7 +1722,7 @@ const UI = (() => {
       Storage.saveEntries(date, merged);
       if (date === currentDate) rerenderIfChanged(before, merged);
       await FirebaseSync.pushDay(date, merged);
-    }).catch(() => showToast('Błąd synchronizacji z chmurą'));
+    }).catch(() => cloudErrorToast('Błąd synchronizacji z chmurą'));
   }
 
   function nowTimeStr() {
@@ -2526,6 +2554,9 @@ const UI = (() => {
     document.getElementById('suppCycleOff').value = supp && supp.cycleOff != null ? supp.cycleOff : '';
     document.getElementById('suppTimesPerDay').value = supp && supp.timesPerDay > 1 ? supp.timesPerDay : 1;
     document.getElementById('suppActive').checked = supp ? supp.active !== false : true;
+    // nowy: domyślnie oglądany dzień, jeśli jest w przeszłości — żeby od razu dało się odhaczyć historię
+    const today = toDateStr();
+    document.getElementById('suppAnchorDate').value = supp ? (supp.anchorDate || '') : (currentDate < today ? currentDate : today);
     document.getElementById('suppFormError').textContent = '';
 
     document.getElementById('suppFormSelect').value = supp ? (supp.form || '') : '';
@@ -2580,6 +2611,9 @@ const UI = (() => {
       source: pendingSuppSource,
       servingSize: pendingSuppServingSize
     };
+    // tylko gdy wpisane — puste pole nie może nadpisać domyślnego anchorDate z addSupplement
+    const anchorDate = document.getElementById('suppAnchorDate').value;
+    if (anchorDate) data.anchorDate = anchorDate;
 
     if (scheduleType === 'weekdays') {
       const days = [...document.querySelectorAll('#suppScheduleDaysRow input[data-dow]:checked')].map((cb) => Number(cb.dataset.dow));
@@ -4256,6 +4290,7 @@ const UI = (() => {
     handleSuppLookup,
     flushMetaPush,
     handleAppResume,
+    handleOnline,
     getCurrentDate: () => currentDate
   };
 })();
