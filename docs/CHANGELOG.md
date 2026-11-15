@@ -15,7 +15,17 @@ Format wpisu — nowe na górze:
 
 ---
 
-## [w toku] 2026-11-11 — Ustawienia scalane z chmurą, dosłanie po powrocie sieci (v71)
+## [3e59d26] 2026-11-15 — Data rozpoczęcia suplementu, odhaczanie wstecz (v72)
+**Co:** w formularzu suplementu jest pole „Biorę od” (`anchorDate`). Nowy suplement dodany na minionym dniu
+dostaje ten dzień jako domyślną datę startu. Po przesunięciu daty wstecz suplement pojawia się na
+wcześniejszych dniach i można odhaczyć dawki historycznie.
+**Dlaczego:** `addSupplement` ustawiał `anchorDate` = dziś, a `isSupplementDueOn` ukrywa suplement przed tą
+datą. Pola nie było w UI, więc nie dało się uzupełnić przyjęć z dni przed dodaniem suplementu.
+**Pliki:** `index.html`, `js/ui.js`, `sw.js`.
+**Uwagi:** przy harmonogramie „co N dni” i „cykl” `anchorDate` wyznacza też fazę cyklu, więc zmiana daty
+przesuwa dni brania. Puste pole przy edycji zostawia dotychczasową wartość.
+
+## [3e59d26] 2026-11-11 — Ustawienia scalane z chmurą, dosłanie po powrocie sieci (v71)
 **Co:** zapis ustawień (cele, tryb celu, UID partnera) najpierw czyta ustawienia z chmury i nakłada na nie
 tylko pola zmienione na tym urządzeniu. Po powrocie internetu aplikacja od razu dosyła to, co zapisało się
 offline. Bez sieci nie ma już toastu „Błąd synchronizacji”.

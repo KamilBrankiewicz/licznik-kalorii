@@ -70,6 +70,7 @@
     bezpieczny import; dwa warianty czyszczenia danych (urządzenie / urządzenie + chmura)
   - v71: zapis ustawień scala z chmurą (tylko zmienione pola wygrywają), dosłanie danych po powrocie sieci,
     brak toastu błędu synca offline
+  - v72: pole „Biorę od” w formularzu suplementu — suplement widoczny i do odhaczenia na dniach wstecz
 
 **Pozostało (świadomie odłożone):**
 - Wielojęzyczność — raczej bez sensu przy aplikacji dla jednego użytkownika
