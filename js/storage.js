@@ -160,18 +160,29 @@ const Storage = (() => {
   const byId = (r) => r.id;
   const mergeEntryLists = (a, b) => mergeListBy(a, b, byId);
 
+  // Tłuszcz z odhaczonych dawek suplementów z fatPerDose (oleje) — 9 kcal/g.
+  // ponytail: usunięty suplement (nagrobek bez fatPerDose) przestaje się liczyć także wstecz
+  function getSupplementFat(date) {
+    const oily = getSupplements().filter((s) => Number(s.fatPerDose) > 0);
+    if (!oily.length) return 0;
+    const log = getRawSupplementLog();
+    return oily.reduce((sum, s) =>
+      sum + Number(s.fatPerDose) * getSupplementTimes(log[supplementLogKey(date, s.id)]).length, 0);
+  }
+
   function getDailySummary(date) {
     const entries = getEntries(date);
-    return entries.reduce(
-      (sum, e) => ({
-        kcal: sum.kcal + (Number(e.kcal) || 0),
-        protein: sum.protein + (Number(e.protein) || 0),
-        carbs: sum.carbs + (Number(e.carbs) || 0),
-        fat: sum.fat + (Number(e.fat) || 0),
-        fiber: sum.fiber + (Number(e.fiber) || 0)
-      }),
-      { kcal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 }
-    );
+    const suppFat = getSupplementFat(date);
+    const suppKcal = suppFat * 9;
+    const sum = { kcal: suppKcal, protein: 0, carbs: 0, fat: suppFat, fiber: 0, suppKcal };
+    entries.forEach((e) => {
+      sum.kcal += Number(e.kcal) || 0;
+      sum.protein += Number(e.protein) || 0;
+      sum.carbs += Number(e.carbs) || 0;
+      sum.fat += Number(e.fat) || 0;
+      sum.fiber += Number(e.fiber) || 0;
+    });
+    return sum;
   }
 
   // Waga: mapa { "YYYY-MM-DD": { kg, updatedAt } }, usunięcia jako nagrobki

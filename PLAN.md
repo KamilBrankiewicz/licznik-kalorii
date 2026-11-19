@@ -71,6 +71,7 @@
   - v71: zapis ustawień scala z chmurą (tylko zmienione pola wygrywają), dosłanie danych po powrocie sieci,
     brak toastu błędu synca offline
   - v72: pole „Biorę od” w formularzu suplementu — suplement widoczny i do odhaczenia na dniach wstecz
+  - v73: „Tłuszcz na dawkę (g)” w suplemencie — odhaczone dawki olejów doliczają się do tłuszczu i kcal dnia
 
 **Pozostało (świadomie odłożone):**
 - Wielojęzyczność — raczej bez sensu przy aplikacji dla jednego użytkownika
@@ -297,7 +298,7 @@ Payload:
 - **Sync:** `meta/supplements` i `meta/supplementLog` w Firestore, ten sam wzorzec
   pull→merge→zapis→push co reszta kolekcji.
 - Poza zakresem (świadomie, patrz `docs/archiwum/PLAN-MODUL-SUPLEMENTY.md`): powiadomienia/przypomnienia,
-  doliczanie kcal z suplementów do sum dnia, statystyki compliance w Historii, skan etykiety
+  doliczanie kcal z suplementów do sum dnia (od v73 jednak jest — tylko oleje, pole `fatPerDose`), statystyki compliance w Historii, skan etykiety
   przez Gemini, szyfrowanie danych (ukrycie jest tylko wizualne).
 
 ## Co NIE weszło (świadomie)

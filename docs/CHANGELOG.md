@@ -15,6 +15,19 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku] 2026-11-19 — Oleje z suplementów w kcal dnia (v73)
+**Co:** w formularzu suplementu jest pole „Tłuszcz na dawkę, g” (`fatPerDose`). Każda odhaczona dawka takiego
+suplementu (omega-3, MCT, tran) dolicza się do tłuszczu i kcal dnia (9 kcal/g); pasek kcal pokazuje
+„w tym N z suplementów”.
+**Dlaczego:** oleje z suplementów to realne kalorie, które dotąd nie trafiały do bilansu.
+**Pliki:** `index.html`, `js/storage.js`, `js/ui.js`, `sw.js`.
+**Uwagi:** liczone przy odczycie w `Storage.getDailySummary` (bez syntetycznych wpisów — brak duplikatów
+przy syncu, nic nowego do synchronizowania poza polem w definicji suplementu). Wszystko, co używa
+`getDailySummary` (historia, średnie, analizy AI, eksport MD), widzi oleje; suma kcal w nagłówkach posiłków nie.
+Usunięcie suplementu (nagrobek) zabiera jego kcal także z minionych dni — żeby zachować historię, lepiej
+wstrzymać suplement. `renderDiary` rozbity na `renderDaySummary` + `renderDiaryBody`, żeby odhaczenie
+dawki odświeżało paski.
+
 ## [3e59d26] 2026-11-15 — Data rozpoczęcia suplementu, odhaczanie wstecz (v72)
 **Co:** w formularzu suplementu jest pole „Biorę od” (`anchorDate`). Nowy suplement dodany na minionym dniu
 dostaje ten dzień jako domyślną datę startu. Po przesunięciu daty wstecz suplement pojawia się na

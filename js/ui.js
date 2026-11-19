@@ -251,14 +251,21 @@ const UI = (() => {
     document.getElementById('currentDateLabel').textContent = formatDateLabel(currentDate);
 
     const settings = Storage.getSettings();
+    renderNudge(settings);
+    renderHabitRow(settings);
+    renderDaySummary(settings);
+    renderDiaryBody();
+  }
+
+  // Paski kcal/makro — osobno, bo odhaczenie dawki oleju w suplementach też je zmienia
+  function renderDaySummary(settings = Storage.getSettings()) {
     const summary = Storage.getDailySummary(currentDate);
 
     document.getElementById('kcalValue').textContent = Math.round(summary.kcal);
-    renderNudge(settings);
-    renderHabitRow(settings);
     const kcalMetric = metricWithGoal('kcal', settings);
     const kcalStatus = kcalStatusText(summary, kcalMetric, currentDate);
-    document.getElementById('kcalGoalLabel').textContent = `/ ${settings.kcalGoal} kcal${kcalStatus ? ' · ' + kcalStatus : ''}`;
+    const suppNote = summary.suppKcal >= 1 ? ` · w tym ${Math.round(summary.suppKcal)} z suplementów` : '';
+    document.getElementById('kcalGoalLabel').textContent = `/ ${settings.kcalGoal} kcal${suppNote}${kcalStatus ? ' · ' + kcalStatus : ''}`;
     const kcalPct = pct(summary.kcal, settings.kcalGoal);
     document.getElementById('kcalBarFill').style.width = kcalPct + '%';
     document.getElementById('kcalBar').classList.toggle('over', isBadHistoryDay(summary, kcalMetric, currentDate));
@@ -274,7 +281,9 @@ const UI = (() => {
 
     document.getElementById('fiberValue').textContent = `${Math.round(summary.fiber)} / ${settings.fiberGoal} g`;
     document.getElementById('fiberBarFill').style.width = pct(summary.fiber, settings.fiberGoal) + '%';
+  }
 
+  function renderDiaryBody() {
     const weightInput = document.getElementById('weightInput');
     const weightHint = document.getElementById('weightLastHint');
     const smmInput = document.getElementById('smmInput');
@@ -2536,6 +2545,7 @@ const UI = (() => {
     document.getElementById('suppName').value = supp ? supp.name : '';
     document.getElementById('suppDisplayName').value = supp ? (supp.displayName || '') : '';
     document.getElementById('suppDose').value = supp ? (supp.dose || '') : '';
+    document.getElementById('suppFatPerDose').value = supp && supp.fatPerDose ? supp.fatPerDose : '';
     document.getElementById('suppNotes').value = supp ? (supp.notes || '') : '';
     const timingVal = supp ? (supp.timing || 'any') : 'morning';
     document.querySelectorAll('#suppTimingSelect button').forEach((b) => {
@@ -2596,6 +2606,7 @@ const UI = (() => {
       name,
       displayName: document.getElementById('suppDisplayName').value.trim(),
       dose: document.getElementById('suppDose').value.trim(),
+      fatPerDose: Math.max(0, Number(document.getElementById('suppFatPerDose').value) || 0),
       notes: document.getElementById('suppNotes').value.trim(),
       timing: (document.querySelector('#suppTimingSelect button.active') || {}).dataset?.timing || 'any',
       scheduleType,
@@ -3024,6 +3035,7 @@ const UI = (() => {
       });
     });
     renderAdhocSupplementsSection();
+    renderDaySummary(); // dawki olejów zmieniają kcal/tłuszcz dnia
   }
 
   function toggleSupplementCheck(suppId) {
@@ -3911,8 +3923,7 @@ const UI = (() => {
     const days = [];
     for (let date = from; date <= to; date = shiftDateStr(date, 1)) {
       const entries = Storage.getEntries(date);
-      const sum = { kcal: 0, protein: 0, fat: 0, carbs: 0 };
-      entries.forEach((e) => SUMMARY_MACROS.forEach((m) => { sum[m.key] += Number(e[m.key]) || 0; }));
+      const sum = Storage.getDailySummary(date); // z olejami z suplementów, jak w aplikacji
       const dow = new Date(date + 'T00:00:00').getDay();
       days.push({
         date, entries, sum, dow,
