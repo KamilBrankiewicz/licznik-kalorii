@@ -16,7 +16,7 @@ Format wpisu — nowe na górze:
 ---
 
 ## [w toku] 2026-11-21 — Składnik przepisu ze zdjęcia opakowania (v75)
-**Co:** w modalu „Dodaj składnik" nowy przycisk „📦 Opakowanie": zdjęcie frontu produktu → Gemini
+**Co:** w modalu „Dodaj składnik" nowy przycisk „📦 Zdjęcie składnika" (v76; w v75 „Opakowanie"): zdjęcie opakowania lub samego produktu → Gemini
 rozpoznaje markę/wariant i uzupełnia nazwę oraz wartości na 100g.
 **Dlaczego:** nie zawsze da się sfotografować tabelę wartości odżywczych, a opakowanie jest pod ręką.
 **Pliki:** `index.html`, `js/app.js`, `js/recipes.js`, `js/ocr.js`, `sw.js`.

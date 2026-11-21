@@ -418,7 +418,7 @@ Zasady:
 - Przy niepewności wybieraj wartości typowe/środkowe dla danego typu produktu
 Jeśli nie rozpoznajesz żadnego składnika w podanym tekście, zwróć: {"error": "nie rozpoznano składnika"}`;
 
-  const PROMPT_PACKAGE = `Zdjęcie przedstawia opakowanie produktu spożywczego (front, bez widocznej tabeli wartości odżywczych). Rozpoznaj konkretny produkt (marka, nazwa, wariant) i znajdź jego wartości odżywcze na 100g.
+  const PROMPT_PACKAGE = `Zdjęcie przedstawia składnik kulinarny: opakowanie produktu spożywczego (zwykle front, bez widocznej tabeli wartości odżywczych) albo sam produkt bez opakowania (np. warzywo, owoc, mięso). Rozpoznaj produkt — jeśli to opakowanie, konkretnie (marka, nazwa, wariant) — i znajdź jego wartości odżywcze na 100g.
 
 Zwróć WYŁĄCZNIE JSON, bez tekstu przed/po, w formacie:
 {
