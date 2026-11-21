@@ -154,6 +154,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (file) Recipes.handleIngredientLabelScan(file);
     e.target.value = '';
   });
+  document.getElementById('ingredientScanPackageBtn').addEventListener('click', () => {
+    document.getElementById('ingredientPackageFileInput').click();
+  });
+  document.getElementById('ingredientPackageFileInput').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) Recipes.handleIngredientLabelScan(file, true);
+    e.target.value = '';
+  });
   document.getElementById('ingredientScanBarcodeBtn').addEventListener('click', () => Recipes.openIngredientBarcodeScanner());
   document.getElementById('ingredientVoiceBtn').addEventListener('click', () => Recipes.handleIngredientVoice());
   document.getElementById('ingredientLookupBtn').addEventListener('click', () => Recipes.handleIngredientLookup());

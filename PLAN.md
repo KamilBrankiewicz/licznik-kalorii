@@ -73,6 +73,7 @@
   - v72: pole „Biorę od” w formularzu suplementu — suplement widoczny i do odhaczenia na dniach wstecz
   - v73: „Tłuszcz na dawkę (g)” w suplemencie — odhaczone dawki olejów doliczają się do tłuszczu i kcal dnia
   - v74: skaner kodu kreskowego z kreatora przepisu wyświetla się nad modalem przepisu (wcześniej był pod spodem)
+  - v75: w kreatorze przepisu przycisk „📦 Opakowanie” — zdjęcie frontu produktu (bez tabeli /100g), Gemini rozpoznaje produkt i szuka jego wartości odżywczych (Google Search)
 
 **Pozostało (świadomie odłożone):**
 - Wielojęzyczność — raczej bez sensu przy aplikacji dla jednego użytkownika

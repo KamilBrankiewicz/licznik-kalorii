@@ -418,6 +418,39 @@ Zasady:
 - Przy niepewności wybieraj wartości typowe/środkowe dla danego typu produktu
 Jeśli nie rozpoznajesz żadnego składnika w podanym tekście, zwróć: {"error": "nie rozpoznano składnika"}`;
 
+  const PROMPT_PACKAGE = `Zdjęcie przedstawia opakowanie produktu spożywczego (front, bez widocznej tabeli wartości odżywczych). Rozpoznaj konkretny produkt (marka, nazwa, wariant) i znajdź jego wartości odżywcze na 100g.
+
+Zwróć WYŁĄCZNIE JSON, bez tekstu przed/po, w formacie:
+{
+  "name": "nazwa produktu z marką i wariantem",
+  "per100g": {
+    "kcal": number,
+    "protein": number,
+    "carbs": number,
+    "fat": number,
+    "fiber": number lub null
+  }
+}
+
+Zasady:
+- Jeśli na zdjęciu widać wartości odżywcze, przepisz je.
+- Jeśli nie znalazłeś danych tego konkretnego produktu, podaj typowe wartości dla tego typu produktu.
+Jeśli zdjęcie nie przedstawia produktu spożywczego, zwróć: {"error": "not_recognized"}`;
+
+  async function analyzeProductPackage(file, apiKey) {
+    const base64 = await resizeImageToBase64(file);
+    const parts = [
+      { text: PROMPT_PACKAGE },
+      { inline_data: { mime_type: 'image/jpeg', data: base64 } }
+    ];
+    try {
+      return await callGemini(parts, apiKey, { tools: [{ google_search: {} }] });
+    } catch (e) {
+      if (e.message !== 'API_ERROR') throw e;
+      return callGemini(parts, apiKey);
+    }
+  }
+
   async function analyzeIngredientLookup(text, apiKey) {
     const prompt = PROMPT_INGREDIENT_LOOKUP.replace('%TEXT%', text);
     return callGemini([{ text: prompt }], apiKey);
@@ -639,5 +672,5 @@ ${DIET_RESPONSE_FORMAT}`;
     return callGemini([{ text: prompt }], apiKey);
   }
 
-  return { takeUsage, usdToPln, analyzeLabel, analyzeVoiceEntry, analyzeScreenshot, analyzeMealPhoto, analyzeRecipeText, analyzeRecipeImage, analyzeIngredientLookup, transcribeAudio, analyzeDayAgainstGoal, analyzeSupplements, analyzeDiet, analyzeSupplementLabel, lookupSupplementByName };
+  return { takeUsage, usdToPln, analyzeLabel, analyzeVoiceEntry, analyzeScreenshot, analyzeMealPhoto, analyzeRecipeText, analyzeRecipeImage, analyzeIngredientLookup, analyzeProductPackage, transcribeAudio, analyzeDayAgainstGoal, analyzeSupplements, analyzeDiet, analyzeSupplementLabel, lookupSupplementByName };
 })();

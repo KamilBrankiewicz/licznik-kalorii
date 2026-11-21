@@ -15,6 +15,14 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku] 2026-11-21 — Składnik przepisu ze zdjęcia opakowania (v75)
+**Co:** w modalu „Dodaj składnik" nowy przycisk „📦 Opakowanie": zdjęcie frontu produktu → Gemini
+rozpoznaje markę/wariant i uzupełnia nazwę oraz wartości na 100g.
+**Dlaczego:** nie zawsze da się sfotografować tabelę wartości odżywczych, a opakowanie jest pod ręką.
+**Pliki:** `index.html`, `js/app.js`, `js/recipes.js`, `js/ocr.js`, `sw.js`.
+**Uwagi:** `Ocr.analyzeProductPackage` używa `google_search` z fallbackiem bez narzędzia przy `API_ERROR`
+(ten sam wzorzec co `lookupSupplementByName`). Brak danych konkretnego produktu → wartości typowe.
+
 ## [w toku] 2026-11-21 — Skaner kodu kreskowego w kreatorze przepisu pod spodem (v74)
 **Co:** skaner otwarty z modalu składnika (kreator przepisu) pokazuje się teraz na wierzchu.
 **Dlaczego:** wszystkie `.modal-overlay` miały `z-index: 20`, a `#barcodeOverlay` stoi w `index.html`

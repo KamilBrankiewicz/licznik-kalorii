@@ -476,15 +476,18 @@ const Recipes = (() => {
     renderRecipeIngredients();
   }
 
-  async function handleIngredientLabelScan(file) {
+  // isPackage: zdjęcie opakowania (bez tabeli) → Gemini rozpoznaje produkt i szuka wartości
+  async function handleIngredientLabelScan(file, isPackage) {
     const settings = Storage.getSettings();
     const statusEl = document.getElementById('ingredientScanStatus');
     const errorEl = document.getElementById('ingredientScanError');
     errorEl.textContent = '';
-    statusEl.textContent = 'Analizuję etykietę...';
+    statusEl.textContent = isPackage ? 'Rozpoznaję produkt...' : 'Analizuję etykietę...';
 
     try {
-      const result = await Ocr.analyzeLabel(file, settings.geminiApiKey);
+      const result = isPackage
+        ? await Ocr.analyzeProductPackage(file, settings.geminiApiKey)
+        : await Ocr.analyzeLabel(file, settings.geminiApiKey);
       statusEl.textContent = '';
       if (result.name) document.getElementById('ingredientName').value = result.name;
       if (result.per100g) {
@@ -494,10 +497,10 @@ const Recipes = (() => {
         document.getElementById('ingredientFat').value = result.per100g.fat || '';
         document.getElementById('ingredientFiber').value = result.per100g.fiber || '';
       }
-      UI.showAiToast('Rozpoznano etykietę');
+      UI.showAiToast(isPackage ? 'Rozpoznano produkt' : 'Rozpoznano etykietę');
     } catch (err) {
       statusEl.textContent = '';
-      UI.showAiError(err, errorEl, { failed: 'Nie rozpoznano etykiety.' }, closeIngredientModal);
+      UI.showAiError(err, errorEl, { failed: isPackage ? 'Nie rozpoznano produktu.' : 'Nie rozpoznano etykiety.' }, closeIngredientModal);
     }
   }
 
