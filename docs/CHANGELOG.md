@@ -15,6 +15,11 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku] 2026-11-21 — Przepisy od najnowszych w „Dodaj porcję" (v77)
+**Co:** lista przepisów w modalu dodawania porcji posortowana od najnowszych (`updatedAt` malejąco), jak w widoku Przepisy.
+**Dlaczego:** wcześniej kolejność zapisu w localStorage — najstarsze na górze.
+**Pliki:** `js/recipes.js`, `sw.js`, `index.html`.
+
 ## [w toku] 2026-11-21 — Składnik przepisu ze zdjęcia opakowania (v75)
 **Co:** w modalu „Dodaj składnik" nowy przycisk „📦 Zdjęcie składnika" (v76; w v75 „Opakowanie"): zdjęcie opakowania lub samego produktu → Gemini
 rozpoznaje markę/wariant i uzupełnia nazwę oraz wartości na 100g.

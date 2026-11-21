@@ -676,7 +676,7 @@ const Recipes = (() => {
   // ── Logowanie porcji ──
 
   function openPortionModal(preselectedRecipeId) {
-    const recipes = Storage.getRecipes();
+    const recipes = Storage.getRecipes().sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
     if (recipes.length === 0) {
       UI.showToast('Najpierw dodaj przepis');
       return;
