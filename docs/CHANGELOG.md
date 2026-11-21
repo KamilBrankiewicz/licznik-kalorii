@@ -15,6 +15,15 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku] 2026-11-21 — Skaner kodu kreskowego w kreatorze przepisu pod spodem (v74)
+**Co:** skaner otwarty z modalu składnika (kreator przepisu) pokazuje się teraz na wierzchu.
+**Dlaczego:** wszystkie `.modal-overlay` miały `z-index: 20`, a `#barcodeOverlay` stoi w `index.html`
+przed `#recipeModalOverlay`, więc rysował się pod przepisem — niewidoczny, z działającą w tle kamerą,
+i wyskakiwał dopiero po zamknięciu przepisu. Ze skanerem z dziennika problemu nie było (modal wpisu jest
+w DOM wcześniej).
+**Pliki:** `css/style.css`, `sw.js`, `index.html`.
+**Uwagi:** `#barcodeOverlay { z-index: 21 }` — skaner bywa otwierany z innych modali, więc zawsze nad nimi.
+
 ## [w toku] 2026-11-19 — Oleje z suplementów w kcal dnia (v73)
 **Co:** w formularzu suplementu jest pole „Tłuszcz na dawkę, g” (`fatPerDose`). Każda odhaczona dawka takiego
 suplementu (omega-3, MCT, tran) dolicza się do tłuszczu i kcal dnia (9 kcal/g); pasek kcal pokazuje

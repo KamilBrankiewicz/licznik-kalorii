@@ -800,6 +800,11 @@ html, body {
   display: flex;
 }
 
+/* Skaner otwierany z innych modali (np. składnik przepisu) musi być nad nimi — w DOM stoi wcześniej */
+#barcodeOverlay {
+  z-index: 21;
+}
+
 .modal-sheet {
   background: var(--bg-elevated);
   width: 100%;

@@ -72,6 +72,7 @@
     brak toastu błędu synca offline
   - v72: pole „Biorę od” w formularzu suplementu — suplement widoczny i do odhaczenia na dniach wstecz
   - v73: „Tłuszcz na dawkę (g)” w suplemencie — odhaczone dawki olejów doliczają się do tłuszczu i kcal dnia
+  - v74: skaner kodu kreskowego z kreatora przepisu wyświetla się nad modalem przepisu (wcześniej był pod spodem)
 
 **Pozostało (świadomie odłożone):**
 - Wielojęzyczność — raczej bez sensu przy aplikacji dla jednego użytkownika
