@@ -15,6 +15,12 @@ Format wpisu — nowe na górze:
 
 ---
 
+## [w toku] 2026-11-22 — Wyszukiwanie i sztuki przy składniku przepisu (v78)
+**Co:** pole nazwy składnika podpowiada produkty (ulubione → składniki innych przepisów → historia wpisów) i wypełnia makro na 100g; nowe pola „Sztuk” i „g / szt.” liczą wagę (np. 5 × 60 g = 300 g).
+**Dlaczego:** w modalu składnika nie było wyszukiwania po historii, a „5 jajek” trzeba było przeliczać ręcznie.
+**Pliki:** index.html, js/recipes.js, js/app.js, sw.js.
+**Uwagi:** wybór produktu z gramaturą wpisuje ją jako wagę sztuki. Wpis z historii bez per100g i bez gramatury jest pomijany (nieznany skład na 100g). Sztuki nie są zapisywane w składniku — tylko wynikowe gramy; ręczna zmiana wagi czyści pole „Sztuk”.
+
 ## [w toku] 2026-11-21 — Przepisy od najnowszych w „Dodaj porcję" (v77)
 **Co:** lista przepisów w modalu dodawania porcji posortowana od najnowszych (`updatedAt` malejąco), jak w widoku Przepisy.
 **Dlaczego:** wcześniej kolejność zapisu w localStorage — najstarsze na górze.

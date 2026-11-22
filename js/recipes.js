@@ -339,6 +339,10 @@ const Recipes = (() => {
 
     document.getElementById('ingredientName').value = ing ? ing.name : '';
     document.getElementById('ingredientGrams').value = ing ? ing.grams : '';
+    document.getElementById('ingredientPieces').value = '';
+    document.getElementById('ingredientPieceGrams').value = '';
+    ingredientCandidates = null;
+    hideIngredientAutocomplete();
     document.getElementById('ingredientKcal').value = ing ? ing.per100g.kcal || '' : '';
     document.getElementById('ingredientProtein').value = ing ? ing.per100g.protein || '' : '';
     document.getElementById('ingredientCarbs').value = ing ? ing.per100g.carbs || '' : '';
@@ -395,20 +399,99 @@ const Recipes = (() => {
       chip.type = 'button';
       chip.className = 'chip';
       chip.textContent = p.name;
-      chip.addEventListener('click', () => {
-        document.getElementById('ingredientName').value = p.name;
-        if (p.per100g) {
-          document.getElementById('ingredientKcal').value = p.per100g.kcal || '';
-          document.getElementById('ingredientProtein').value = p.per100g.protein || '';
-          document.getElementById('ingredientCarbs').value = p.per100g.carbs || '';
-          document.getElementById('ingredientFat').value = p.per100g.fat || '';
-          document.getElementById('ingredientFiber').value = p.per100g.fiber || '';
-        }
-        if (p.grams) document.getElementById('ingredientGrams').value = p.grams;
-        updateIngredientMacroPreview();
-      });
+      chip.addEventListener('click', () => fillIngredientFromProduct(p));
       container.appendChild(chip);
     });
+  }
+
+  function fillIngredientFromProduct(p) {
+    document.getElementById('ingredientName').value = p.name;
+    if (p.per100g) {
+      document.getElementById('ingredientKcal').value = p.per100g.kcal || '';
+      document.getElementById('ingredientProtein').value = p.per100g.protein || '';
+      document.getElementById('ingredientCarbs').value = p.per100g.carbs || '';
+      document.getElementById('ingredientFat').value = p.per100g.fat || '';
+      document.getElementById('ingredientFiber').value = p.per100g.fiber || '';
+    }
+    if (p.grams) {
+      // waga produktu staje się wagą sztuki — "5 jajek" to wtedy tylko wpisanie 5 w Sztuk
+      document.getElementById('ingredientPieceGrams').value = p.grams;
+      document.getElementById('ingredientPieces').value = '';
+      document.getElementById('ingredientGrams').value = p.grams;
+    }
+    updateIngredientMacroPreview();
+  }
+
+  // Kandydaci do podpowiedzi: ulubione → składniki innych przepisów → historia wpisów.
+  // Wpis z historii bez per100g i bez gramatury nie ma znanego składu na 100g — pomijamy.
+  let ingredientCandidates = null;
+
+  function buildIngredientCandidates() {
+    const seen = new Set();
+    const out = [];
+    const add = (name, per100g, grams) => {
+      const key = (name || '').trim().toLowerCase();
+      if (!key || !per100g || seen.has(key)) return;
+      seen.add(key);
+      out.push({ name: name.trim(), per100g, grams: grams || null });
+    };
+    Storage.getFavoriteProducts().forEach((p) => add(p.name, p.per100g, p.grams));
+    Storage.getRecipes().forEach((r) => (r.ingredients || []).forEach((i) => add(i.name, i.per100g, null)));
+    Storage.getUniqueProducts().forEach((e) => {
+      const g = Number(e.grams);
+      const per = (v) => Math.round(((Number(v) || 0) * 100 / g) * 10) / 10;
+      const per100g = e.per100g || (g > 0 ? {
+        kcal: per(e.kcal), protein: per(e.protein), carbs: per(e.carbs), fat: per(e.fat),
+        fiber: e.fiber != null ? per(e.fiber) : null
+      } : null);
+      add(e.name, per100g, g > 0 ? g : null);
+    });
+    return out;
+  }
+
+  function searchIngredientProducts() {
+    const dropdown = document.getElementById('ingredientAutocomplete');
+    const query = document.getElementById('ingredientName').value.trim().toLowerCase();
+    dropdown.innerHTML = '';
+    if (query.length < 2) { dropdown.hidden = true; return; }
+    if (!ingredientCandidates) ingredientCandidates = buildIngredientCandidates();
+    const matches = ingredientCandidates.filter((p) => p.name.toLowerCase().includes(query)).slice(0, 8);
+    matches.forEach((p) => {
+      const item = document.createElement('div');
+      item.className = 'autocomplete-item';
+      item.innerHTML = `
+        <span class="autocomplete-name">${escapeHtml(p.name)}</span>
+        <span class="autocomplete-meta">${Math.round(p.per100g.kcal || 0)} kcal/100g${p.grams ? ' · ' + p.grams + 'g' : ''}</span>
+      `;
+      item.addEventListener('mousedown', (ev) => {
+        ev.preventDefault();
+        fillIngredientFromProduct(p);
+        hideIngredientAutocomplete();
+      });
+      dropdown.appendChild(item);
+    });
+    dropdown.hidden = matches.length === 0;
+  }
+
+  function hideIngredientAutocomplete() {
+    const dropdown = document.getElementById('ingredientAutocomplete');
+    dropdown.hidden = true;
+    dropdown.innerHTML = '';
+  }
+
+  function updateIngredientGramsFromPieces() {
+    const pieces = Number(document.getElementById('ingredientPieces').value);
+    const pieceGrams = Number(document.getElementById('ingredientPieceGrams').value);
+    if (pieces > 0 && pieceGrams > 0) {
+      document.getElementById('ingredientGrams').value = Math.round(pieces * pieceGrams);
+      updateIngredientMacroPreview();
+    }
+  }
+
+  // Ręcznie wpisana waga unieważnia przelicznik sztuk
+  function onIngredientGramsInput() {
+    document.getElementById('ingredientPieces').value = '';
+    updateIngredientMacroPreview();
   }
 
   function toggleIngredientFavoriteSection() {
@@ -940,6 +1023,10 @@ const Recipes = (() => {
     toggleIngredientFavoriteSection,
     saveIngredientAsFavorite,
     updateIngredientMacroPreview,
+    searchIngredientProducts,
+    hideIngredientAutocomplete,
+    updateIngredientGramsFromPieces,
+    onIngredientGramsInput,
     renderRecipeIngredients,
     openPortionModal,
     closePortionModal,
